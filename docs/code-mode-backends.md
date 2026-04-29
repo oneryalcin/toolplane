@@ -165,6 +165,8 @@ The namespace exposed to agent-written code should be source-agnostic:
 
 The code should not need to know where a function came from. Naming, schemas,
 auth, and return normalization belong in the registry layer before execution.
+The host must explicitly register or configure CLI capabilities; installing the
+adapter should not ambiently expose arbitrary local commands.
 
 ## Tool Bridge Modes
 
@@ -201,6 +203,7 @@ Build the smallest useful runtime:
 5. A Pyodide+Deno backend as the first real sandbox for package-capable Python,
    including pandas-style workflows.
 6. A host callback bridge so sandboxed code can call host capabilities.
-7. A Docker backend next for real CPython, local CLI binaries, and arbitrary
+7. A `cli-to-py` adapter that registers explicit CLI commands as capabilities.
+8. A Docker backend next for real CPython, local CLI binaries, and arbitrary
    system dependencies.
-8. Modal, E2B, or Blaxel as remote backends once the local contract is stable.
+9. Modal, E2B, or Blaxel as remote backends once the local contract is stable.
