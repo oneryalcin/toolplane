@@ -48,6 +48,15 @@ class CapabilityRegistry:
         self._capabilities[capability.name] = capability
         return capability
 
+    def add(self, capability: Capability) -> Capability:
+        """Add a prebuilt capability from an adapter."""
+        if capability.name in self._capabilities:
+            raise DuplicateCapabilityError(
+                f"Capability already registered: {capability.name}"
+            )
+        self._capabilities[capability.name] = capability
+        return capability
+
     def all(self) -> list[Capability]:
         return list(self._capabilities.values())
 

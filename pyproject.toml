@@ -21,6 +21,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
+    "cli-to-py>=0.1",
     "pydantic>=2.0",
 ]
 

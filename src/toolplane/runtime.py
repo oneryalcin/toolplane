@@ -7,6 +7,7 @@ from typing import Any
 
 from .backends import CodeBackend, LocalUnsafeBackend, PyodideDenoBackend
 from .bridges.in_process import InProcessBridge
+from .capabilities import Capability, JsonSchema
 from .discovery import DetailLevel, render_capabilities
 from .errors import BackendNotFoundError
 from .execution import ExecutionResult
@@ -57,6 +58,29 @@ class Toolplane:
         tags: set[str] | frozenset[str] | None = None,
     ) -> None:
         self.registry.register(fn, name=name, description=description, tags=tags)
+
+    def register_cli(
+        self,
+        name: str,
+        command: Any,
+        *,
+        subcommand: str | None = None,
+        description: str | None = None,
+        parameters: JsonSchema | None = None,
+        tags: set[str] | frozenset[str] | None = None,
+    ) -> Capability:
+        """Register an explicit cli-to-py command as a capability."""
+        from .adapters.cli_to_py import register_cli
+
+        return register_cli(
+            self.registry,
+            name,
+            command,
+            subcommand=subcommand,
+            description=description,
+            parameters=parameters,
+            tags=tags,
+        )
 
     async def search(
         self,

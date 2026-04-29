@@ -75,7 +75,8 @@ mkdocs serve
 ## Status
 
 Early implementation. Toolplane can register Python functions, discover them,
-inspect schemas, and execute agent-written Python through:
+register explicit `cli-to-py` wrappers, inspect schemas, and execute
+agent-written Python through:
 
 - `local_unsafe`: development-only in-process execution.
 - `pyodide-deno`: experimental Pyodide-in-Deno sandbox execution with package
@@ -111,4 +112,26 @@ return int(df["value"].sum())
     backend="pyodide-deno",
     packages=["pandas"],
 )
+```
+
+CLI tools can be exposed as capabilities during host setup:
+
+```python
+from cli_to_py import convert
+from toolplane import Toolplane
+
+runtime = Toolplane()
+python = await convert("python3", subcommands=False)
+
+runtime.register_cli(
+    "python_version",
+    python,
+    description="Return the Python interpreter version.",
+    tags={"python", "cli"},
+)
+
+result = await runtime.execute("""
+version = await call_tool("python_version", {"version": True})
+return version["stdout"] + version["stderr"]
+""")
 ```
