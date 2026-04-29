@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any
 
+from .adapters.ambient_cli import discover_cli_names, register_ambient_cli
 from .backends import CodeBackend, LocalUnsafeBackend, PyodideDenoBackend
 from .bridges.in_process import InProcessBridge
 from .capabilities import Capability, JsonSchema
@@ -21,8 +22,13 @@ class Toolplane:
         registry: CapabilityRegistry | None = None,
         backends: Sequence[CodeBackend] | None = None,
         default_backend: str = "local_unsafe",
+        ambient_cli: bool = True,
     ) -> None:
         self.registry = registry or CapabilityRegistry()
+        self.ambient_cli = ambient_cli
+        self._ambient_cli_names: tuple[str, ...] | None = None
+        if ambient_cli:
+            register_ambient_cli(self.registry)
         self.bridge = InProcessBridge(self.registry)
         configured = list(backends or (LocalUnsafeBackend(), PyodideDenoBackend()))
         self.backends = {backend.name: backend for backend in configured}
@@ -158,4 +164,13 @@ class Toolplane:
             inputs=inputs,
             packages=packages,
             namespace=self.registry.callable_namespace(),
+            ambient_cli=self.ambient_cli,
+            ambient_cli_names=self._get_ambient_cli_names(),
         )
+
+    def _get_ambient_cli_names(self) -> tuple[str, ...]:
+        if not self.ambient_cli:
+            return ()
+        if self._ambient_cli_names is None:
+            self._ambient_cli_names = discover_cli_names()
+        return self._ambient_cli_names

@@ -9,6 +9,7 @@ import traceback
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from ..adapters.ambient_cli import build_local_cli_namespace
 from ..bridges.base import HostBridge
 from ..errors import BackendCapabilityError
 from ..execution import BackendCapabilities, ExecutionError, ExecutionResult
@@ -41,6 +42,8 @@ class LocalUnsafeBackend:
         inputs: Mapping[str, Any] | None = None,
         packages: Sequence[str] = (),
         namespace: Mapping[str, str] | None = None,
+        ambient_cli: bool = False,
+        ambient_cli_names: Sequence[str] = (),
     ) -> ExecutionResult:
         if packages:
             raise BackendCapabilityError(
@@ -50,12 +53,24 @@ class LocalUnsafeBackend:
         started = time.perf_counter()
         stdout = io.StringIO()
         stderr = io.StringIO()
+        capability_namespace = dict(namespace or {})
+        input_namespace = dict(inputs or {})
         scope: dict[str, Any] = {
             "__name__": "__toolplane_local__",
             "call_tool": bridge.call_tool,
-            **dict(inputs or {}),
         }
-        scope.update(_callable_namespace(bridge, namespace or {}))
+        if ambient_cli:
+            scope.update(
+                build_local_cli_namespace(
+                    bridge,
+                    ambient_cli_names,
+                    reserved=set(scope)
+                    | set(capability_namespace)
+                    | set(input_namespace),
+                )
+            )
+        scope.update(_callable_namespace(bridge, capability_namespace))
+        scope.update(input_namespace)
 
         try:
             exec(wrap_async_main(code), scope, scope)

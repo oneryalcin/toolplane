@@ -179,6 +179,10 @@ def _flag_schema(flag: Any) -> JsonSchema:
 
 
 def _normalize_result(value: Any) -> dict[str, Any]:
+    return normalize_cli_result(value)
+
+
+def normalize_cli_result(value: Any) -> dict[str, Any]:
     if isinstance(value, Mapping):
         data = dict(value)
         if {"stdout", "stderr", "exit_code"} <= data.keys():

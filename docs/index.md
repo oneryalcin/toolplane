@@ -73,6 +73,33 @@ return int(df["value"].sum())
 )
 ```
 
+## Ambient CLI
+
+For local/development code mode, CLI binaries on `PATH` are exposed lazily. The
+runtime does not parse every CLI at startup; it resolves a binary through
+`cli-to-py` when code first calls it.
+
+```python
+result = await runtime.execute("""
+status = await git.status(short=True).text()
+files = await git.diff(name_only=True, _=["HEAD~1", "HEAD"]).lines()
+return {"status": status, "files": files}
+""")
+```
+
+The `cli` root works for non-identifier binary names and explicit access:
+
+```python
+result = await runtime.execute("""
+files = await cli.git.diff(name_only=True, _=["HEAD~1", "HEAD"]).lines()
+version = await cli("docker-compose").version().text()
+return {"files": files, "version": version}
+""")
+```
+
+Hosts can disable this surface with `Toolplane(ambient_cli=False)` when they
+need an explicit allowlist or a locked-down execution profile.
+
 ## CLI Adapter
 
 `cli-to-py` commands can be registered as normal Toolplane capabilities. The

@@ -49,6 +49,8 @@ around it.
 - Canonical qualified capability ids, such as `mcp:arch/list_entities`,
   `cli:gh/issue_list`, and `py:finance/calculate_nav`.
 - Friendly Python aliases only when unique and valid.
+- Ambient lazy CLI names such as `git.diff(...)` for frictionless local code
+  mode, with config controlling policy rather than basic availability.
 - Scoped namespaces such as `mcp.arch.list_entities(...)` and
   `cli.gh.issue_list(...)`.
 - Loud failures for alias collisions and reserved-name shadowing.
@@ -86,6 +88,7 @@ around it.
 - [x] [#2](https://github.com/oneryalcin/toolplane/issues/2): Add `cli-to-py` adapter.
 - [x] [#4](https://github.com/oneryalcin/toolplane/issues/4): Add MCP capability adapter.
 - [ ] [#7](https://github.com/oneryalcin/toolplane/issues/7): Add config-driven runtime setup.
+- [ ] [#10](https://github.com/oneryalcin/toolplane/issues/10): Make code-mode authoring frictionless with scoped capability namespaces.
 
 ## MCP Adapter Acceptance
 
