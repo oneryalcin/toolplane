@@ -38,7 +38,7 @@ def test_pyodide_deno_runs_pandas_and_host_callback() -> None:
             """
 import pandas as pd
 
-x = await call_tool("add", {"x": 2, "y": 3})
+x = await add(x=2, y=3)
 df = pd.DataFrame([{"value": x}])
 return int(df["value"].sum())
 """,

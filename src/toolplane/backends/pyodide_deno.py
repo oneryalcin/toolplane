@@ -50,6 +50,7 @@ class PyodideDenoBackend:
         bridge: HostBridge,
         inputs: Mapping[str, Any] | None = None,
         packages: Sequence[str] = (),
+        namespace: Mapping[str, str] | None = None,
     ) -> ExecutionResult:
         started = time.perf_counter()
         if shutil.which(self.deno_path) is None:
@@ -107,6 +108,7 @@ class PyodideDenoBackend:
                     "code": _build_pyodide_code(
                         code,
                         inputs=inputs or {},
+                        namespace=namespace or {},
                         callback_url=callback_bridge.url,
                         callback_token=callback_bridge.token,
                     ),
@@ -163,11 +165,13 @@ def _build_pyodide_code(
     code: str,
     *,
     inputs: Mapping[str, Any],
+    namespace: Mapping[str, str],
     callback_url: str,
     callback_token: str,
 ) -> str:
     wrapped = wrap_async_main(code)
     inputs_json = json.dumps(dict(inputs))
+    namespace_code = _render_callable_namespace(namespace)
     return f"""
 import json
 from js import Object, fetch
@@ -197,10 +201,27 @@ async def call_tool(name, params=None):
 
 globals().update(json.loads({inputs_json!r}))
 
+{namespace_code}
+
 {wrapped}
 
 await __toolplane_main__()
 """
+
+
+def _render_callable_namespace(namespace: Mapping[str, str]) -> str:
+    lines: list[str] = []
+    for callable_name, capability_name in namespace.items():
+        if not callable_name.isidentifier():
+            continue
+        lines.extend(
+            [
+                f"async def {callable_name}(**params):",
+                f"    return await call_tool({capability_name!r}, params)",
+                "",
+            ]
+        )
+    return "\n".join(lines)
 
 
 def _render_runner(*, host: str, port: int, auth_token: str) -> str:

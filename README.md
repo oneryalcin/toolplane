@@ -48,6 +48,12 @@ The difference is scope. FastMCP Code Mode is centered on MCP server tools.
 `toolplane` aims to generalize that pattern across MCP tools, CLI wrappers, and
 regular Python libraries.
 
+[OpenAI Agents SDK sandboxes](https://developers.openai.com/api/docs/guides/agents/sandboxes)
+are another useful reference: they separate the sandbox session/provider from
+the tools exposed to the model. Toolplane follows that boundary too. Backends
+execute code; adapters expose capabilities; bridges let sandboxed code call host
+capabilities when direct local calls are not appropriate.
+
 See [Code Mode Backends](docs/code-mode-backends.md) for the initial backend
 strategy and [Architecture](docs/architecture.md) for the code organization
 approach.
@@ -64,19 +70,31 @@ See [ROADMAP.md](ROADMAP.md) for the current sequencing.
 - Prefer structured return values and validation errors over raw text where
   practical.
 - Keep adapters small enough to be understandable and replaceable.
+- Treat JSON as a wire format, not the programming model. Agent-written code
+  should compose normal Python values and callables.
+- Make canonical capability ids qualified, and expose friendly Python aliases
+  only when they are unambiguous.
 
 ## Docs
 
 ```bash
-pip install -e ".[docs]"
-mkdocs serve
+make docs
+make docs-serve
+```
+
+## Development
+
+```bash
+make test
+make examples
+make ci
 ```
 
 ## Status
 
-Early implementation. Toolplane can register Python functions, discover them,
-register explicit `cli-to-py` wrappers, inspect schemas, and execute
-agent-written Python through:
+Early implementation. Toolplane can register Python functions, explicit
+`cli-to-py` wrappers, and FastMCP-backed MCP tools, then discover them, inspect
+schemas, and execute agent-written Python through:
 
 - `local_unsafe`: development-only in-process execution.
 - `pyodide-deno`: experimental Pyodide-in-Deno sandbox execution with package
@@ -135,3 +153,43 @@ version = await call_tool("python_version", {"version": True})
 return version["stdout"] + version["stderr"]
 """)
 ```
+
+MCP servers can be exposed the same way. An in-process FastMCP app:
+
+```python
+from fastmcp import FastMCP
+from toolplane import Toolplane
+
+runtime = Toolplane()
+mcp = FastMCP("Demo")
+
+@mcp.tool
+def add(a: int, b: int) -> int:
+    """Add two numbers."""
+    return a + b
+
+await runtime.register_mcp("demo", mcp)
+
+result = await runtime.execute("""
+value = await demo_add(a=2, b=3)
+return value
+""")
+```
+
+Or a standard `mcpServers` config, including stdio or remote HTTP servers:
+
+```python
+await runtime.register_mcp_config({
+    "mcpServers": {
+        "context7": {
+            "url": "https://mcp.context7.com/mcp",
+        }
+    }
+})
+```
+
+Registered MCP tools get canonical ids such as `mcp:context7/get_docs` and safe
+Python aliases such as `context7_get_docs`.
+
+See [examples](examples/README.md) for executable FastMCP in-process, stdio
+config, and live Context7 remote MCP smokes.

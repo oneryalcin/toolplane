@@ -20,4 +20,5 @@ class CodeBackend(Protocol):
         bridge: HostBridge,
         inputs: Mapping[str, Any] | None = None,
         packages: Sequence[str] = (),
+        namespace: Mapping[str, str] | None = None,
     ) -> ExecutionResult: ...

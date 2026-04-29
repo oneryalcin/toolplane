@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import NoneType, UnionType
 from typing import Annotated, Any, get_args, get_origin, get_type_hints
 
@@ -21,6 +21,7 @@ class Capability:
     returns: JsonSchema | None
     tags: frozenset[str]
     source: str = "python"
+    aliases: frozenset[str] = field(default_factory=frozenset)
 
     def to_schema(self) -> dict[str, Any]:
         schema: dict[str, Any] = {
@@ -33,11 +34,13 @@ class Capability:
             schema["outputSchema"] = self.returns
         if self.tags:
             schema["tags"] = sorted(self.tags)
+        if self.aliases:
+            schema["aliases"] = sorted(self.aliases)
         return schema
 
     @property
     def searchable_text(self) -> str:
-        parts = [self.name, self.description, self.source, *self.tags]
+        parts = [self.name, self.description, self.source, *self.tags, *self.aliases]
         properties = self.parameters.get("properties", {})
         if isinstance(properties, Mapping):
             for name, schema in properties.items():
@@ -54,6 +57,7 @@ def capability_from_function(
     description: str | None = None,
     tags: set[str] | frozenset[str] | None = None,
     source: str = "python",
+    aliases: set[str] | frozenset[str] | None = None,
 ) -> Capability:
     """Build a capability from a Python callable."""
     capability_name = name or fn.__name__
@@ -73,6 +77,7 @@ def capability_from_function(
         else _type_to_schema(return_annotation),
         tags=frozenset(tags or ()),
         source=source,
+        aliases=frozenset(aliases or ()),
     )
 
 

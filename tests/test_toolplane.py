@@ -65,6 +65,26 @@ return {"value": value}
     assert result.duration_ms >= 0
 
 
+def test_execute_injects_safe_python_callables() -> None:
+    runtime = Toolplane()
+
+    @runtime.tool
+    def add(x: int, y: int) -> int:
+        return x + y
+
+    result = run(
+        runtime.execute(
+            """
+value = await add(x=2, y=3)
+return value
+"""
+        )
+    )
+
+    assert result.ok
+    assert result.value == 5
+
+
 def test_execute_returns_structured_error() -> None:
     runtime = Toolplane()
 
