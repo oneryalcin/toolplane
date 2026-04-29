@@ -1,0 +1,11 @@
+site_name: toolplane
+site_description: A controlled Python code-mode runtime for programmable tool surfaces.
+repo_url: https://github.com/oneryalcin/toolplane
+
+theme:
+  name: mkdocs
+
+nav:
+  - Home: index.md
+  - Architecture: architecture.md
+  - Code Mode Backends: code-mode-backends.md
