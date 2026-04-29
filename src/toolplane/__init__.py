@@ -1,5 +1,13 @@
 """Programmable tool surfaces for Python code-mode agents."""
 
+from .backends import PyodideDenoBackend
+from .bridges import (
+    HttpCallbackBridge,
+    InProcessBridge,
+    ToolCallError,
+    ToolCallRequest,
+    ToolCallResponse,
+)
 from .capabilities import Capability
 from .errors import (
     BackendCapabilityError,
@@ -11,7 +19,6 @@ from .errors import (
 from .execution import BackendCapabilities, ExecutionError, ExecutionResult
 from .registry import CapabilityRegistry
 from .runtime import Toolplane
-from .backends import PyodideDenoBackend
 
 __version__ = "0.1.0"
 
@@ -26,7 +33,12 @@ __all__ = [
     "DuplicateCapabilityError",
     "ExecutionError",
     "ExecutionResult",
+    "HttpCallbackBridge",
+    "InProcessBridge",
     "PyodideDenoBackend",
+    "ToolCallError",
+    "ToolCallRequest",
+    "ToolCallResponse",
     "Toolplane",
     "ToolplaneError",
 ]

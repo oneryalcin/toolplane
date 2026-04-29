@@ -8,19 +8,18 @@ import os
 import secrets
 import shutil
 import socket
-import subprocess
 import tempfile
 import time
 import traceback
 import urllib.error
 import urllib.request
-from collections.abc import Callable, Mapping, Sequence
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from string import Template
-from threading import Thread
 from typing import Any
 
+from ..bridges.base import HostBridge
+from ..bridges.rpc import HttpCallbackBridge
 from ..execution import BackendCapabilities, ExecutionError, ExecutionResult
 from ._python import wrap_async_main
 
@@ -48,7 +47,7 @@ class PyodideDenoBackend:
         self,
         code: str,
         *,
-        namespace: Mapping[str, Callable[..., Any]],
+        bridge: HostBridge,
         inputs: Mapping[str, Any] | None = None,
         packages: Sequence[str] = (),
     ) -> ExecutionResult:
@@ -65,13 +64,12 @@ class PyodideDenoBackend:
             )
 
         loop = asyncio.get_running_loop()
-        callback_token = secrets.token_urlsafe(24)
-        callback_server = _CallbackServer(
-            namespace=namespace,
-            token=callback_token,
+        callback_bridge = HttpCallbackBridge(
+            bridge=bridge,
             loop=loop,
+            call_timeout_seconds=self.timeout_seconds,
         )
-        callback_server.start()
+        callback_bridge.start()
 
         with tempfile.TemporaryDirectory(prefix="toolplane-pyodide-deno-") as temp_dir:
             process: asyncio.subprocess.Process | None = None
@@ -96,7 +94,7 @@ class PyodideDenoBackend:
                     runner_path=runner_path,
                     deno_cache_dir=deno_cache_dir,
                     server_port=server_port,
-                    callback_port=callback_server.port,
+                    callback_port=callback_bridge.port,
                 )
                 server_url = f"http://127.0.0.1:{server_port}"
                 await _wait_for_server(
@@ -109,8 +107,8 @@ class PyodideDenoBackend:
                     "code": _build_pyodide_code(
                         code,
                         inputs=inputs or {},
-                        callback_url=f"http://127.0.0.1:{callback_server.port}",
-                        callback_token=callback_token,
+                        callback_url=callback_bridge.url,
+                        callback_token=callback_bridge.token,
                     ),
                     "packages": list(packages),
                 }
@@ -133,7 +131,7 @@ class PyodideDenoBackend:
                     ),
                 )
             finally:
-                callback_server.close()
+                callback_bridge.close()
                 if process is not None:
                     await _terminate_process(process)
 
@@ -159,76 +157,6 @@ class PyodideDenoBackend:
             stderr=asyncio.subprocess.PIPE,
             env={**os.environ, "DENO_DIR": str(deno_cache_dir)},
         )
-
-
-class _CallbackServer:
-    def __init__(
-        self,
-        *,
-        namespace: Mapping[str, Callable[..., Any]],
-        token: str,
-        loop: asyncio.AbstractEventLoop,
-    ) -> None:
-        self.namespace = namespace
-        self.token = token
-        self.loop = loop
-        handler = self._make_handler()
-        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
-        self.port = int(self.httpd.server_address[1])
-        self.thread = Thread(target=self.httpd.serve_forever, daemon=True)
-
-    def start(self) -> None:
-        self.thread.start()
-
-    def close(self) -> None:
-        self.httpd.shutdown()
-        self.httpd.server_close()
-        self.thread.join(timeout=2)
-
-    def _make_handler(self) -> type[BaseHTTPRequestHandler]:
-        server = self
-
-        class Handler(BaseHTTPRequestHandler):
-            def log_message(self, format: str, *args: Any) -> None:
-                return
-
-            def do_POST(self) -> None:
-                if self.headers.get("Authorization") != f"Bearer {server.token}":
-                    self._write_json({"ok": False, "error": {"type": "Unauthorized"}})
-                    return
-                try:
-                    length = int(self.headers.get("Content-Length", "0"))
-                    body = self.rfile.read(length).decode("utf-8")
-                    request = json.loads(body)
-                    name = request["name"]
-                    params = request.get("params") or {}
-                    call_tool = server.namespace["call_tool"]
-                    future = asyncio.run_coroutine_threadsafe(
-                        call_tool(name, params), server.loop
-                    )
-                    value = future.result(timeout=60)
-                    self._write_json({"ok": True, "value": value})
-                except Exception as exc:
-                    self._write_json(
-                        {
-                            "ok": False,
-                            "error": {
-                                "type": type(exc).__name__,
-                                "message": str(exc),
-                                "traceback": traceback.format_exc(),
-                            },
-                        }
-                    )
-
-            def _write_json(self, payload: dict[str, Any]) -> None:
-                raw = json.dumps(payload).encode("utf-8")
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(raw)))
-                self.end_headers()
-                self.wfile.write(raw)
-
-        return Handler
 
 
 def _build_pyodide_code(

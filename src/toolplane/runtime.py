@@ -6,6 +6,7 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from .backends import CodeBackend, LocalUnsafeBackend, PyodideDenoBackend
+from .bridges.in_process import InProcessBridge
 from .discovery import DetailLevel, render_capabilities
 from .errors import BackendNotFoundError
 from .execution import ExecutionResult
@@ -21,6 +22,7 @@ class Toolplane:
         default_backend: str = "local_unsafe",
     ) -> None:
         self.registry = registry or CapabilityRegistry()
+        self.bridge = InProcessBridge(self.registry)
         configured = list(backends or (LocalUnsafeBackend(), PyodideDenoBackend()))
         self.backends = {backend.name: backend for backend in configured}
         self.default_backend = default_backend
@@ -80,7 +82,7 @@ class Toolplane:
         return render_capabilities(capabilities, detail=detail, missing=missing)
 
     async def call_tool(self, name: str, params: dict[str, Any] | None = None) -> Any:
-        return await self.registry.call(name, params)
+        return await self.bridge.call_tool(name, params)
 
     async def execute(
         self,
@@ -96,7 +98,7 @@ class Toolplane:
             raise BackendNotFoundError(f"Unknown backend: {backend_name}")
         return await runner.run(
             code,
-            namespace={"call_tool": self.call_tool},
+            bridge=self.bridge,
             inputs=inputs,
             packages=packages,
         )

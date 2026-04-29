@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 FilesystemMode = Literal["none", "read", "read_write", "mounted", "full"]
@@ -12,34 +13,37 @@ PersistenceMode = Literal["none", "session", "artifact"]
 StartupLatency = Literal["low", "medium", "high"]
 
 
-@dataclass(frozen=True)
-class BackendCapabilities:
+class BackendCapabilities(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     imports: bool
     third_party_packages: bool
     package_install: bool
     filesystem: FilesystemMode
     network: NetworkMode
-    resource_limits: frozenset[str] = field(default_factory=frozenset)
+    resource_limits: frozenset[str] = Field(default_factory=frozenset)
     persistence: PersistenceMode = "none"
     startup_latency: StartupLatency = "low"
 
 
-@dataclass(frozen=True)
-class ExecutionError:
+class ExecutionError(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     type: str
-    message: str
-    traceback: str
+    message: str = ""
+    traceback: str = ""
 
 
-@dataclass(frozen=True)
-class ExecutionResult:
+class ExecutionResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     value: Any = None
     stdout: str = ""
     stderr: str = ""
     duration_ms: float = 0.0
     backend: str = ""
     error: ExecutionError | None = None
-    artifacts: tuple[Any, ...] = ()
+    artifacts: tuple[Any, ...] = Field(default_factory=tuple)
 
     @property
     def ok(self) -> bool:

@@ -103,7 +103,7 @@ class CodeBackend(Protocol):
         self,
         code: str,
         *,
-        namespace: Mapping[str, Callable[..., Any]],
+        bridge: HostBridge,
         inputs: Mapping[str, Any] | None = None,
         limits: ResourceLimits | None = None,
         packages: Sequence[str] = (),
@@ -124,6 +124,11 @@ class CodeBackend(Protocol):
 Backends can reject unsupported options early. For example, the Monty backend
 should reject `packages=["pandas"]` with a clear capability error instead of
 letting the script fail later.
+
+The backend receives a bridge, not a registry and not adapter-specific tool
+objects. That keeps the execution boundary source-agnostic: Pyodide, Docker, or
+Modal code can call host capabilities without knowing whether they came from an
+MCP server, a CLI wrapper, or a normal Python function.
 
 ## Capability Model
 
@@ -176,16 +181,26 @@ credentials and local resources in the host while allowing package-capable
 sandboxes to orchestrate tools. Code shipping is an optimization for tools that
 are safe and useful to move into the sandbox.
 
+The first bridge implementation keeps the payload deliberately small and
+JSON-first:
+
+- `ToolCallRequest`: capability name plus params.
+- `ToolCallResponse`: either a value or a structured `ToolCallError`.
+- `InProcessBridge`: direct registry dispatch for local execution.
+- `HttpCallbackBridge`: localhost bearer-token RPC for Pyodide+Deno and later
+  sandboxed backends.
+
 ## Initial Milestone
 
 Build the smallest useful runtime:
 
 1. A capability registry with names, descriptions, schemas, tags, and callables.
 2. Discovery tools: `search`, `get_schema`, and optionally `list_tools`.
-3. A backend protocol with `local_unsafe` and `monty` implementations.
+3. A backend protocol with a development-only `local_unsafe` implementation.
 4. Clear backend capability errors.
 5. A Pyodide+Deno backend as the first real sandbox for package-capable Python,
    including pandas-style workflows.
-6. A Docker backend next for real CPython, local CLI binaries, and arbitrary
+6. A host callback bridge so sandboxed code can call host capabilities.
+7. A Docker backend next for real CPython, local CLI binaries, and arbitrary
    system dependencies.
-7. Modal, E2B, or Blaxel as remote backends once the local contract is stable.
+8. Modal, E2B, or Blaxel as remote backends once the local contract is stable.

@@ -26,7 +26,7 @@ schemas, and execute agent-written Python through:
 
 - `local_unsafe`: development-only in-process execution.
 - `pyodide-deno`: experimental Pyodide-in-Deno sandbox execution with package
-  loading and host `call_tool` callbacks.
+  loading and host bridge `call_tool` callbacks.
 
 ```python
 from toolplane import Toolplane

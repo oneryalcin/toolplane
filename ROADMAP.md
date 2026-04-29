@@ -68,8 +68,7 @@ around it.
 
 ## Near-Term Issues
 
-- [#1](https://github.com/oneryalcin/toolplane/issues/1): Spike Pyodide+Deno execution backend.
-  Initial implementation exists; keep open until reviewed and merged.
-- Add host callback RPC bridge for sandboxed backends.
-- Add `cli-to-py` adapter.
-- Add MCP client adapter.
+- [x] [#1](https://github.com/oneryalcin/toolplane/issues/1): Spike Pyodide+Deno execution backend.
+- [ ] [#3](https://github.com/oneryalcin/toolplane/issues/3): Add host callback RPC bridge for sandboxed backends.
+- [ ] [#2](https://github.com/oneryalcin/toolplane/issues/2): Add `cli-to-py` adapter.
+- [ ] [#4](https://github.com/oneryalcin/toolplane/issues/4): Add MCP client adapter.
