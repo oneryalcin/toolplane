@@ -74,9 +74,12 @@ mkdocs serve
 
 ## Status
 
-Early implementation. The first slice can register Python functions, discover
-them, inspect schemas, and execute agent-written Python against them through the
-development-only `local_unsafe` backend.
+Early implementation. Toolplane can register Python functions, discover them,
+inspect schemas, and execute agent-written Python through:
+
+- `local_unsafe`: development-only in-process execution.
+- `pyodide-deno`: experimental Pyodide-in-Deno sandbox execution with package
+  loading and host `call_tool` callbacks.
 
 ```python
 from toolplane import Toolplane
@@ -94,4 +97,18 @@ return value
 """)
 ```
 
-Next backend target: Pyodide+Deno.
+The current Pyodide+Deno smoke target works with pandas:
+
+```python
+result = await runtime.execute(
+    """
+import pandas as pd
+
+x = await call_tool("add", {"x": 2, "y": 3})
+df = pd.DataFrame([{"value": x}])
+return int(df["value"].sum())
+""",
+    backend="pyodide-deno",
+    packages=["pandas"],
+)
+```
