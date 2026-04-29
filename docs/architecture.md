@@ -77,6 +77,28 @@ The execution namespace should be Python-first and source-agnostic:
 page = await arch_list_entities(entity_type="holding", limit=50, offset=0)
 ```
 
+For CLI-heavy local workflows, the namespace should also support ambient lazy
+CLI access:
+
+```python
+files = await git.diff(name_only=True, _=["HEAD~1", "HEAD"]).lines()
+status = await cli.git.status(short=True).text()
+```
+
+The runtime may expose safe top-level CLI names when they do not collide with
+existing bindings, but the `cli` root remains the explicit fallback for
+non-identifier binary names:
+
+```python
+version = await cli("docker-compose").version().text()
+```
+
+This should be lazy. Discovering a top-level CLI name can be cheap, but parsing
+help output and constructing a `cli-to-py` API should happen only when code
+actually calls that binary. Config should control policy, such as ambient,
+allowlist, or disabled mode, rather than force boilerplate for normal local
+use.
+
 That friendly callable is an alias for a canonical capability id such as
 `mcp:arch/list_entities`. The lower-level primitive remains available:
 

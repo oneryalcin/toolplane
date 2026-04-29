@@ -132,6 +132,27 @@ return int(df["value"].sum())
 )
 ```
 
+CLI tools are also available through ambient lazy proxies in the execution
+namespace. Toolplane does not parse every binary at startup; it resolves a CLI
+through `cli-to-py` only when code first calls it:
+
+```python
+result = await runtime.execute("""
+status = await git.status(short=True).text()
+files = await git.diff(name_only=True, _=["HEAD~1", "HEAD"]).lines()
+return {"status": status, "files": files}
+""")
+```
+
+For binaries that are not valid Python identifiers, use the `cli` root:
+
+```python
+result = await runtime.execute("""
+version = await cli("docker-compose").version().text()
+return version
+""")
+```
+
 CLI tools can be exposed as capabilities during host setup:
 
 ```python

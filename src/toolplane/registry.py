@@ -18,7 +18,10 @@ def _ensure_awaitable(fn: Callable[..., Any]) -> Callable[..., Any]:
         return fn
 
     async def wrapper(*args: Any, **kwargs: Any) -> Any:
-        return fn(*args, **kwargs)
+        value = fn(*args, **kwargs)
+        if inspect.isawaitable(value):
+            return await value
+        return value
 
     return wrapper
 
@@ -71,7 +74,11 @@ class CapabilityRegistry:
                 self._aliases[alias] = capability.name
 
     def all(self) -> list[Capability]:
-        return list(self._capabilities.values())
+        return [
+            capability
+            for capability in self._capabilities.values()
+            if not capability.hidden
+        ]
 
     def get(self, name: str) -> Capability:
         canonical_name = self._aliases.get(name, name)
@@ -91,7 +98,8 @@ class CapabilityRegistry:
         candidates = [
             capability
             for capability in self._capabilities.values()
-            if not tag_filter or capability.tags & tag_filter
+            if not capability.hidden
+            and (not tag_filter or capability.tags & tag_filter)
         ]
         tokens = _tokenize(query)
         if not tokens:
@@ -122,6 +130,8 @@ class CapabilityRegistry:
         """Return safe Python callable names mapped to canonical capability names."""
         namespace: dict[str, str] = {}
         for capability in self._capabilities.values():
+            if capability.hidden:
+                continue
             if _is_safe_python_name(capability.name):
                 namespace[capability.name] = capability.name
             for alias in capability.aliases:

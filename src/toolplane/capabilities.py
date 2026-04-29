@@ -22,6 +22,7 @@ class Capability:
     tags: frozenset[str]
     source: str = "python"
     aliases: frozenset[str] = field(default_factory=frozenset)
+    hidden: bool = False
 
     def to_schema(self) -> dict[str, Any]:
         schema: dict[str, Any] = {
@@ -36,6 +37,8 @@ class Capability:
             schema["tags"] = sorted(self.tags)
         if self.aliases:
             schema["aliases"] = sorted(self.aliases)
+        if self.hidden:
+            schema["hidden"] = True
         return schema
 
     @property
@@ -58,6 +61,7 @@ def capability_from_function(
     tags: set[str] | frozenset[str] | None = None,
     source: str = "python",
     aliases: set[str] | frozenset[str] | None = None,
+    hidden: bool = False,
 ) -> Capability:
     """Build a capability from a Python callable."""
     capability_name = name or fn.__name__
@@ -78,6 +82,7 @@ def capability_from_function(
         tags=frozenset(tags or ()),
         source=source,
         aliases=frozenset(aliases or ()),
+        hidden=hidden,
     )
 
 

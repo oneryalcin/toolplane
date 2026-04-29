@@ -12,6 +12,7 @@ make examples
 Run one example directly:
 
 ```bash
+uv run --no-project --with-editable . python examples/ambient_cli_git.py
 uv run --no-project --with-editable . python examples/fastmcp_in_process.py
 uv run --no-project --with-editable . python examples/mcp_stdio_config.py
 ```
@@ -21,4 +22,11 @@ not part of `make examples`:
 
 ```bash
 uv run --no-project --with-editable . python examples/context7_remote.py
+```
+
+The full mixed example also requires Deno/Pyodide package loading and live
+Context7 access:
+
+```bash
+uv run --no-project --with-editable . python examples/mixed_capability_report.py
 ```

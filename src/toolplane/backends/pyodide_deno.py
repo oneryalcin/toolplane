@@ -18,6 +18,7 @@ from pathlib import Path
 from string import Template
 from typing import Any
 
+from ..adapters.ambient_cli import render_pyodide_cli_namespace
 from ..bridges.base import HostBridge
 from ..bridges.rpc import HttpCallbackBridge
 from ..execution import BackendCapabilities, ExecutionError, ExecutionResult
@@ -51,6 +52,8 @@ class PyodideDenoBackend:
         inputs: Mapping[str, Any] | None = None,
         packages: Sequence[str] = (),
         namespace: Mapping[str, str] | None = None,
+        ambient_cli: bool = False,
+        ambient_cli_names: Sequence[str] = (),
     ) -> ExecutionResult:
         started = time.perf_counter()
         if shutil.which(self.deno_path) is None:
@@ -109,6 +112,8 @@ class PyodideDenoBackend:
                         code,
                         inputs=inputs or {},
                         namespace=namespace or {},
+                        ambient_cli=ambient_cli,
+                        ambient_cli_names=ambient_cli_names,
                         callback_url=callback_bridge.url,
                         callback_token=callback_bridge.token,
                     ),
@@ -166,11 +171,19 @@ def _build_pyodide_code(
     *,
     inputs: Mapping[str, Any],
     namespace: Mapping[str, str],
+    ambient_cli: bool,
+    ambient_cli_names: Sequence[str],
     callback_url: str,
     callback_token: str,
 ) -> str:
     wrapped = wrap_async_main(code)
     inputs_json = json.dumps(dict(inputs))
+    reserved_names = set(inputs) | set(namespace)
+    cli_namespace_code = (
+        render_pyodide_cli_namespace(ambient_cli_names, reserved=reserved_names)
+        if ambient_cli
+        else ""
+    )
     namespace_code = _render_callable_namespace(namespace)
     return f"""
 import json
@@ -200,6 +213,8 @@ async def call_tool(name, params=None):
     raise RuntimeError(f"{{error.get('type', 'ToolError')}}: {{error.get('message', '')}}")
 
 globals().update(json.loads({inputs_json!r}))
+
+{cli_namespace_code}
 
 {namespace_code}
 

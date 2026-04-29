@@ -19,6 +19,7 @@ test:
 	$(UV) run --no-project --with-editable . --with pytest python -m $(PYTEST)
 
 examples:
+	$(UV) run --no-project --with-editable . python examples/ambient_cli_git.py
 	$(UV) run --no-project --with-editable . python examples/fastmcp_in_process.py
 	$(UV) run --no-project --with-editable . python examples/mcp_stdio_config.py
 

@@ -39,8 +39,9 @@ def test_pyodide_deno_runs_pandas_and_host_callback() -> None:
 import pandas as pd
 
 x = await add(x=2, y=3)
+status = await git.status(short=True).text()
 df = pd.DataFrame([{"value": x}])
-return int(df["value"].sum())
+return {"value": int(df["value"].sum()), "status_is_text": isinstance(status, str)}
 """,
             backend="pyodide-deno",
             packages=["pandas"],
@@ -48,5 +49,5 @@ return int(df["value"].sum())
     )
 
     assert result.ok, result.error
-    assert result.value == 5
+    assert result.value == {"value": 5, "status_is_text": True}
     assert result.backend == "pyodide-deno"
