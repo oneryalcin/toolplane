@@ -17,10 +17,16 @@ from toolplane import Toolplane
 async def main() -> None:
     runtime = Toolplane()
 
+    # Host tools run outside the sandbox and are exposed to code mode as async
+    # Python callables. This one deliberately reads the host repo filesystem,
+    # which Pyodide itself should not access directly.
     @runtime.tool(tags={"repo", "filesystem"})
     def read_text(path: str) -> str:
         return Path(path).read_text(encoding="utf-8", errors="ignore")
 
+    # Pure helpers can live either as host tools or inside the executed code.
+    # Registering it here makes the distinction visible: code mode calls it the
+    # same way it calls MCP tools and CLI functions.
     @runtime.tool(tags={"repo"})
     def classify_path(path: str) -> str:
         if path.startswith("tests/"):
@@ -48,15 +54,19 @@ async def main() -> None:
 import ast
 import pandas as pd
 
+# `git` is an ambient lazy CLI namespace. The code author did not register a
+# `git_diff` wrapper; Toolplane resolves the binary and subcommand on demand.
 files = await git.diff(name_only=True, _=["HEAD~1", "HEAD"]).lines()
 
 rows = []
 python_files = 0
 for path in files:
+    # Host Python tools feel like normal async Python functions in code mode.
     area = await classify_path(path=path)
     if not path.endswith(".py"):
         continue
     python_files += 1
+    # This crosses back to the host because the sandbox should not own repo IO.
     source = await read_text(path=path)
     try:
         tree = ast.parse(source)
@@ -79,6 +89,8 @@ for path in files:
 
 df = pd.DataFrame(rows)
 if len(df):
+    # Third-party libraries run inside the selected backend. Here pandas is
+    # installed into Pyodide, while git/read_text/context7 cross host boundaries.
     summary = (
         df.groupby(["area", "import"])
         .size()
@@ -89,6 +101,8 @@ if len(df):
 else:
     summary_records = []
 
+# MCP tools also appear as Python callables. Internally they serialize across
+# the MCP boundary, but the code author gets plain Python str/list/dict values.
 libraries = await context7_resolve_library_id(
     libraryName="pandas",
     query="pandas DataFrame groupby reset_index to_dict records",
