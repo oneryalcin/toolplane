@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any, Protocol
 
+from ..bridges.base import HostBridge
 from ..execution import BackendCapabilities, ExecutionResult
 
 
@@ -16,7 +17,7 @@ class CodeBackend(Protocol):
         self,
         code: str,
         *,
-        namespace: Mapping[str, Callable[..., Any]],
+        bridge: HostBridge,
         inputs: Mapping[str, Any] | None = None,
         packages: Sequence[str] = (),
     ) -> ExecutionResult: ...

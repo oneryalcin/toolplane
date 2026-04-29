@@ -6,9 +6,10 @@ import contextlib
 import io
 import time
 import traceback
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
+from ..bridges.base import HostBridge
 from ..errors import BackendCapabilityError
 from ..execution import BackendCapabilities, ExecutionError, ExecutionResult
 from ._python import wrap_async_main
@@ -36,7 +37,7 @@ class LocalUnsafeBackend:
         self,
         code: str,
         *,
-        namespace: Mapping[str, Callable[..., Any]],
+        bridge: HostBridge,
         inputs: Mapping[str, Any] | None = None,
         packages: Sequence[str] = (),
     ) -> ExecutionResult:
@@ -50,7 +51,7 @@ class LocalUnsafeBackend:
         stderr = io.StringIO()
         scope: dict[str, Any] = {
             "__name__": "__toolplane_local__",
-            **dict(namespace),
+            "call_tool": bridge.call_tool,
             **dict(inputs or {}),
         }
 
@@ -77,6 +78,7 @@ class LocalUnsafeBackend:
                     traceback=traceback.format_exc(),
                 ),
             )
+
 
 def _elapsed_ms(started: float) -> float:
     return (time.perf_counter() - started) * 1000
