@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import contextlib
 import io
-import textwrap
 import time
 import traceback
 from collections.abc import Callable, Mapping, Sequence
@@ -12,6 +11,7 @@ from typing import Any
 
 from ..errors import BackendCapabilityError
 from ..execution import BackendCapabilities, ExecutionError, ExecutionResult
+from ._python import wrap_async_main
 
 
 class LocalUnsafeBackend:
@@ -55,7 +55,7 @@ class LocalUnsafeBackend:
         }
 
         try:
-            exec(_wrap_async_function(code), scope, scope)
+            exec(wrap_async_main(code), scope, scope)
             with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
                 value = await scope["__toolplane_main__"]()
             return ExecutionResult(
@@ -77,14 +77,6 @@ class LocalUnsafeBackend:
                     traceback=traceback.format_exc(),
                 ),
             )
-
-
-def _wrap_async_function(code: str) -> str:
-    body = code.rstrip()
-    if not body.strip():
-        body = "return None"
-    return "async def __toolplane_main__():\n" + textwrap.indent(body, "    ")
-
 
 def _elapsed_ms(started: float) -> float:
     return (time.perf_counter() - started) * 1000

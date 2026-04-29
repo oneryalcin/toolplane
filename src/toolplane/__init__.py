@@ -11,6 +11,7 @@ from .errors import (
 from .execution import BackendCapabilities, ExecutionError, ExecutionResult
 from .registry import CapabilityRegistry
 from .runtime import Toolplane
+from .backends import PyodideDenoBackend
 
 __version__ = "0.1.0"
 
@@ -25,6 +26,7 @@ __all__ = [
     "DuplicateCapabilityError",
     "ExecutionError",
     "ExecutionResult",
+    "PyodideDenoBackend",
     "Toolplane",
     "ToolplaneError",
 ]

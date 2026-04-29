@@ -22,8 +22,11 @@ credentials are handled, and which backend executes the code.
 ## Current Slice
 
 The first implementation can register Python functions, discover them, inspect
-schemas, and execute agent-written Python against them through the
-development-only `local_unsafe` backend.
+schemas, and execute agent-written Python through:
+
+- `local_unsafe`: development-only in-process execution.
+- `pyodide-deno`: experimental Pyodide-in-Deno sandbox execution with package
+  loading and host `call_tool` callbacks.
 
 ```python
 from toolplane import Toolplane
@@ -39,6 +42,22 @@ result = await runtime.execute("""
 value = await call_tool("add", {"x": 2, "y": 3})
 return value
 """)
+```
+
+The Pyodide+Deno backend can run package-backed code and call host capabilities:
+
+```python
+result = await runtime.execute(
+    """
+import pandas as pd
+
+x = await call_tool("add", {"x": 2, "y": 3})
+df = pd.DataFrame([{"value": x}])
+return int(df["value"].sum())
+""",
+    backend="pyodide-deno",
+    packages=["pandas"],
+)
 ```
 
 ## Design Notes

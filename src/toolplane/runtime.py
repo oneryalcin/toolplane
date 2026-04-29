@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any
 
-from .backends import CodeBackend, LocalUnsafeBackend
+from .backends import CodeBackend, LocalUnsafeBackend, PyodideDenoBackend
 from .discovery import DetailLevel, render_capabilities
 from .errors import BackendNotFoundError
 from .execution import ExecutionResult
@@ -21,7 +21,7 @@ class Toolplane:
         default_backend: str = "local_unsafe",
     ) -> None:
         self.registry = registry or CapabilityRegistry()
-        configured = list(backends or (LocalUnsafeBackend(),))
+        configured = list(backends or (LocalUnsafeBackend(), PyodideDenoBackend()))
         self.backends = {backend.name: backend for backend in configured}
         self.default_backend = default_backend
 
