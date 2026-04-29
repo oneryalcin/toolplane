@@ -52,6 +52,8 @@ See [Code Mode Backends](docs/code-mode-backends.md) for the initial backend
 strategy and [Architecture](docs/architecture.md) for the code organization
 approach.
 
+See [ROADMAP.md](ROADMAP.md) for the current sequencing.
+
 ## Design Goals
 
 - Make code-mode agents useful for multi-step tool orchestration.
