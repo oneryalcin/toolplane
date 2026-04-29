@@ -99,6 +99,54 @@ return version["stdout"] + version["stderr"]
 """)
 ```
 
+## MCP Adapter
+
+FastMCP-compatible servers can be registered as capabilities too. Toolplane
+uses FastMCP's client machinery for discovery, transport, and tool calls.
+
+```python
+from fastmcp import FastMCP
+from toolplane import Toolplane
+
+runtime = Toolplane()
+mcp = FastMCP("Demo")
+
+@mcp.tool
+def add(a: int, b: int) -> int:
+    """Add two numbers."""
+    return a + b
+
+await runtime.register_mcp("demo", mcp)
+
+result = await runtime.execute("""
+value = await demo_add(a=2, b=3)
+return value
+""")
+```
+
+Standard `mcpServers` config works for stdio and remote servers:
+
+```python
+await runtime.register_mcp_config({
+    "mcpServers": {
+        "context7": {
+            "url": "https://mcp.context7.com/mcp",
+        }
+    }
+})
+```
+
+Each MCP tool gets a canonical id such as `mcp:context7/get_docs` and a safe
+Python alias such as `context7_get_docs`.
+
+The repo includes executable examples for in-process FastMCP apps, stdio
+`mcpServers` config, and an opt-in live Context7 remote MCP smoke:
+
+```bash
+make examples
+uv run --no-project --with-editable . python examples/context7_remote.py
+```
+
 ## Design Notes
 
 - [Architecture](architecture.md)

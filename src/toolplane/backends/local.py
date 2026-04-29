@@ -40,6 +40,7 @@ class LocalUnsafeBackend:
         bridge: HostBridge,
         inputs: Mapping[str, Any] | None = None,
         packages: Sequence[str] = (),
+        namespace: Mapping[str, str] | None = None,
     ) -> ExecutionResult:
         if packages:
             raise BackendCapabilityError(
@@ -54,6 +55,7 @@ class LocalUnsafeBackend:
             "call_tool": bridge.call_tool,
             **dict(inputs or {}),
         }
+        scope.update(_callable_namespace(bridge, namespace or {}))
 
         try:
             exec(wrap_async_main(code), scope, scope)
@@ -82,3 +84,26 @@ class LocalUnsafeBackend:
 
 def _elapsed_ms(started: float) -> float:
     return (time.perf_counter() - started) * 1000
+
+
+def _callable_namespace(
+    bridge: HostBridge,
+    namespace: Mapping[str, str],
+) -> dict[str, Any]:
+    callables: dict[str, Any] = {}
+    for callable_name, capability_name in namespace.items():
+        call_bound_tool = _make_bound_tool(bridge, capability_name)
+
+        call_bound_tool.__name__ = callable_name
+        callables[callable_name] = call_bound_tool
+    return callables
+
+
+def _make_bound_tool(
+    bridge: HostBridge,
+    capability_name: str,
+) -> Any:
+    async def call_bound_tool(**params: Any) -> Any:
+        return await bridge.call_tool(capability_name, params)
+
+    return call_bound_tool

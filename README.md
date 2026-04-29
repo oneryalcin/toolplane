@@ -86,14 +86,15 @@ make docs-serve
 
 ```bash
 make test
+make examples
 make ci
 ```
 
 ## Status
 
-Early implementation. Toolplane can register Python functions, discover them,
-register explicit `cli-to-py` wrappers, inspect schemas, and execute
-agent-written Python through:
+Early implementation. Toolplane can register Python functions, explicit
+`cli-to-py` wrappers, and FastMCP-backed MCP tools, then discover them, inspect
+schemas, and execute agent-written Python through:
 
 - `local_unsafe`: development-only in-process execution.
 - `pyodide-deno`: experimental Pyodide-in-Deno sandbox execution with package
@@ -152,3 +153,43 @@ version = await call_tool("python_version", {"version": True})
 return version["stdout"] + version["stderr"]
 """)
 ```
+
+MCP servers can be exposed the same way. An in-process FastMCP app:
+
+```python
+from fastmcp import FastMCP
+from toolplane import Toolplane
+
+runtime = Toolplane()
+mcp = FastMCP("Demo")
+
+@mcp.tool
+def add(a: int, b: int) -> int:
+    """Add two numbers."""
+    return a + b
+
+await runtime.register_mcp("demo", mcp)
+
+result = await runtime.execute("""
+value = await demo_add(a=2, b=3)
+return value
+""")
+```
+
+Or a standard `mcpServers` config, including stdio or remote HTTP servers:
+
+```python
+await runtime.register_mcp_config({
+    "mcpServers": {
+        "context7": {
+            "url": "https://mcp.context7.com/mcp",
+        }
+    }
+})
+```
+
+Registered MCP tools get canonical ids such as `mcp:context7/get_docs` and safe
+Python aliases such as `context7_get_docs`.
+
+See [examples](examples/README.md) for executable FastMCP in-process, stdio
+config, and live Context7 remote MCP smokes.

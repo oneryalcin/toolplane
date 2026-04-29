@@ -82,6 +82,38 @@ class Toolplane:
             tags=tags,
         )
 
+    async def register_mcp(
+        self,
+        name: str,
+        server: Any,
+        *,
+        tags: set[str] | frozenset[str] | None = None,
+    ) -> list[Capability]:
+        """Register tools from a FastMCP-compatible server/client transport."""
+        from .adapters.mcp import register_mcp_server
+
+        return await register_mcp_server(
+            self.registry,
+            name,
+            server,
+            tags=tags,
+        )
+
+    async def register_mcp_config(
+        self,
+        config: Any,
+        *,
+        tags: set[str] | frozenset[str] | None = None,
+    ) -> list[Capability]:
+        """Register all tools from an `mcpServers` config dictionary."""
+        from .adapters.mcp import register_mcp_config
+
+        return await register_mcp_config(
+            self.registry,
+            config,
+            tags=tags,
+        )
+
     async def search(
         self,
         query: str,
@@ -125,4 +157,5 @@ class Toolplane:
             bridge=self.bridge,
             inputs=inputs,
             packages=packages,
+            namespace=self.registry.callable_namespace(),
         )
