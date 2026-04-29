@@ -38,6 +38,27 @@ async def run(
 capabilities because some support third-party packages and files while others
 do not.
 
+## OpenAI Agents SDK Sandbox Lessons
+
+[OpenAI's Agents SDK sandbox design](https://developers.openai.com/api/docs/guides/agents/sandboxes)
+reinforces the same separation of concerns:
+
+- The sandbox session/client owns execution location, filesystem, lifecycle,
+  resume state, snapshots, and provider options.
+- Sandbox capabilities bind to the live session and expose tools that call the
+  session API.
+- Provider-specific code implements the session operations. Docker uses
+  container exec; Modal creates a `modal.Sandbox` and runs commands through
+  `sandbox.exec`.
+- Normal Python function tools remain host-side SDK tools. They are not
+  magically imported into the remote sandbox.
+
+The implication for `toolplane` is direct: a backend executes code, while the
+bridge decides how sandboxed code reaches host capabilities. For local unsafe
+execution, that can be a direct Python call. For Pyodide+Deno, Docker, Modal,
+E2B, or Blaxel, it should usually be a host callback or provider-appropriate
+proxy unless the capability is explicitly safe to ship into the sandbox.
+
 ## smolagents Lessons
 
 [smolagents](https://huggingface.co/docs/smolagents/main/tutorials/secure_code_execution)
@@ -168,6 +189,22 @@ auth, and return normalization belong in the registry layer before execution.
 The host must explicitly register or configure CLI capabilities; installing the
 adapter should not ambiently expose arbitrary local commands.
 
+The code should also not need to manipulate JSON strings. JSON is the default
+wire format across sandbox, remote, MCP, and CLI boundaries, but the programming
+model is Python values:
+
+- registered tools return `dict`, `list`, `str`, numbers, booleans, or `None`
+  when their outputs are structured;
+- rich objects are created inside the execution environment or represented by
+  explicit artifact/file handles;
+- adapter errors preserve source, canonical capability id, tool name, and
+  original detail.
+
+Friendly Python names are aliases, not identity. Every capability needs a
+canonical qualified id such as `mcp:arch/list_entities`, `cli:gh/issue_list`, or
+`py:finance/calculate_nav`. Generated aliases are exposed only when unique and
+valid. Collisions must fail loudly or require scoped/canonical access.
+
 ## Tool Bridge Modes
 
 Different backends need different ways to expose registered capabilities:
@@ -204,6 +241,7 @@ Build the smallest useful runtime:
    including pandas-style workflows.
 6. A host callback bridge so sandboxed code can call host capabilities.
 7. A `cli-to-py` adapter that registers explicit CLI commands as capabilities.
-8. A Docker backend next for real CPython, local CLI binaries, and arbitrary
+8. An MCP adapter that exposes MCP tools as first-class Python callables.
+9. A Docker backend next for real CPython, local CLI binaries, and arbitrary
    system dependencies.
-9. Modal, E2B, or Blaxel as remote backends once the local contract is stable.
+10. Modal, E2B, or Blaxel as remote backends once the local contract is stable.

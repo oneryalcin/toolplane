@@ -25,6 +25,19 @@ The main rule:
 Discovery and execution are separate. Backends execute code; registries describe and dispatch capabilities.
 ```
 
+The programming-model rule:
+
+```text
+JSON is a wire format, not the programming model.
+```
+
+Agent-written code should work with normal Python values and callables. MCP
+tools, CLI wrappers, and host functions may serialize structured values across
+sandbox or remote boundaries, but the code author should receive `dict`, `list`,
+`str`, numbers, booleans, and `None`, not JSON strings. Rich values that do not
+belong on the wire, such as dataframes or images, should be created inside the
+execution environment or passed as explicit file/artifact handles.
+
 ## Core Flow
 
 ```text
@@ -55,6 +68,54 @@ Execution backends include:
 MCP tools, CLI wrappers, and Python functions are capability adapters, not
 execution backends. Backends should not know whether a callable came from MCP,
 a CLI, or a normal Python function.
+
+## Code Namespace
+
+The execution namespace should be Python-first and source-agnostic:
+
+```python
+page = await arch_list_entities(entity_type="holding", limit=50, offset=0)
+```
+
+That friendly callable is an alias for a canonical capability id such as
+`mcp:arch/list_entities`. The lower-level primitive remains available:
+
+```python
+page = await call_tool(
+    "mcp:arch/list_entities",
+    {"entity_type": "holding", "limit": 50, "offset": 0},
+)
+```
+
+Canonical identity is always qualified; friendly names are aliases. Toolplane
+must not silently shadow names. If two capabilities want the same friendly
+Python name, namespace construction should fail loudly or omit the alias and
+require scoped access:
+
+```python
+await mcp.arch.list_entities(entity_type="holding")
+await cli.gh.issue_list(repo="oneryalcin/toolplane")
+await call_tool("mcp:arch/list_entities", {"entity_type": "holding"})
+```
+
+Never overwrite Python builtins, imported modules, or existing bindings.
+Explicit user aliases are allowed, but collisions are still errors.
+
+## Sandbox Lesson
+
+OpenAI Agents SDK sandboxes are a useful reference point. They keep execution
+location separate from tool identity:
+
+- A sandbox client/session owns where commands and files live.
+- Capabilities bind to the live session and add tools/instructions.
+- Provider implementations hide Docker, Modal, Unix-local, and hosted details
+  behind the same session operations.
+- Normal function tools stay host-side unless explicitly proxied or shipped.
+
+Toolplane should borrow that boundary, not the full agent framework. Local
+backends can call Python functions directly. Sandboxed or remote backends should
+call host capabilities through the bridge unless a capability is explicitly safe
+to ship into the execution environment.
 
 ## Proposed Layout
 

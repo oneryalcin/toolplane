@@ -19,6 +19,18 @@ without bouncing through one tool call at a time.
 The agent writes Python. The host controls which capabilities exist, how
 credentials are handled, and which backend executes the code.
 
+## Design Invariants
+
+- JSON is a wire format, not the programming model. Agent-written code should
+  receive Python values such as `dict`, `list`, `str`, numbers, booleans, and
+  `None`.
+- MCP tools, CLI wrappers, and regular Python functions are all capabilities.
+  They differ by adapter, not by how user code composes them.
+- Canonical capability ids are qualified. Friendly Python names are aliases and
+  must never silently shadow each other.
+- Sandboxed and remote backends call host capabilities through a bridge unless a
+  capability is explicitly safe to ship into the execution environment.
+
 ## Current Slice
 
 The first implementation can register Python functions, discover them, inspect
