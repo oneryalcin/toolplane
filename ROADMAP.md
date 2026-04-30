@@ -11,6 +11,7 @@ local_unsafe slice
   -> cli-to-py adapter
   -> MCP adapter
   -> config-driven runtime setup
+  -> Toolplane MCP facade
   -> Docker/Modal remote backends
 ```
 
@@ -69,6 +70,8 @@ around it.
 - Strong README quickstart.
 - Examples directory.
 - CLI command for demos/smoke tests.
+- `toolplane serve mcp` as an optional facade over a configured runtime.
+- Client install helpers for Codex, Claude Code, and other MCP clients.
 - GitHub Actions CI.
 - MkDocs publishing.
 - PyPI release checklist.
@@ -80,6 +83,25 @@ around it.
 - Timeout and cancellation.
 - Explicit unsafe-local warnings.
 - Secret handling and redaction.
+- Remote MCP auth setup without exposing tokens to agent-written code.
+
+### Toolplane MCP Facade
+
+The MCP-facing product should be a facade over Toolplane, not the identity of
+Toolplane itself. The intended split is:
+
+```text
+toolplane      = runtime, registry, config, policy, auth wiring, backends
+toolplane-mcp  = optional MCP server exposing that configured runtime
+```
+
+The MCP facade should expose a small meta-tool surface such as
+`search_capabilities`, `get_capability_schemas`, and `execute_code`. It should
+not re-export every underlying MCP/CLI/Python capability as a flat catalog by
+default.
+
+See [Toolplane And MCP](docs/toolplane-mcp.md) for the boundary definition and
+auth model.
 
 ## Near-Term Issues
 
@@ -88,7 +110,8 @@ around it.
 - [x] [#2](https://github.com/oneryalcin/toolplane/issues/2): Add `cli-to-py` adapter.
 - [x] [#4](https://github.com/oneryalcin/toolplane/issues/4): Add MCP capability adapter.
 - [ ] [#7](https://github.com/oneryalcin/toolplane/issues/7): Add config-driven runtime setup.
-- [ ] [#10](https://github.com/oneryalcin/toolplane/issues/10): Make code-mode authoring frictionless with scoped capability namespaces.
+- [x] [#10](https://github.com/oneryalcin/toolplane/issues/10): Make code-mode authoring frictionless with scoped capability namespaces.
+- [ ] [#16](https://github.com/oneryalcin/toolplane/issues/16): Define Toolplane MCP facade, auth, and client install boundary.
 
 ## MCP Adapter Acceptance
 
