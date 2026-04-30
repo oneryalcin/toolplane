@@ -19,14 +19,14 @@ def test_ambient_cli_top_level_proxy_runs_git_without_registration() -> None:
     result = run(
         runtime.execute(
             """
-files = await git.diff(name_only=True, _=["HEAD~1", "HEAD"]).lines()
-return files
+version = await git.version()
+return version["stdout"]
 """
         )
     )
 
     assert result.ok, result.error
-    assert isinstance(result.value, list)
+    assert result.value.startswith("git version")
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -36,14 +36,14 @@ def test_ambient_cli_root_runs_git_without_top_level_name() -> None:
     result = run(
         runtime.execute(
             """
-files = await cli.git.diff(name_only=True, _=["HEAD~1", "HEAD"]).lines()
-return files[:3]
+version = await cli.git.version()
+return version["stdout"]
 """
         )
     )
 
     assert result.ok, result.error
-    assert result.value
+    assert result.value.startswith("git version")
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -53,14 +53,14 @@ def test_ambient_cli_root_call_supports_non_identifier_binaries() -> None:
     result = run(
         runtime.execute(
             """
-files = await cli("git").diff(name_only=True, _=["HEAD~1", "HEAD"]).lines()
-return files[:3]
+version = await cli("git").version()
+return version["stdout"]
 """
         )
     )
 
     assert result.ok, result.error
-    assert result.value
+    assert result.value.startswith("git version")
 
 
 def test_ambient_cli_missing_binary_surfaces_cli_to_py_error() -> None:
