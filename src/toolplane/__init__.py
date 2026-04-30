@@ -9,10 +9,18 @@ from .bridges import (
     ToolCallResponse,
 )
 from .capabilities import Capability
+from .config import (
+    CliSettings,
+    McpSettings,
+    ToolplaneConfig,
+    ToolplaneSettings,
+    load_toolplane_config,
+)
 from .errors import (
     BackendCapabilityError,
     BackendNotFoundError,
     CapabilityNotFoundError,
+    CliPolicyError,
     DuplicateCapabilityError,
     NamespaceCollisionError,
     ToolplaneError,
@@ -31,16 +39,22 @@ __all__ = [
     "Capability",
     "CapabilityNotFoundError",
     "CapabilityRegistry",
+    "CliPolicyError",
+    "CliSettings",
     "DuplicateCapabilityError",
     "ExecutionError",
     "ExecutionResult",
     "HttpCallbackBridge",
     "InProcessBridge",
+    "McpSettings",
     "NamespaceCollisionError",
     "PyodideDenoBackend",
     "ToolCallError",
     "ToolCallRequest",
     "ToolCallResponse",
     "Toolplane",
+    "ToolplaneConfig",
     "ToolplaneError",
+    "ToolplaneSettings",
+    "load_toolplane_config",
 ]

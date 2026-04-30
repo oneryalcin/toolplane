@@ -24,4 +24,5 @@ class CodeBackend(Protocol):
         scoped_namespace: Mapping[str, Mapping[str, str]] | None = None,
         ambient_cli: bool = False,
         ambient_cli_names: Sequence[str] = (),
+        ambient_cli_allowed_binaries: Sequence[str] | None = None,
     ) -> ExecutionResult: ...

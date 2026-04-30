@@ -25,3 +25,7 @@ class BackendNotFoundError(ToolplaneError):
 
 class BackendCapabilityError(ToolplaneError):
     """Raised when a backend cannot satisfy requested execution options."""
+
+
+class CliPolicyError(ToolplaneError):
+    """Raised when code tries to use a CLI binary disallowed by policy."""

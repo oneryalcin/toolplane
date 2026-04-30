@@ -15,6 +15,7 @@ Run one example directly:
 uv run --no-project --with-editable . python examples/ambient_cli_git.py
 uv run --no-project --with-editable . python examples/fastmcp_in_process.py
 uv run --no-project --with-editable . python examples/mcp_stdio_config.py
+uv run --no-project --with-editable . python examples/from_config.py
 ```
 
 The Context7 example uses the live remote MCP endpoint, so it is intentionally

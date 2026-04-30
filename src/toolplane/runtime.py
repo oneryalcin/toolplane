@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .adapters.ambient_cli import discover_cli_names, register_ambient_cli
 from .backends import CodeBackend, LocalUnsafeBackend, PyodideDenoBackend
@@ -14,6 +15,9 @@ from .errors import BackendNotFoundError
 from .execution import ExecutionResult
 from .registry import CapabilityRegistry
 
+if TYPE_CHECKING:
+    from .config import ConfigSource
+
 
 class Toolplane:
     def __init__(
@@ -23,16 +27,58 @@ class Toolplane:
         backends: Sequence[CodeBackend] | None = None,
         default_backend: str = "local_unsafe",
         ambient_cli: bool = True,
+        ambient_cli_allowlist: Sequence[str] | None = None,
     ) -> None:
+        if not ambient_cli and ambient_cli_allowlist is not None:
+            raise ValueError("ambient_cli_allowlist requires ambient_cli=True")
         self.registry = registry or CapabilityRegistry()
         self.ambient_cli = ambient_cli
+        self._ambient_cli_allowed_binaries = (
+            frozenset(ambient_cli_allowlist)
+            if ambient_cli_allowlist is not None
+            else None
+        )
         self._ambient_cli_names: tuple[str, ...] | None = None
         if ambient_cli:
             register_ambient_cli(self.registry)
-        self.bridge = InProcessBridge(self.registry)
+        self.bridge = InProcessBridge(
+            self.registry,
+            ambient_cli_allowed_binaries=self._ambient_cli_allowed_binaries,
+        )
         configured = list(backends or (LocalUnsafeBackend(), PyodideDenoBackend()))
         self.backends = {backend.name: backend for backend in configured}
         self.default_backend = default_backend
+
+    @classmethod
+    async def from_config(
+        cls,
+        config: ConfigSource,
+        *,
+        registry: CapabilityRegistry | None = None,
+        backends: Sequence[CodeBackend] | None = None,
+    ) -> "Toolplane":
+        """Build a Toolplane runtime from a validated config or TOML path."""
+        from .config import ToolplaneConfig, load_toolplane_config
+
+        parsed = (
+            config
+            if isinstance(config, ToolplaneConfig)
+            else load_toolplane_config(config)
+        )
+        runtime = cls(
+            registry=registry,
+            backends=backends,
+            default_backend=parsed.toolplane.default_backend,
+            ambient_cli=parsed.cli.enabled,
+            ambient_cli_allowlist=(
+                tuple(parsed.cli.allowed_binaries)
+                if parsed.cli.allowed_binaries is not None
+                else None
+            ),
+        )
+        if parsed.mcp.servers:
+            await runtime.register_mcp_config(parsed.mcp.to_fastmcp_config())
+        return runtime
 
     def tool(
         self,
@@ -175,20 +221,36 @@ class Toolplane:
         runner = self.backends.get(backend_name)
         if runner is None:
             raise BackendNotFoundError(f"Unknown backend: {backend_name}")
-        return await runner.run(
-            code,
-            bridge=self.bridge,
-            inputs=inputs,
-            packages=packages,
-            namespace=self.registry.callable_namespace(),
-            scoped_namespace=self.registry.scoped_namespace(),
-            ambient_cli=self.ambient_cli,
-            ambient_cli_names=self._get_ambient_cli_names(),
-        )
+        run_kwargs: dict[str, Any] = {
+            "bridge": self.bridge,
+            "inputs": inputs,
+            "packages": packages,
+            "namespace": self.registry.callable_namespace(),
+            "scoped_namespace": self.registry.scoped_namespace(),
+            "ambient_cli": self.ambient_cli,
+            "ambient_cli_names": self._get_ambient_cli_names(),
+        }
+        if _backend_accepts_run_kwarg(runner, "ambient_cli_allowed_binaries"):
+            run_kwargs["ambient_cli_allowed_binaries"] = (
+                tuple(sorted(self._ambient_cli_allowed_binaries))
+                if self._ambient_cli_allowed_binaries is not None
+                else None
+            )
+        return await runner.run(code, **run_kwargs)
 
     def _get_ambient_cli_names(self) -> tuple[str, ...]:
         if not self.ambient_cli:
             return ()
+        if self._ambient_cli_allowed_binaries is not None:
+            return tuple(sorted(self._ambient_cli_allowed_binaries))
         if self._ambient_cli_names is None:
             self._ambient_cli_names = discover_cli_names()
         return self._ambient_cli_names
+
+
+def _backend_accepts_run_kwarg(runner: CodeBackend, name: str) -> bool:
+    signature = inspect.signature(runner.run)
+    for parameter in signature.parameters.values():
+        if parameter.kind == inspect.Parameter.VAR_KEYWORD:
+            return True
+    return name in signature.parameters
