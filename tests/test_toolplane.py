@@ -6,8 +6,10 @@ import json
 import pytest
 
 from toolplane import (
+    BackendCapabilities,
     BackendCapabilityError,
     DuplicateCapabilityError,
+    ExecutionResult,
     NamespaceCollisionError,
     Toolplane,
 )
@@ -186,3 +188,43 @@ def test_local_unsafe_rejects_package_install_request() -> None:
 
     with pytest.raises(BackendCapabilityError):
         run(runtime.execute("return 1", packages=["pandas"]))
+
+
+def test_execute_preserves_legacy_custom_backend_signature() -> None:
+    class LegacyBackend:
+        name = "legacy"
+        capabilities = BackendCapabilities(
+            imports=False,
+            third_party_packages=False,
+            package_install=False,
+            filesystem="none",
+            network="none",
+        )
+
+        async def run(
+            self,
+            code,
+            *,
+            bridge,
+            inputs=None,
+            packages=(),
+            namespace=None,
+            scoped_namespace=None,
+            ambient_cli=False,
+            ambient_cli_names=(),
+        ):
+            return ExecutionResult(
+                value={"ambient_cli_names": tuple(ambient_cli_names)},
+                backend=self.name,
+            )
+
+    runtime = Toolplane(
+        backends=[LegacyBackend()],
+        default_backend="legacy",
+        ambient_cli_allowlist=["git"],
+    )
+
+    result = run(runtime.execute("return 1"))
+
+    assert result.ok
+    assert result.value == {"ambient_cli_names": ("git",)}

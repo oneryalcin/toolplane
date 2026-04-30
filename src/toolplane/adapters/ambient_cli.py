@@ -12,7 +12,7 @@ from typing import Any
 
 from ..bridges.base import HostBridge
 from ..capabilities import Capability
-from ..errors import CapabilityNotFoundError
+from ..errors import CapabilityNotFoundError, CliPolicyError
 from ..registry import CapabilityRegistry
 from .cli_to_py import normalize_cli_result
 
@@ -150,31 +150,56 @@ def build_local_cli_namespace(
     names: Sequence[str],
     *,
     reserved: set[str] | frozenset[str] | None = None,
+    allowed_binaries: set[str] | frozenset[str] | None = None,
 ) -> dict[str, Any]:
     reserved_names = set(reserved or ())
-    root = AmbientCliRoot(bridge)
+    allowed = frozenset(allowed_binaries) if allowed_binaries is not None else None
+    root = AmbientCliRoot(bridge, allowed_binaries=allowed)
     namespace: dict[str, Any] = {"cli": root}
     for name in names:
         if name not in reserved_names and _is_safe_cli_name(name):
-            namespace[name] = AmbientCliBinary(bridge, name)
+            namespace[name] = AmbientCliBinary(bridge, name, allowed_binaries=allowed)
     return namespace
 
 
 class AmbientCliRoot:
-    def __init__(self, bridge: HostBridge) -> None:
+    def __init__(
+        self,
+        bridge: HostBridge,
+        *,
+        allowed_binaries: frozenset[str] | None = None,
+    ) -> None:
         self._bridge = bridge
+        self._allowed_binaries = allowed_binaries
 
     def __call__(self, binary: str) -> AmbientCliBinary:
-        return AmbientCliBinary(self._bridge, binary)
+        _ensure_binary_allowed(binary, self._allowed_binaries)
+        return AmbientCliBinary(
+            self._bridge,
+            binary,
+            allowed_binaries=self._allowed_binaries,
+        )
 
     def __getattr__(self, binary: str) -> AmbientCliBinary:
         if binary.startswith("_"):
             raise AttributeError(binary)
-        return AmbientCliBinary(self._bridge, binary)
+        _ensure_binary_allowed(binary, self._allowed_binaries)
+        return AmbientCliBinary(
+            self._bridge,
+            binary,
+            allowed_binaries=self._allowed_binaries,
+        )
 
 
 class AmbientCliBinary:
-    def __init__(self, bridge: HostBridge, binary: str) -> None:
+    def __init__(
+        self,
+        bridge: HostBridge,
+        binary: str,
+        *,
+        allowed_binaries: frozenset[str] | None = None,
+    ) -> None:
+        _ensure_binary_allowed(binary, allowed_binaries)
         self._bridge = bridge
         self._binary = binary
 
@@ -256,8 +281,12 @@ def render_pyodide_cli_namespace(
     names: Sequence[str],
     *,
     reserved: set[str] | frozenset[str] | None = None,
+    allowed_binaries: set[str] | frozenset[str] | None = None,
 ) -> str:
     reserved_names = set(reserved or ())
+    allowed_json = (
+        "None" if allowed_binaries is None else json.dumps(sorted(allowed_binaries))
+    )
     top_level = [
         name
         for name in names
@@ -301,6 +330,7 @@ class _ToolplaneCliCall:
 
 class _ToolplaneCliBinary:
     def __init__(self, binary):
+        _toolplane_ensure_cli_allowed(binary)
         self.binary = binary
 
     def __call__(self, subcommand=None, /, **options):
@@ -316,14 +346,35 @@ class _ToolplaneCliBinary:
 
 class _ToolplaneCliRoot:
     def __call__(self, binary):
+        _toolplane_ensure_cli_allowed(binary)
         return _ToolplaneCliBinary(binary)
 
     def __getattr__(self, binary):
         if binary.startswith("_"):
             raise AttributeError(binary)
+        _toolplane_ensure_cli_allowed(binary)
         return _ToolplaneCliBinary(binary)
 
+
+_TOOLPLANE_ALLOWED_CLI_BINARIES = {allowed_json}
+
+def _toolplane_ensure_cli_allowed(binary):
+    if (
+        _TOOLPLANE_ALLOWED_CLI_BINARIES is not None
+        and binary not in _TOOLPLANE_ALLOWED_CLI_BINARIES
+    ):
+        raise RuntimeError(f"CLI binary is not allowed by Toolplane policy: {{binary}}")
 
 cli = _ToolplaneCliRoot()
 {assignments}
 """
+
+
+def _ensure_binary_allowed(
+    binary: str,
+    allowed_binaries: frozenset[str] | None,
+) -> None:
+    if allowed_binaries is not None and binary not in allowed_binaries:
+        raise CliPolicyError(
+            f"CLI binary is not allowed by Toolplane policy: {binary}"
+        )

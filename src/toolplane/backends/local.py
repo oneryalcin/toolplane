@@ -45,6 +45,7 @@ class LocalUnsafeBackend:
         scoped_namespace: Mapping[str, Mapping[str, str]] | None = None,
         ambient_cli: bool = False,
         ambient_cli_names: Sequence[str] = (),
+        ambient_cli_allowed_binaries: Sequence[str] | None = None,
     ) -> ExecutionResult:
         if packages:
             raise BackendCapabilityError(
@@ -78,6 +79,11 @@ class LocalUnsafeBackend:
                         | set(capability_namespace)
                         | set(scoped_capability_namespace)
                         | set(input_namespace),
+                        allowed_binaries=(
+                            set(ambient_cli_allowed_binaries)
+                            if ambient_cli_allowed_binaries is not None
+                            else None
+                        ),
                     )
                 )
             scope.update(_callable_namespace(bridge, capability_namespace))

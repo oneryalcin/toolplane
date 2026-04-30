@@ -56,6 +56,7 @@ class PyodideDenoBackend:
         scoped_namespace: Mapping[str, Mapping[str, str]] | None = None,
         ambient_cli: bool = False,
         ambient_cli_names: Sequence[str] = (),
+        ambient_cli_allowed_binaries: Sequence[str] | None = None,
     ) -> ExecutionResult:
         started = time.perf_counter()
         if shutil.which(self.deno_path) is None:
@@ -117,6 +118,7 @@ class PyodideDenoBackend:
                         scoped_namespace=scoped_namespace or {},
                         ambient_cli=ambient_cli,
                         ambient_cli_names=ambient_cli_names,
+                        ambient_cli_allowed_binaries=ambient_cli_allowed_binaries,
                         callback_url=callback_bridge.url,
                         callback_token=callback_bridge.token,
                     ),
@@ -177,6 +179,7 @@ def _build_pyodide_code(
     scoped_namespace: Mapping[str, Mapping[str, str]],
     ambient_cli: bool,
     ambient_cli_names: Sequence[str],
+    ambient_cli_allowed_binaries: Sequence[str] | None,
     callback_url: str,
     callback_token: str,
 ) -> str:
@@ -188,7 +191,15 @@ def _build_pyodide_code(
         {"call_tool", "cli"} | set(namespace) | set(scoped_namespace),
     )
     cli_namespace_code = (
-        render_pyodide_cli_namespace(ambient_cli_names, reserved=reserved_names)
+        render_pyodide_cli_namespace(
+            ambient_cli_names,
+            reserved=reserved_names,
+            allowed_binaries=(
+                set(ambient_cli_allowed_binaries)
+                if ambient_cli_allowed_binaries is not None
+                else None
+            ),
+        )
         if ambient_cli
         else ""
     )

@@ -16,6 +16,7 @@ The current examples cover:
 | `ambient_cli_git.py` | Agent code can call local CLI binaries lazily through Python. |
 | `fastmcp_in_process.py` | FastMCP tools become Toolplane capabilities and scoped namespaces. |
 | `mcp_stdio_config.py` | Standard `mcpServers` stdio config can register MCP-backed capabilities. |
+| `from_config.py` | `Toolplane.from_config(...)` can bootstrap CLI policy and MCP servers from TOML. |
 
 !!! tip "Keep examples executable"
 

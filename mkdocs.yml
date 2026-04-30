@@ -47,6 +47,7 @@ nav:
   - Overview: index.md
   - Architecture:
       - Architecture: architecture.md
+      - Configuration: configuration.md
       - Code Mode Backends: code-mode-backends.md
       - Toolplane And MCP: toolplane-mcp.md
   - Examples:

@@ -14,6 +14,7 @@ discover capabilities -> inspect schemas -> execute Python against a curated nam
 [:octicons-mark-github-16: View on GitHub](https://github.com/oneryalcin/toolplane){ .md-button .md-button--primary }
 [Read the architecture](architecture.md){ .md-button }
 [Toolplane and MCP](toolplane-mcp.md){ .md-button }
+[Configuration](configuration.md){ .md-button }
 
 </section>
 
@@ -78,6 +79,25 @@ controlled by the host application.
 
     The agent writes Python. The host controls which capabilities exist, how
     credentials are handled, and which backend executes the code.
+
+## Configuration
+
+Durable host setup can live in `toolplane.toml`:
+
+```toml
+[cli]
+mode = "allowlist"
+allow = ["git", "gh", "rg"]
+
+[mcp.servers.context7]
+url = "https://mcp.context7.com/mcp"
+```
+
+```python
+runtime = await Toolplane.from_config("toolplane.toml")
+```
+
+[Read the configuration guide](configuration.md){ .md-button }
 
 ## Design Invariants
 
