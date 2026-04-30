@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "toolplane"
-version = "0.1.0"
+dynamic = ["version"]
 description = "A controlled Python code-mode runtime for programmable tool surfaces."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -36,3 +36,6 @@ docs = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/toolplane"]
+
+[tool.hatch.version]
+path = "src/toolplane/__init__.py"

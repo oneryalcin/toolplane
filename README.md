@@ -1,7 +1,15 @@
 # toolplane
 
+[![PyPI version](https://img.shields.io/pypi/v/toolplane)](https://pypi.org/project/toolplane/)
+[![Python versions](https://img.shields.io/pypi/pyversions/toolplane)](https://pypi.org/project/toolplane/)
+[![CI](https://github.com/oneryalcin/toolplane/actions/workflows/ci.yml/badge.svg)](https://github.com/oneryalcin/toolplane/actions/workflows/ci.yml)
+[![Docs](https://github.com/oneryalcin/toolplane/actions/workflows/pages.yml/badge.svg)](https://github.com/oneryalcin/toolplane/actions/workflows/pages.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A controlled Python code-mode runtime where CLIs, MCP tools, and libraries are
 normalized into one programmable tool surface.
+
+Full documentation: https://oneryalcin.github.io/toolplane/
 
 ## Why It Exists
 
@@ -88,7 +96,17 @@ make docs-serve
 make test
 make examples
 make ci
+make publish-check
 ```
+
+Publishing uses the same local release surface:
+
+```bash
+PYPI_TOKEN=... make publish
+```
+
+See the [release checklist](docs/development/release-checklist.md) for the full
+publish flow.
 
 ## Status
 
