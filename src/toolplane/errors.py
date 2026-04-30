@@ -15,6 +15,10 @@ class DuplicateCapabilityError(ToolplaneError):
     """Raised when registering a duplicate capability name."""
 
 
+class NamespaceCollisionError(ToolplaneError):
+    """Raised when execution namespace construction would shadow a binding."""
+
+
 class BackendNotFoundError(ToolplaneError):
     """Raised when a requested execution backend does not exist."""
 

@@ -12,6 +12,8 @@ from typing import Any
 from .capabilities import Capability, capability_from_function
 from .errors import CapabilityNotFoundError, DuplicateCapabilityError
 
+_RESERVED_TOP_LEVEL_NAMES = {"call_tool", "cli"}
+
 
 def _ensure_awaitable(fn: Callable[..., Any]) -> Callable[..., Any]:
     if inspect.iscoroutinefunction(fn):
@@ -56,22 +58,72 @@ class CapabilityRegistry:
         return capability
 
     def _add_capability(self, capability: Capability) -> None:
+        namespace_roots = self._namespace_roots()
+        if capability.name in namespace_roots:
+            raise DuplicateCapabilityError(
+                f"Capability name collides with namespace: {capability.name}"
+            )
         if capability.name in self._capabilities or capability.name in self._aliases:
             raise DuplicateCapabilityError(
                 f"Capability already registered: {capability.name}"
             )
         for alias in capability.aliases:
             _validate_alias(alias)
+            if alias in namespace_roots:
+                raise DuplicateCapabilityError(
+                    f"Capability alias collides with namespace: {alias}"
+                )
             if alias == capability.name:
                 continue
             if alias in self._capabilities or alias in self._aliases:
                 raise DuplicateCapabilityError(
                     f"Capability alias already registered: {alias}"
                 )
+        self._validate_scoped_binding(capability)
         self._capabilities[capability.name] = capability
         for alias in capability.aliases:
             if alias != capability.name:
                 self._aliases[alias] = capability.name
+
+    def _validate_scoped_binding(self, capability: Capability) -> None:
+        namespace = capability.namespace
+        member = capability.namespace_member
+        if namespace is None and member is None:
+            return
+        if namespace is None or member is None:
+            raise ValueError(
+                "Capability namespace and namespace_member must be set together"
+            )
+        _validate_alias(namespace)
+        _validate_namespace_member(member)
+        if namespace in self._capabilities or namespace in self._aliases:
+            raise DuplicateCapabilityError(
+                f"Capability namespace collides with existing name: {namespace}"
+            )
+        for existing in self._capabilities.values():
+            if (
+                existing.namespace == namespace
+                and existing.source != capability.source
+            ):
+                raise DuplicateCapabilityError(
+                    f"Capability namespace already registered by another source: "
+                    f"{namespace}"
+                )
+            if (
+                existing.namespace == namespace
+                and existing.namespace_member == member
+            ):
+                raise DuplicateCapabilityError(
+                    f"Capability namespace member already registered: "
+                    f"{namespace}.{member}"
+                )
+
+    def _namespace_roots(self) -> set[str]:
+        return {
+            capability.namespace
+            for capability in self._capabilities.values()
+            if capability.namespace is not None
+        }
 
     def all(self) -> list[Capability]:
         return [
@@ -139,6 +191,24 @@ class CapabilityRegistry:
                     namespace[alias] = capability.name
         return namespace
 
+    def scoped_namespace(self) -> dict[str, dict[str, str]]:
+        """Return scoped Python namespaces mapped to canonical capability names."""
+        scoped: dict[str, dict[str, str]] = {}
+        for capability in self._capabilities.values():
+            if (
+                capability.hidden
+                or capability.namespace is None
+                or capability.namespace_member is None
+            ):
+                continue
+            scoped.setdefault(capability.namespace, {})[
+                capability.namespace_member
+            ] = capability.name
+        return {
+            namespace: dict(sorted(members.items()))
+            for namespace, members in sorted(scoped.items())
+        }
+
     async def call(self, name: str, params: dict[str, Any] | None = None) -> Any:
         capability = self.get(name)
         fn = _ensure_awaitable(capability.callable)
@@ -154,11 +224,22 @@ def _validate_alias(alias: str) -> None:
         raise ValueError(f"Capability alias is not a safe Python name: {alias!r}")
 
 
+def _validate_namespace_member(member: str) -> None:
+    if (
+        not member.isidentifier()
+        or keyword.iskeyword(member)
+        or member.startswith("__")
+    ):
+        raise ValueError(
+            f"Capability namespace member is not a safe Python name: {member!r}"
+        )
+
+
 def _is_safe_python_name(name: str) -> bool:
     return (
         name.isidentifier()
         and not keyword.iskeyword(name)
         and name not in _builtins
         and not name.startswith("__")
-        and name not in {"call_tool"}
+        and name not in _RESERVED_TOP_LEVEL_NAMES
     )

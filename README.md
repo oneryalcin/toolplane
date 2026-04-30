@@ -192,7 +192,7 @@ def add(a: int, b: int) -> int:
 await runtime.register_mcp("demo", mcp)
 
 result = await runtime.execute("""
-value = await demo_add(a=2, b=3)
+value = await demo.add(a=2, b=3)
 return value
 """)
 ```
@@ -210,7 +210,28 @@ await runtime.register_mcp_config({
 ```
 
 Registered MCP tools get canonical ids such as `mcp:context7/get_docs` and safe
-Python aliases such as `context7_get_docs`.
+Python aliases such as `context7_get_docs`. They are also available through a
+scoped namespace, so agent-written code can call `context7.get_docs(...)`
+without caring that the capability came from MCP.
+
+Host Python helpers can be grouped the same way:
+
+```python
+from pathlib import Path
+from toolplane import Toolplane
+
+runtime = Toolplane()
+
+def read_text(path: str) -> str:
+    return Path(path).read_text()
+
+runtime.register_python_namespace("repo", {"read_text": read_text})
+
+result = await runtime.execute("""
+text = await repo.read_text(path="README.md")
+return text.splitlines()[0]
+""")
+```
 
 See [examples](examples/README.md) for executable FastMCP in-process, stdio
 config, and live Context7 remote MCP smokes.

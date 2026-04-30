@@ -108,6 +108,8 @@ def _capability_from_mcp_tool(
 ) -> Capability:
     tool_name = str(tool.name)
     canonical_name = f"mcp:{server_name}/{tool_name}"
+    namespace = _python_identifier(server_name, prefix="mcp")
+    namespace_member = _python_identifier(tool_name, prefix="tool")
     aliases = frozenset({_python_alias(server_name, tool_name)})
     tool_tags = {"mcp", server_name, *(tags or ()), *_fastmcp_tags(tool)}
 
@@ -127,6 +129,8 @@ def _capability_from_mcp_tool(
         returns=_tool_schema(tool, "outputSchema"),
         tags=frozenset(tool_tags),
         source=f"{source}:{server_name}",
+        namespace=namespace,
+        namespace_member=namespace_member,
     )
 
 
@@ -191,11 +195,14 @@ def _to_python_value(value: Any) -> Any:
 
 
 def _python_alias(server_name: str, tool_name: str) -> str:
-    raw = f"{server_name}_{tool_name}"
+    return _python_identifier(f"{server_name}_{tool_name}", prefix="mcp")
+
+
+def _python_identifier(raw: str, *, prefix: str) -> str:
     normalized = re.sub(r"[^0-9a-zA-Z_]+", "_", raw).strip("_").lower()
     normalized = re.sub(r"_+", "_", normalized)
     if not normalized:
-        normalized = "mcp_tool"
+        normalized = f"{prefix}_tool"
     if normalized[0].isdigit():
-        normalized = f"mcp_{normalized}"
+        normalized = f"{prefix}_{normalized}"
     return normalized

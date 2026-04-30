@@ -8,6 +8,7 @@ import pytest
 from toolplane import (
     BackendCapabilityError,
     DuplicateCapabilityError,
+    NamespaceCollisionError,
     Toolplane,
 )
 
@@ -83,6 +84,76 @@ return value
 
     assert result.ok
     assert result.value == 5
+
+
+def test_register_python_namespace_exposes_scoped_and_flat_callables() -> None:
+    runtime = Toolplane()
+
+    def read_text(path: str) -> str:
+        return f"read:{path}"
+
+    def classify_path(path: str) -> str:
+        return "library" if path.startswith("src/") else "repo"
+
+    capabilities = runtime.register_python_namespace(
+        "repo",
+        {
+            "read_text": read_text,
+            "classify_path": classify_path,
+        },
+    )
+
+    result = run(
+        runtime.execute(
+            """
+scoped = await repo.read_text(path="src/toolplane/runtime.py")
+flat = await repo_classify_path(path="src/toolplane/runtime.py")
+canonical = await call_tool("py:repo/read_text", {"path": "README.md"})
+return {"scoped": scoped, "flat": flat, "canonical": canonical}
+"""
+        )
+    )
+
+    assert [capability.name for capability in capabilities] == [
+        "py:repo/read_text",
+        "py:repo/classify_path",
+    ]
+    assert result.ok, result.error
+    assert result.value == {
+        "scoped": "read:src/toolplane/runtime.py",
+        "flat": "library",
+        "canonical": "read:README.md",
+    }
+
+
+def test_scoped_namespace_root_collisions_fail_loudly() -> None:
+    runtime = Toolplane()
+
+    def read_text(path: str) -> str:
+        return path
+
+    runtime.register_python_namespace("repo", {"read_text": read_text})
+
+    with pytest.raises(DuplicateCapabilityError):
+        @runtime.tool(name="repo")
+        def repo_tool() -> str:
+            return "shadow"
+
+
+def test_execution_input_cannot_shadow_toolplane_namespace() -> None:
+    runtime = Toolplane()
+
+    def read_text(path: str) -> str:
+        return path
+
+    runtime.register_python_namespace("repo", {"read_text": read_text})
+
+    result = run(runtime.execute("return repo", inputs={"repo": "shadow"}))
+
+    assert not result.ok
+    assert result.error is not None
+    assert result.error.type == NamespaceCollisionError.__name__
+    assert "repo" in result.error.message
 
 
 def test_execute_returns_structured_error() -> None:

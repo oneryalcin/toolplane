@@ -20,14 +20,12 @@ async def main() -> None:
     # Host tools run outside the sandbox and are exposed to code mode as async
     # Python callables. This one deliberately reads the host repo filesystem,
     # which Pyodide itself should not access directly.
-    @runtime.tool(tags={"repo", "filesystem"})
     def read_text(path: str) -> str:
         return Path(path).read_text(encoding="utf-8", errors="ignore")
 
     # Pure helpers can live either as host tools or inside the executed code.
     # Registering it here makes the distinction visible: code mode calls it the
     # same way it calls MCP tools and CLI functions.
-    @runtime.tool(tags={"repo"})
     def classify_path(path: str) -> str:
         if path.startswith("tests/"):
             return "tests"
@@ -38,6 +36,15 @@ async def main() -> None:
         if path.startswith("src/"):
             return "library"
         return "repo"
+
+    runtime.register_python_namespace(
+        "repo",
+        {
+            "read_text": read_text,
+            "classify_path": classify_path,
+        },
+        tags={"repo", "filesystem"},
+    )
 
     await runtime.register_mcp_config(
         {
@@ -62,12 +69,12 @@ rows = []
 python_files = 0
 for path in files:
     # Host Python tools feel like normal async Python functions in code mode.
-    area = await classify_path(path=path)
+    area = await repo.classify_path(path=path)
     if not path.endswith(".py"):
         continue
     python_files += 1
     # This crosses back to the host because the sandbox should not own repo IO.
-    source = await read_text(path=path)
+    source = await repo.read_text(path=path)
     try:
         tree = ast.parse(source)
     except SyntaxError:
@@ -103,11 +110,11 @@ else:
 
 # MCP tools also appear as Python callables. Internally they serialize across
 # the MCP boundary, but the code author gets plain Python str/list/dict values.
-libraries = await context7_resolve_library_id(
+libraries = await context7.resolve_library_id(
     libraryName="pandas",
     query="pandas DataFrame groupby reset_index to_dict records",
 )
-docs = await context7_query_docs(
+docs = await context7.query_docs(
     libraryId="/pandas-dev/pandas",
     query="How do I group rows and convert a DataFrame to records?",
 )

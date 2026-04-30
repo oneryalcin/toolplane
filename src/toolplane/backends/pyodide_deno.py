@@ -21,6 +21,7 @@ from typing import Any
 from ..adapters.ambient_cli import render_pyodide_cli_namespace
 from ..bridges.base import HostBridge
 from ..bridges.rpc import HttpCallbackBridge
+from ..errors import NamespaceCollisionError
 from ..execution import BackendCapabilities, ExecutionError, ExecutionResult
 from ._python import wrap_async_main
 
@@ -52,6 +53,7 @@ class PyodideDenoBackend:
         inputs: Mapping[str, Any] | None = None,
         packages: Sequence[str] = (),
         namespace: Mapping[str, str] | None = None,
+        scoped_namespace: Mapping[str, Mapping[str, str]] | None = None,
         ambient_cli: bool = False,
         ambient_cli_names: Sequence[str] = (),
     ) -> ExecutionResult:
@@ -112,6 +114,7 @@ class PyodideDenoBackend:
                         code,
                         inputs=inputs or {},
                         namespace=namespace or {},
+                        scoped_namespace=scoped_namespace or {},
                         ambient_cli=ambient_cli,
                         ambient_cli_names=ambient_cli_names,
                         callback_url=callback_bridge.url,
@@ -171,6 +174,7 @@ def _build_pyodide_code(
     *,
     inputs: Mapping[str, Any],
     namespace: Mapping[str, str],
+    scoped_namespace: Mapping[str, Mapping[str, str]],
     ambient_cli: bool,
     ambient_cli_names: Sequence[str],
     callback_url: str,
@@ -178,13 +182,18 @@ def _build_pyodide_code(
 ) -> str:
     wrapped = wrap_async_main(code)
     inputs_json = json.dumps(dict(inputs))
-    reserved_names = set(inputs) | set(namespace)
+    reserved_names = set(inputs) | set(namespace) | set(scoped_namespace)
+    _ensure_no_input_collisions(
+        inputs,
+        {"call_tool", "cli"} | set(namespace) | set(scoped_namespace),
+    )
     cli_namespace_code = (
         render_pyodide_cli_namespace(ambient_cli_names, reserved=reserved_names)
         if ambient_cli
         else ""
     )
     namespace_code = _render_callable_namespace(namespace)
+    scoped_namespace_code = _render_scoped_namespace(scoped_namespace)
     return f"""
 import json
 from js import Object, fetch
@@ -218,6 +227,8 @@ globals().update(json.loads({inputs_json!r}))
 
 {namespace_code}
 
+{scoped_namespace_code}
+
 {wrapped}
 
 await __toolplane_main__()
@@ -237,6 +248,47 @@ def _render_callable_namespace(namespace: Mapping[str, str]) -> str:
             ]
         )
     return "\n".join(lines)
+
+
+def _render_scoped_namespace(
+    scoped_namespace: Mapping[str, Mapping[str, str]],
+) -> str:
+    if not scoped_namespace:
+        return ""
+
+    lines: list[str] = [
+        "class _ToolplaneCapabilityNamespace:",
+        "    def __init__(self, bindings):",
+        "        self._bindings = dict(bindings)",
+        "",
+        "    def __getattr__(self, member):",
+        "        if member.startswith('_') or member not in self._bindings:",
+        "            raise AttributeError(member)",
+        "        capability_name = self._bindings[member]",
+        "        async def dispatch(**params):",
+        "            return await call_tool(capability_name, params)",
+        "        dispatch.__name__ = member",
+        "        return dispatch",
+        "",
+    ]
+    for namespace, members in scoped_namespace.items():
+        members_json = json.dumps(dict(members), sort_keys=True)
+        lines.append(
+            f"{namespace} = _ToolplaneCapabilityNamespace(json.loads({members_json!r}))"
+        )
+    return "\n".join(lines)
+
+
+def _ensure_no_input_collisions(
+    inputs: Mapping[str, Any],
+    reserved_names: set[str],
+) -> None:
+    collisions = sorted(set(inputs) & reserved_names)
+    if collisions:
+        joined = ", ".join(collisions)
+        raise NamespaceCollisionError(
+            f"Input names collide with Toolplane namespace bindings: {joined}"
+        )
 
 
 def _render_runner(*, host: str, port: int, auth_token: str) -> str:

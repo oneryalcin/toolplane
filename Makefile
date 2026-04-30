@@ -16,7 +16,7 @@ help:
 	@printf "  make clean       Remove local generated artifacts\n"
 
 test:
-	$(UV) run --no-project --with-editable . --with pytest python -m $(PYTEST)
+	$(UV) run --no-project --with-editable ".[dev]" python -m $(PYTEST)
 
 examples:
 	$(UV) run --no-project --with-editable . python examples/ambient_cli_git.py

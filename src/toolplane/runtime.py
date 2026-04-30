@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from .adapters.ambient_cli import discover_cli_names, register_ambient_cli
@@ -64,6 +64,23 @@ class Toolplane:
         tags: set[str] | frozenset[str] | None = None,
     ) -> None:
         self.registry.register(fn, name=name, description=description, tags=tags)
+
+    def register_python_namespace(
+        self,
+        name: str,
+        tools: Mapping[str, Callable[..., Any]],
+        *,
+        tags: set[str] | frozenset[str] | None = None,
+    ) -> list[Capability]:
+        """Register host Python helpers under a scoped code-mode namespace."""
+        from .adapters.python import register_python_namespace
+
+        return register_python_namespace(
+            self.registry,
+            name,
+            tools,
+            tags=tags,
+        )
 
     def register_cli(
         self,
@@ -164,6 +181,7 @@ class Toolplane:
             inputs=inputs,
             packages=packages,
             namespace=self.registry.callable_namespace(),
+            scoped_namespace=self.registry.scoped_namespace(),
             ambient_cli=self.ambient_cli,
             ambient_cli_names=self._get_ambient_cli_names(),
         )

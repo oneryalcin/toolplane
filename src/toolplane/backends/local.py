@@ -11,7 +11,7 @@ from typing import Any
 
 from ..adapters.ambient_cli import build_local_cli_namespace
 from ..bridges.base import HostBridge
-from ..errors import BackendCapabilityError
+from ..errors import BackendCapabilityError, NamespaceCollisionError
 from ..execution import BackendCapabilities, ExecutionError, ExecutionResult
 from ._python import wrap_async_main
 
@@ -42,6 +42,7 @@ class LocalUnsafeBackend:
         inputs: Mapping[str, Any] | None = None,
         packages: Sequence[str] = (),
         namespace: Mapping[str, str] | None = None,
+        scoped_namespace: Mapping[str, Mapping[str, str]] | None = None,
         ambient_cli: bool = False,
         ambient_cli_names: Sequence[str] = (),
     ) -> ExecutionResult:
@@ -54,25 +55,34 @@ class LocalUnsafeBackend:
         stdout = io.StringIO()
         stderr = io.StringIO()
         capability_namespace = dict(namespace or {})
+        scoped_capability_namespace = _copy_scoped_namespace(scoped_namespace or {})
         input_namespace = dict(inputs or {})
         scope: dict[str, Any] = {
             "__name__": "__toolplane_local__",
             "call_tool": bridge.call_tool,
         }
-        if ambient_cli:
-            scope.update(
-                build_local_cli_namespace(
-                    bridge,
-                    ambient_cli_names,
-                    reserved=set(scope)
-                    | set(capability_namespace)
-                    | set(input_namespace),
-                )
-            )
-        scope.update(_callable_namespace(bridge, capability_namespace))
-        scope.update(input_namespace)
 
         try:
+            _ensure_no_input_collisions(
+                input_namespace,
+                {"call_tool", "cli"}
+                | set(capability_namespace)
+                | set(scoped_capability_namespace),
+            )
+            if ambient_cli:
+                scope.update(
+                    build_local_cli_namespace(
+                        bridge,
+                        ambient_cli_names,
+                        reserved=set(scope)
+                        | set(capability_namespace)
+                        | set(scoped_capability_namespace)
+                        | set(input_namespace),
+                    )
+                )
+            scope.update(_callable_namespace(bridge, capability_namespace))
+            scope.update(_scoped_namespace(bridge, scoped_capability_namespace))
+            scope.update(input_namespace)
             exec(wrap_async_main(code), scope, scope)
             with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
                 value = await scope["__toolplane_main__"]()
@@ -112,6 +122,50 @@ def _callable_namespace(
         call_bound_tool.__name__ = callable_name
         callables[callable_name] = call_bound_tool
     return callables
+
+
+def _copy_scoped_namespace(
+    scoped_namespace: Mapping[str, Mapping[str, str]],
+) -> dict[str, dict[str, str]]:
+    return {
+        namespace: dict(members)
+        for namespace, members in scoped_namespace.items()
+    }
+
+
+def _ensure_no_input_collisions(
+    inputs: Mapping[str, Any],
+    reserved_names: set[str],
+) -> None:
+    collisions = sorted(set(inputs) & reserved_names)
+    if collisions:
+        joined = ", ".join(collisions)
+        raise NamespaceCollisionError(
+            f"Input names collide with Toolplane namespace bindings: {joined}"
+        )
+
+
+def _scoped_namespace(
+    bridge: HostBridge,
+    scoped_namespace: Mapping[str, Mapping[str, str]],
+) -> dict[str, Any]:
+    return {
+        namespace: _ToolNamespace(bridge, bindings)
+        for namespace, bindings in scoped_namespace.items()
+    }
+
+
+class _ToolNamespace:
+    def __init__(self, bridge: HostBridge, bindings: Mapping[str, str]) -> None:
+        self._bridge = bridge
+        self._bindings = dict(bindings)
+
+    def __getattr__(self, member: str) -> Any:
+        if member.startswith("_") or member not in self._bindings:
+            raise AttributeError(member)
+        call_bound_tool = _make_bound_tool(self._bridge, self._bindings[member])
+        call_bound_tool.__name__ = member
+        return call_bound_tool
 
 
 def _make_bound_tool(

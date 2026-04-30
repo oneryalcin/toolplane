@@ -21,6 +21,7 @@ class CodeBackend(Protocol):
         inputs: Mapping[str, Any] | None = None,
         packages: Sequence[str] = (),
         namespace: Mapping[str, str] | None = None,
+        scoped_namespace: Mapping[str, Mapping[str, str]] | None = None,
         ambient_cli: bool = False,
         ambient_cli_names: Sequence[str] = (),
     ) -> ExecutionResult: ...

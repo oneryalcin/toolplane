@@ -186,8 +186,10 @@ The namespace exposed to agent-written code should be source-agnostic:
 
 The code should not need to know where a function came from. Naming, schemas,
 auth, and return normalization belong in the registry layer before execution.
-The host must explicitly register or configure CLI capabilities; installing the
-adapter should not ambiently expose arbitrary local commands.
+Ambient CLI access should be lazy: the runtime may expose safe names such as
+`git.diff(...)`, but it should parse and dispatch a binary only when code uses
+it. Host configuration should control policy and overrides rather than require
+registration ceremony for basic local CLI availability.
 
 The code should also not need to manipulate JSON strings. JSON is the default
 wire format across sandbox, remote, MCP, and CLI boundaries, but the programming
@@ -200,7 +202,10 @@ model is Python values:
 - adapter errors preserve source, canonical capability id, tool name, and
   original detail.
 
-Friendly Python names are aliases, not identity. Every capability needs a
+Friendly Python names are aliases, not identity. Scoped namespaces such as
+`repo.read_text(...)` and `context7.query_docs(...)` are the preferred authoring
+surface when several related capabilities come from the same source. Every
+capability needs a
 canonical qualified id such as `mcp:arch/list_entities`, `cli:gh/issue_list`, or
 `py:finance/calculate_nav`. Generated aliases are exposed only when unique and
 valid. Collisions must fail loudly or require scoped/canonical access.

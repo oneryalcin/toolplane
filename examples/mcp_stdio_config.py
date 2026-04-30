@@ -25,12 +25,13 @@ async def main() -> None:
     )
     result = await runtime.execute(
         """
-value = await stdio_demo_multiply(x=6, y=7)
+value = await stdio_demo.multiply(x=6, y=7)
 return {"answer": value["product"], "operands": value["operands"]}
 """
     )
 
-    print("namespace:", runtime.registry.callable_namespace())
+    print("flat aliases:", runtime.registry.callable_namespace())
+    print("scoped namespaces:", runtime.registry.scoped_namespace())
     print("ok:", result.ok)
     print("value:", result.value)
 
