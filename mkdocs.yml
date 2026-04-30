@@ -48,6 +48,7 @@ nav:
   - Architecture:
       - Architecture: architecture.md
       - Code Mode Backends: code-mode-backends.md
+      - Toolplane And MCP: toolplane-mcp.md
   - Examples:
       - Overview: examples/index.md
       - Ambient CLI: examples/ambient-cli.md

@@ -13,6 +13,7 @@ discover capabilities -> inspect schemas -> execute Python against a curated nam
 
 [:octicons-mark-github-16: View on GitHub](https://github.com/oneryalcin/toolplane){ .md-button .md-button--primary }
 [Read the architecture](architecture.md){ .md-button }
+[Toolplane and MCP](toolplane-mcp.md){ .md-button }
 
 </section>
 
@@ -89,6 +90,13 @@ controlled by the host application.
   must never silently shadow each other.
 - Sandboxed and remote backends call host capabilities through a bridge unless a
   capability is explicitly safe to ship into the execution environment.
+
+## Toolplane And MCP
+
+Toolplane is not only an MCP proxy. Its intended role is a programmable
+workbench over MCP tools, CLI wrappers, Python helpers, and libraries.
+
+[Read the Toolplane and MCP boundary](toolplane-mcp.md){ .md-button }
 
 ## Current Slice
 
