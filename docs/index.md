@@ -16,6 +16,35 @@ discover capabilities -> inspect schemas -> execute Python against a curated nam
 
 </section>
 
+## Install
+
+=== "uv"
+
+    ```bash
+    uv add toolplane
+    ```
+
+=== "pip"
+
+    ```bash
+    python -m pip install toolplane
+    ```
+
+Then create a runtime and register the capabilities your code-mode surface
+should expose:
+
+```python
+from toolplane import Toolplane
+
+runtime = Toolplane()
+```
+
+!!! tip "Local development"
+
+    The repository examples still use `uv run --no-config --no-project
+    --with-editable .` so they exercise the checkout directly. Application code
+    can depend on the published `toolplane` package.
+
 ## Why It Exists
 
 Agents are strongest when they can use code as the control plane for real work:
