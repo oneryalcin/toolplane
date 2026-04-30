@@ -1,7 +1,20 @@
+<section class="tp-hero" markdown>
+
+<span class="tp-kicker">Programmable tool surface for code-mode agents</span>
+
 # toolplane
 
-A controlled Python code-mode runtime where CLIs, MCP tools, and libraries are
-normalized into one programmable tool surface.
+A controlled Python runtime where CLIs, MCP tools, Python functions, and host
+helpers are normalized into one namespace that agent-written code can compose.
+
+```text
+discover capabilities -> inspect schemas -> execute Python against a curated namespace
+```
+
+[:octicons-mark-github-16: View on GitHub](https://github.com/oneryalcin/toolplane){ .md-button .md-button--primary }
+[Read the architecture](architecture.md){ .md-button }
+
+</section>
 
 ## Why It Exists
 
@@ -9,15 +22,32 @@ Agents are strongest when they can use code as the control plane for real work:
 looping, branching, filtering, retrying, aggregating, and combining tools
 without bouncing through one tool call at a time.
 
-`toolplane` exposes a curated Python runtime where capabilities can come from:
+`toolplane` exists to make that code surface explicit, inspectable, and
+controlled by the host application.
 
-- Python functions and libraries.
-- MCP tools.
-- CLI wrappers such as `cli-to-py`.
-- Host application helpers.
+<div class="grid cards" markdown>
 
-The agent writes Python. The host controls which capabilities exist, how
-credentials are handled, and which backend executes the code.
+-   __CLI wrappers__
+
+    Use `cli-to-py` commands as Python callables, including lazy ambient access
+    for local development workflows.
+
+-   __MCP tools__
+
+    Register FastMCP-compatible servers and expose their tools as async Python
+    functions with canonical capability ids.
+
+-   __Host helpers__
+
+    Add application-owned functions to the runtime while keeping credentials,
+    authorization, and policy host-side.
+
+</div>
+
+!!! note "Host-controlled by design"
+
+    The agent writes Python. The host controls which capabilities exist, how
+    credentials are handled, and which backend executes the code.
 
 ## Design Invariants
 
@@ -41,37 +71,43 @@ Python through:
 - `pyodide-deno`: experimental Pyodide-in-Deno sandbox execution with package
   loading and host bridge `call_tool` callbacks.
 
-```python
-from toolplane import Toolplane
+=== "Host setup"
 
-runtime = Toolplane()
+    ```python
+    from toolplane import Toolplane
 
-@runtime.tool(tags={"math"})
-def add(x: int, y: int) -> int:
-    """Add two numbers."""
-    return x + y
+    runtime = Toolplane()
 
-result = await runtime.execute("""
-value = await call_tool("add", {"x": 2, "y": 3})
-return value
-""")
-```
+    @runtime.tool(tags={"math"})
+    def add(x: int, y: int) -> int:
+        """Add two numbers."""
+        return x + y
+    ```
 
-The Pyodide+Deno backend can run package-backed code and call host capabilities:
+=== "Agent code"
 
-```python
-result = await runtime.execute(
-    """
-import pandas as pd
+    ```python
+    result = await runtime.execute("""
+    value = await call_tool("add", {"x": 2, "y": 3})
+    return value
+    """)
+    ```
 
-x = await call_tool("add", {"x": 2, "y": 3})
-df = pd.DataFrame([{"value": x}])
-return int(df["value"].sum())
-""",
-    backend="pyodide-deno",
-    packages=["pandas"],
-)
-```
+=== "Package-backed sandbox"
+
+    ```python
+    result = await runtime.execute(
+        """
+    import pandas as pd
+
+    x = await call_tool("add", {"x": 2, "y": 3})
+    df = pd.DataFrame([{"value": x}])
+    return int(df["value"].sum())
+    """,
+        backend="pyodide-deno",
+        packages=["pandas"],
+    )
+    ```
 
 ## Ambient CLI
 
@@ -99,6 +135,11 @@ return {"files": files, "version": version}
 
 Hosts can disable this surface with `Toolplane(ambient_cli=False)` when they
 need an explicit allowlist or a locked-down execution profile.
+
+!!! warning "`local_unsafe` is a development backend"
+
+    Ambient CLI access is intentionally useful for local shape validation. It is
+    not a production sandbox for untrusted code.
 
 ## CLI Adapter
 
@@ -174,7 +215,23 @@ make examples
 uv run --no-project --with-editable . python examples/context7_remote.py
 ```
 
-## Design Notes
+## Next Steps
 
-- [Architecture](architecture.md)
-- [Code Mode Backends](code-mode-backends.md)
+<div class="grid cards" markdown>
+
+-   __Understand the boundary__
+
+    Read [Architecture](architecture.md) for the registry, backend, bridge, and
+    adapter split.
+
+-   __Pick a backend__
+
+    Read [Code Mode Backends](code-mode-backends.md) for the local unsafe,
+    Pyodide+Deno, Docker, Modal, E2B, and Blaxel tradeoffs.
+
+-   __Run examples__
+
+    Start with [Ambient CLI](examples/ambient-cli.md) and
+    [MCP Tools](examples/mcp-tools.md).
+
+</div>

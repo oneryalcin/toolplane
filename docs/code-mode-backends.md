@@ -6,6 +6,13 @@
 discover capabilities -> inspect schemas -> execute Python against a curated namespace
 ```
 
+!!! note "Backend choice follows workload shape"
+
+    Monty is useful for small safe orchestration. Pyodide+Deno is the likely
+    default for pandas/NumPy-style snippets. Docker, Modal, E2B, and Blaxel are
+    for arbitrary CPython packages, subprocesses, native dependencies, GPUs, or
+    stronger remote isolation.
+
 The execution backend should be swappable. Different workloads need different
 tradeoffs between safety, package support, startup latency, local development
 ergonomics, and production isolation.

@@ -1,13 +1,88 @@
 site_name: toolplane
 site_description: A controlled Python code-mode runtime for programmable tool surfaces.
 site_url: https://oneryalcin.github.io/toolplane/
+repo_name: oneryalcin/toolplane
 repo_url: https://github.com/oneryalcin/toolplane
+edit_uri: edit/main/docs/
+strict: true
 
 theme:
-  name: mkdocs
+  name: material
+  language: en
+  icon:
+    logo: material/vector-polyline
+    repo: fontawesome/brands/github
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: black
+      accent: blue
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: blue
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.select
+    - content.code.annotate
+    - content.tabs.link
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.path
+    - navigation.sections
+    - navigation.tabs
+    - navigation.top
+    - navigation.tracking
+    - toc.follow
 
 nav:
-  - Home: index.md
-  - Architecture: architecture.md
-  - Code Mode Backends: code-mode-backends.md
-  - Release Checklist: development/release-checklist.md
+  - Overview: index.md
+  - Architecture:
+      - Architecture: architecture.md
+      - Code Mode Backends: code-mode-backends.md
+  - Examples:
+      - Overview: examples/index.md
+      - Ambient CLI: examples/ambient-cli.md
+      - MCP Tools: examples/mcp-tools.md
+  - Development:
+      - Release Checklist: development/release-checklist.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+extra:
+  generator: false
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/oneryalcin/toolplane
+      name: toolplane on GitHub
+
+extra_css:
+  - stylesheets/extra.css

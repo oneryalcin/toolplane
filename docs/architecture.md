@@ -10,6 +10,11 @@ Use implementation discipline first: build a narrow vertical slice that can be
 read from top to bottom. Avoid speculative plugin frameworks, lifecycle systems,
 or abstract factories until real backends force them.
 
+!!! note "Scope"
+
+    `toolplane` is the programmable tool surface that an agent framework can
+    use. It is not trying to become the agent framework.
+
 Name the real boundaries early so the code does not collapse into glue:
 
 - `Capability`: something code can call.
