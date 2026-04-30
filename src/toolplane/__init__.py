@@ -14,6 +14,7 @@ from .errors import (
     BackendNotFoundError,
     CapabilityNotFoundError,
     DuplicateCapabilityError,
+    NamespaceCollisionError,
     ToolplaneError,
 )
 from .execution import BackendCapabilities, ExecutionError, ExecutionResult
@@ -35,6 +36,7 @@ __all__ = [
     "ExecutionResult",
     "HttpCallbackBridge",
     "InProcessBridge",
+    "NamespaceCollisionError",
     "PyodideDenoBackend",
     "ToolCallError",
     "ToolCallRequest",

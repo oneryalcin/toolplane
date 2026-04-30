@@ -23,6 +23,8 @@ class Capability:
     source: str = "python"
     aliases: frozenset[str] = field(default_factory=frozenset)
     hidden: bool = False
+    namespace: str | None = None
+    namespace_member: str | None = None
 
     def to_schema(self) -> dict[str, Any]:
         schema: dict[str, Any] = {
@@ -39,11 +41,24 @@ class Capability:
             schema["aliases"] = sorted(self.aliases)
         if self.hidden:
             schema["hidden"] = True
+        if self.namespace is not None and self.namespace_member is not None:
+            schema["namespace"] = {
+                "name": self.namespace,
+                "member": self.namespace_member,
+            }
         return schema
 
     @property
     def searchable_text(self) -> str:
-        parts = [self.name, self.description, self.source, *self.tags, *self.aliases]
+        parts = [
+            self.name,
+            self.description,
+            self.source,
+            self.namespace or "",
+            self.namespace_member or "",
+            *self.tags,
+            *self.aliases,
+        ]
         properties = self.parameters.get("properties", {})
         if isinstance(properties, Mapping):
             for name, schema in properties.items():
@@ -62,6 +77,8 @@ def capability_from_function(
     source: str = "python",
     aliases: set[str] | frozenset[str] | None = None,
     hidden: bool = False,
+    namespace: str | None = None,
+    namespace_member: str | None = None,
 ) -> Capability:
     """Build a capability from a Python callable."""
     capability_name = name or fn.__name__
@@ -83,6 +100,8 @@ def capability_from_function(
         source=source,
         aliases=frozenset(aliases or ()),
         hidden=hidden,
+        namespace=namespace,
+        namespace_member=namespace_member,
     )
 
 

@@ -81,7 +81,7 @@ return {"total_nav": total_nav, "holding_count": len(all_holdings)}
 
 
 def test_mcp_canonical_id_and_alias_both_dispatch() -> None:
-    async def exercise() -> tuple[int, int, list[str]]:
+    async def exercise() -> tuple[int, int, int, list[str], dict[str, object]]:
         runtime = Toolplane()
         mcp = FastMCP("Demo")
 
@@ -93,13 +93,24 @@ def test_mcp_canonical_id_and_alias_both_dispatch() -> None:
         capabilities = await runtime.register_mcp("demo", mcp)
         via_alias = await runtime.call_tool("demo_add", {"a": 2, "b": 3})
         via_canonical = await runtime.call_tool("mcp:demo/add", {"a": 5, "b": 7})
-        return via_alias, via_canonical, sorted(capabilities[0].aliases)
+        via_namespace = await runtime.execute("return await demo.add(a=11, b=13)")
+        assert via_namespace.ok, via_namespace.error
+        schema = capabilities[0].to_schema()
+        return (
+            via_alias,
+            via_canonical,
+            via_namespace.value,
+            sorted(capabilities[0].aliases),
+            schema,
+        )
 
-    via_alias, via_canonical, aliases = run(exercise())
+    via_alias, via_canonical, via_namespace, aliases, schema = run(exercise())
 
     assert via_alias == 5
     assert via_canonical == 12
+    assert via_namespace == 24
     assert aliases == ["demo_add"]
+    assert schema["namespace"] == {"name": "demo", "member": "add"}
 
 
 def test_mcp_cli_and_python_capabilities_mix_in_one_snippet() -> None:

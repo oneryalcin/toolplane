@@ -24,6 +24,13 @@ not part of `make examples`:
 uv run --no-project --with-editable . python examples/context7_remote.py
 ```
 
+For a more explicit walkthrough of scoped namespaces, canonical ids, flat
+aliases, host Python helpers, and live Context7 MCP calls:
+
+```bash
+uv run --no-project --with-editable . python examples/scoped_namespaces_context7.py
+```
+
 The full mixed example also requires Deno/Pyodide package loading and live
 Context7 access:
 
