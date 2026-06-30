@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Literal
 
-from .config import ConfigSource, ToolplaneConfig, load_toolplane_config
-from .errors import UnsafeFacadeConfigError
+from .config import ConfigSource, load_toolplane_config
+from .execution import ExecutionError, ExecutionResult
+from .policy import EffectivePolicy, ensure_safe_facade_policy
 from .runtime import Toolplane
 
 if TYPE_CHECKING:
@@ -15,7 +16,11 @@ SchemaDetail = Literal["brief", "detailed", "full"]
 Transport = Literal["stdio", "http", "sse", "streamable-http"]
 
 
-def build_mcp_facade(runtime: Toolplane) -> "FastMCP":
+def build_mcp_facade(
+    runtime: Toolplane,
+    *,
+    policy: EffectivePolicy | None = None,
+) -> "FastMCP":
     """Build the small MCP meta-tool surface for a Toolplane runtime."""
     try:
         from fastmcp import FastMCP
@@ -64,6 +69,18 @@ def build_mcp_facade(runtime: Toolplane) -> "FastMCP":
         packages: list[str] | None = None,
     ) -> dict[str, Any]:
         """Execute Python against the configured Toolplane namespace."""
+        if policy is not None and backend in policy.blocked_backend_overrides:
+            return ExecutionResult(
+                backend=backend or "",
+                error=ExecutionError(
+                    type="BackendPolicyError",
+                    message=(
+                        f"Backend '{backend}' is blocked by Toolplane MCP "
+                        "facade policy. Pass --unsafe only for trusted local "
+                        "development."
+                    ),
+                ),
+            ).model_dump(mode="json")
         result = await runtime.execute(
             code,
             backend=backend,
@@ -81,10 +98,10 @@ async def build_mcp_facade_from_config(
     allow_unsafe: bool = False,
 ) -> "FastMCP":
     parsed = load_toolplane_config(config)
-    if not allow_unsafe:
-        _ensure_safe_facade_config(parsed)
+    policy = EffectivePolicy.from_config(parsed, allow_unsafe=allow_unsafe)
+    ensure_safe_facade_policy(policy)
     runtime = await Toolplane.from_config(parsed)
-    return build_mcp_facade(runtime)
+    return build_mcp_facade(runtime, policy=policy)
 
 
 async def serve_mcp_facade(
@@ -102,18 +119,3 @@ async def serve_mcp_facade(
     if port is not None:
         kwargs["port"] = port
     await app.run_async(transport=transport, show_banner=False, **kwargs)
-
-
-def _ensure_safe_facade_config(config: ToolplaneConfig) -> None:
-    unsafe: list[str] = []
-    if config.toolplane.default_backend == "local_unsafe":
-        unsafe.append("toolplane.default_backend = 'local_unsafe'")
-    if config.cli.mode == "ambient":
-        unsafe.append("cli.mode = 'ambient'")
-    if unsafe:
-        joined = ", ".join(unsafe)
-        raise UnsafeFacadeConfigError(
-            "Refusing to serve Toolplane MCP facade with unsafe policy: "
-            f"{joined}. Use an explicit safe config or pass --unsafe for trusted "
-            "local development."
-        )

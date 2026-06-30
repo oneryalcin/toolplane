@@ -7,8 +7,10 @@ import asyncio
 import sys
 from collections.abc import Sequence
 
+from .config import load_toolplane_config
 from .errors import UnsafeFacadeConfigError
 from .mcp_facade import serve_mcp_facade
+from .policy import EffectivePolicy, ensure_safe_facade_policy, format_effective_policy
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -16,9 +18,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "serve" and args.serve_command == "mcp":
         try:
+            config = load_toolplane_config(args.config)
+            policy = EffectivePolicy.from_config(
+                config,
+                allow_unsafe=args.unsafe,
+            )
+            ensure_safe_facade_policy(policy)
+            print(format_effective_policy(policy), file=sys.stderr)
             asyncio.run(
                 serve_mcp_facade(
-                    args.config,
+                    config,
                     transport=args.transport,
                     host=args.host,
                     port=args.port,

@@ -15,9 +15,12 @@ from toolplane import (
     build_mcp_facade_from_config,
 )
 from toolplane.cli import main
+from toolplane.config import ToolplaneConfig
+from toolplane.policy import EffectivePolicy, format_effective_policy
 
 pytest.importorskip("fastmcp")
 from fastmcp import Client  # noqa: E402
+from fastmcp.client.transports import StdioTransport  # noqa: E402
 
 
 def run(coro):
@@ -74,6 +77,42 @@ def test_mcp_facade_exposes_only_toolplane_meta_tools() -> None:
         "get_capability_schemas",
         "search_capabilities",
     ]
+
+
+def test_effective_policy_reports_allowlist_and_server_names() -> None:
+    config = ToolplaneConfig.model_validate(
+        {
+            "toolplane": {"default_backend": "pyodide-deno"},
+            "cli": {"mode": "allowlist", "allow": ["rg", "git"]},
+            "mcp": {"servers": {"linear": {}, "docs": {}}},
+        }
+    )
+
+    policy = EffectivePolicy.from_config(config)
+
+    assert policy.default_backend == "pyodide-deno"
+    assert policy.cli_mode == "allowlist"
+    assert policy.cli_allowed_binaries == ("git", "rg")
+    assert policy.mcp_server_names == ("docs", "linear")
+    assert policy.unsafe_reasons == ()
+    assert policy.blocked_backend_overrides == ("local_unsafe",)
+    assert format_effective_policy(policy) == (
+        "Toolplane MCP policy: backend=pyodide-deno cli=allowlist "
+        "allow=git,rg mcp_servers=docs,linear blocked_backends=local_unsafe "
+        "unsafe=false"
+    )
+
+
+def test_effective_policy_renders_ambient_as_all_when_unsafe_allowed() -> None:
+    policy = EffectivePolicy.from_config(ToolplaneConfig(), allow_unsafe=True)
+
+    assert policy.unsafe_reasons == ("local_unsafe", "ambient_cli")
+    assert policy.blocked_backend_overrides == ()
+    assert format_effective_policy(policy) == (
+        "Toolplane MCP policy: backend=local_unsafe cli=ambient allow=ALL "
+        "mcp_servers=none blocked_backends=none unsafe=true "
+        "reasons=local_unsafe,ambient_cli"
+    )
 
 
 def test_mcp_facade_search_schema_execute_flow() -> None:
@@ -134,26 +173,25 @@ def test_mcp_facade_from_config_executes_stdio_mcp_tool(tmp_path: Path) -> None:
 
 def test_cli_stdio_facade_round_trip_crosses_process_boundary(tmp_path: Path) -> None:
     config_path = write_stdio_demo_config(tmp_path)
+    stderr_path = tmp_path / "toolplane-stderr.log"
 
     async def exercise() -> dict[str, object]:
-        client_config = {
-            "mcpServers": {
-                "toolplane": {
-                    "command": sys.executable,
-                    "args": [
-                        "-m",
-                        "toolplane.cli",
-                        "serve",
-                        "mcp",
-                        "--config",
-                        str(config_path),
-                        "--unsafe",
-                    ],
-                    "cwd": str(Path.cwd()),
-                }
-            }
-        }
-        async with Client(client_config) as client:
+        transport = StdioTransport(
+            command=sys.executable,
+            args=[
+                "-m",
+                "toolplane.cli",
+                "serve",
+                "mcp",
+                "--config",
+                str(config_path),
+                "--unsafe",
+            ],
+            cwd=str(Path.cwd()),
+            keep_alive=False,
+            log_file=stderr_path,
+        )
+        async with Client(transport) as client:
             tools = await client.list_tools()
             execution = await client.call_tool(
                 "execute_code",
@@ -180,6 +218,15 @@ def test_cli_stdio_facade_round_trip_crosses_process_boundary(tmp_path: Path) ->
     assert result["execution"]["error"] is None
     assert result["failure"]["error"]["type"] == "ValueError"
     assert "stdio boundary detail" in result["failure"]["error"]["message"]
+    stderr = stderr_path.read_text(encoding="utf-8")
+    assert "Toolplane MCP policy:" in stderr
+    assert "backend=local_unsafe" in stderr
+    assert "cli=disabled" in stderr
+    assert "allow=none" in stderr
+    assert "mcp_servers=docs" in stderr
+    assert "blocked_backends=none" in stderr
+    assert "unsafe=true" in stderr
+    assert "reasons=local_unsafe" in stderr
 
 
 def test_mcp_facade_from_config_rejects_unsafe_defaults() -> None:
@@ -204,10 +251,50 @@ def test_mcp_facade_from_config_allows_explicit_safe_policy() -> None:
     assert app.name == "Toolplane"
 
 
-def test_mcp_facade_from_config_allows_unsafe_when_explicit() -> None:
-    app = run(build_mcp_facade_from_config({}, allow_unsafe=True))
+def test_mcp_facade_from_config_blocks_local_unsafe_backend_override() -> None:
+    async def exercise() -> dict[str, object]:
+        app = await build_mcp_facade_from_config(
+            {
+                "toolplane": {"default_backend": "pyodide-deno"},
+                "cli": {"mode": "disabled"},
+            }
+        )
+        async with Client(app) as client:
+            result = await client.call_tool(
+                "execute_code",
+                {
+                    "code": "return 'host python'",
+                    "backend": "local_unsafe",
+                },
+            )
+        return result.data
 
-    assert app.name == "Toolplane"
+    result = run(exercise())
+
+    assert result["value"] is None
+    assert result["backend"] == "local_unsafe"
+    assert result["error"]["type"] == "BackendPolicyError"
+    assert "blocked by Toolplane MCP facade policy" in result["error"]["message"]
+
+
+def test_mcp_facade_from_config_allows_unsafe_when_explicit() -> None:
+    async def exercise() -> dict[str, object]:
+        app = await build_mcp_facade_from_config({}, allow_unsafe=True)
+        async with Client(app) as client:
+            result = await client.call_tool(
+                "execute_code",
+                {
+                    "code": "return 'host python'",
+                    "backend": "local_unsafe",
+                },
+            )
+        return {"name": app.name, "execution": result.data}
+
+    result = run(exercise())
+
+    assert result["name"] == "Toolplane"
+    assert result["execution"]["value"] == "host python"
+    assert result["execution"]["error"] is None
 
 
 def test_cli_serve_mcp_reports_unsafe_config(
@@ -222,6 +309,8 @@ def test_cli_serve_mcp_reports_unsafe_config(
     assert "unsafe policy" in captured.err
     assert "local_unsafe" in captured.err
     assert "ambient" in captured.err
+    assert "Toolplane MCP policy:" not in captured.err
+    assert captured.out == ""
 
 
 def test_cli_requires_nested_serve_command(capsys: pytest.CaptureFixture[str]) -> None:

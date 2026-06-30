@@ -155,8 +155,10 @@ namespace.
 
 The current implementation provides this no-auth skeleton, exposes only the
 three Toolplane meta-tools, and guards the config-backed MCP facade from unsafe
-defaults. It does not yet include MCP auth login, durable token storage, or
-client install helpers.
+defaults. On successful `toolplane serve mcp` startup, it prints the effective
+backend, CLI, MCP-server, and unsafe-override policy to stderr for the operator.
+It does not yet include MCP auth login, durable token storage, or client install
+helpers.
 
 The first slice should deliberately avoid remote auth:
 
