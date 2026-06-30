@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import sys
 from collections.abc import Sequence
 
+from .errors import UnsafeFacadeConfigError
 from .mcp_facade import serve_mcp_facade
 
 
@@ -13,14 +15,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
     if args.command == "serve" and args.serve_command == "mcp":
-        asyncio.run(
-            serve_mcp_facade(
-                args.config,
-                transport=args.transport,
-                host=args.host,
-                port=args.port,
+        try:
+            asyncio.run(
+                serve_mcp_facade(
+                    args.config,
+                    transport=args.transport,
+                    host=args.host,
+                    port=args.port,
+                    allow_unsafe=args.unsafe,
+                )
             )
-        )
+        except UnsafeFacadeConfigError as exc:
+            print(f"toolplane: {exc}", file=sys.stderr)
+            return 2
         return 0
     parser.print_help()
     return 2
@@ -47,6 +54,14 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     mcp.add_argument("--host", help="Host for HTTP-based transports")
     mcp.add_argument("--port", type=int, help="Port for HTTP-based transports")
+    mcp.add_argument(
+        "--unsafe",
+        action="store_true",
+        help=(
+            "Allow local_unsafe backend or ambient CLI policy for trusted local "
+            "development"
+        ),
+    )
 
     return parser
 

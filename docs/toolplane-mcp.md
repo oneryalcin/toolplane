@@ -85,7 +85,8 @@ controlled Python runtime where multiple capability sources become composable.
 
 ## User Flow
 
-The first stable command-line surface should optimize for explicit setup:
+The first stable command-line surface should optimize for explicit setup. This
+section is the target lifecycle; only `toolplane serve mcp` exists today.
 
 ```bash
 toolplane init
@@ -98,11 +99,14 @@ toolplane doctor
 This writes project config:
 
 ```toml
+[toolplane]
+default_backend = "pyodide-deno"
+
 [cli]
 mode = "allowlist"
 allow = ["git", "gh", "rg"]
 
-[mcpServers.linear]
+[mcp.servers.linear]
 url = "https://mcp.linear.app/mcp"
 ```
 
@@ -116,7 +120,7 @@ toolplane mcp add linear -- npx -y mcp-remote https://mcp.linear.app/mcp
 which maps to:
 
 ```toml
-[mcpServers.linear]
+[mcp.servers.linear]
 command = "npx"
 args = ["-y", "mcp-remote", "https://mcp.linear.app/mcp"]
 ```
@@ -149,14 +153,22 @@ highest-information slice: it proves whether clients can use Toolplane as one
 MCP server that offers progressive discovery and code execution over a curated
 namespace.
 
-The current implementation provides this no-auth skeleton and exposes only the
-three Toolplane meta-tools. It does not yet include MCP auth login, durable token
-storage, or client install helpers.
+The current implementation provides this no-auth skeleton, exposes only the
+three Toolplane meta-tools, and guards the config-backed MCP facade from unsafe
+defaults. It does not yet include MCP auth login, durable token storage, or
+client install helpers.
 
 The first slice should deliberately avoid remote auth:
 
 ```bash
 toolplane serve mcp --config ./toolplane.toml
+```
+
+For trusted local development with the `local_unsafe` backend or ambient CLI
+policy, the operator must opt in explicitly:
+
+```bash
+toolplane serve mcp --config ./toolplane.toml --unsafe
 ```
 
 Validate it against a config with only no-auth capabilities, such as host Python
@@ -184,7 +196,7 @@ credentials outside project TOML.
 For a remote server:
 
 ```toml
-[mcpServers.linear]
+[mcp.servers.linear]
 url = "https://mcp.linear.app/mcp"
 ```
 
@@ -213,10 +225,10 @@ For non-interactive environments, secrets should be referenced, not stored in
 plain TOML:
 
 ```toml
-[mcpServers.linear]
+[mcp.servers.linear]
 url = "https://mcp.linear.app/mcp"
 
-[mcpServers.linear.auth]
+[mcp.servers.linear.auth]
 type = "bearer"
 env = "LINEAR_MCP_TOKEN"
 ```
@@ -238,7 +250,7 @@ Rules:
 
 ## What Toolplane-MCP Should Expose
 
-`toolplane-mcp` should expose a small meta-tool surface:
+`toolplane-mcp` currently exposes a small meta-tool surface:
 
 ```text
 search_capabilities(query, tags?)
@@ -260,9 +272,7 @@ That recreates context bloat and loses the workbench model.
 
 FastMCP's experimental `CodeMode` transform already provides the same broad
 shape as the Toolplane facade: staged discovery, schema lookup, and code
-execution through a sandbox provider. Before expanding Toolplane's custom
-facade, evaluate whether Toolplane should instead integrate as a CodeMode
-`SandboxProvider` plus capability adapter layer.
+execution through a sandbox provider.
 
 A throwaway spike showed this is technically viable:
 
@@ -272,21 +282,36 @@ A throwaway spike showed this is technically viable:
 - A custom sandbox provider can inject Toolplane-style scoped namespaces such as
   `demo.add(...)` while delegating calls through CodeMode's `external_functions`.
 
-The spike also exposed semantic differences that need an explicit product
-decision before replacing the custom facade:
+The spike also exposed the deciding semantic difference:
+
+- Scalar tool results are wrapped as `{"result": value}` inside CodeMode's
+  intra-snippet execution path. This means an agent composing normal Python would
+  receive `{"result": 12}` from a scalar tool call instead of `12`.
+- Toolplane's custom execution path preserves normal Python values inside the
+  snippet, which is central to the product contract. At the final MCP boundary,
+  Toolplane returns an explicit `ExecutionResult` object such as
+  `{"value": 12, ...}`.
+
+The product decision is therefore: keep Toolplane's custom execute/namespace
+core, and treat CodeMode as a parts bin for commodity pieces where it is clearly
+better:
+
+- BM25-style search instead of Toolplane's current token-count baseline.
+- Discovery-tool patterns.
+- Execute-time tool-call caps.
+
+Do not adopt CodeMode wholesale unless FastMCP makes scalar unwrapping
+configurable or Toolplane intentionally changes its Python-first composition
+semantics.
+
+Remaining integration caveats:
 
 - CodeMode's discovery and schema rendering are FastMCP-native, not
   Toolplane-native.
 - Tool names exposed to CodeMode need safe FastMCP wrapper names, so canonical
   Toolplane ids and aliases need a stable mapping.
-- Scalar tool results are wrapped as `{"result": value}` inside CodeMode's
-  execution path, which differs from Toolplane's current direct Python return
-  semantics.
 - CodeMode is currently documented as experimental, so depending on it makes
   FastMCP's transform API part of Toolplane's compatibility surface.
-
-Do not build more custom facade depth until this decision is made consciously.
-The custom no-auth skeleton remains useful as a product proof and fallback.
 
 ## Non-Goals
 

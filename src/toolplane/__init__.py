@@ -24,6 +24,7 @@ from .errors import (
     DuplicateCapabilityError,
     NamespaceCollisionError,
     ToolplaneError,
+    UnsafeFacadeConfigError,
 )
 from .execution import BackendCapabilities, ExecutionError, ExecutionResult
 from .mcp_facade import build_mcp_facade, build_mcp_facade_from_config
@@ -59,5 +60,6 @@ __all__ = [
     "ToolplaneConfig",
     "ToolplaneError",
     "ToolplaneSettings",
+    "UnsafeFacadeConfigError",
     "load_toolplane_config",
 ]

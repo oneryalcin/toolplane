@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Literal
 
-from .config import ConfigSource
+from .config import ConfigSource, ToolplaneConfig, load_toolplane_config
+from .errors import UnsafeFacadeConfigError
 from .runtime import Toolplane
 
 if TYPE_CHECKING:
@@ -74,8 +75,15 @@ def build_mcp_facade(runtime: Toolplane) -> "FastMCP":
     return mcp
 
 
-async def build_mcp_facade_from_config(config: ConfigSource) -> "FastMCP":
-    runtime = await Toolplane.from_config(config)
+async def build_mcp_facade_from_config(
+    config: ConfigSource,
+    *,
+    allow_unsafe: bool = False,
+) -> "FastMCP":
+    parsed = load_toolplane_config(config)
+    if not allow_unsafe:
+        _ensure_safe_facade_config(parsed)
+    runtime = await Toolplane.from_config(parsed)
     return build_mcp_facade(runtime)
 
 
@@ -85,11 +93,27 @@ async def serve_mcp_facade(
     transport: Transport = "stdio",
     host: str | None = None,
     port: int | None = None,
+    allow_unsafe: bool = False,
 ) -> None:
-    app = await build_mcp_facade_from_config(config)
+    app = await build_mcp_facade_from_config(config, allow_unsafe=allow_unsafe)
     kwargs: dict[str, Any] = {}
     if host is not None:
         kwargs["host"] = host
     if port is not None:
         kwargs["port"] = port
     await app.run_async(transport=transport, show_banner=False, **kwargs)
+
+
+def _ensure_safe_facade_config(config: ToolplaneConfig) -> None:
+    unsafe: list[str] = []
+    if config.toolplane.default_backend == "local_unsafe":
+        unsafe.append("toolplane.default_backend = 'local_unsafe'")
+    if config.cli.mode == "ambient":
+        unsafe.append("cli.mode = 'ambient'")
+    if unsafe:
+        joined = ", ".join(unsafe)
+        raise UnsafeFacadeConfigError(
+            "Refusing to serve Toolplane MCP facade with unsafe policy: "
+            f"{joined}. Use an explicit safe config or pass --unsafe for trusted "
+            "local development."
+        )

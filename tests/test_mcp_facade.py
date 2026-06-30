@@ -8,7 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from toolplane import Toolplane, build_mcp_facade, build_mcp_facade_from_config
+from toolplane import (
+    Toolplane,
+    UnsafeFacadeConfigError,
+    build_mcp_facade,
+    build_mcp_facade_from_config,
+)
 from toolplane.cli import main
 
 pytest.importorskip("fastmcp")
@@ -113,7 +118,7 @@ def test_mcp_facade_from_config_executes_stdio_mcp_tool(tmp_path: Path) -> None:
     config_path = write_stdio_demo_config(tmp_path)
 
     async def exercise() -> dict[str, object]:
-        app = await build_mcp_facade_from_config(config_path)
+        app = await build_mcp_facade_from_config(config_path, allow_unsafe=True)
         async with Client(app) as client:
             result = await client.call_tool(
                 "execute_code",
@@ -142,6 +147,7 @@ def test_cli_stdio_facade_round_trip_crosses_process_boundary(tmp_path: Path) ->
                         "mcp",
                         "--config",
                         str(config_path),
+                        "--unsafe",
                     ],
                     "cwd": str(Path.cwd()),
                 }
@@ -174,6 +180,48 @@ def test_cli_stdio_facade_round_trip_crosses_process_boundary(tmp_path: Path) ->
     assert result["execution"]["error"] is None
     assert result["failure"]["error"]["type"] == "ValueError"
     assert "stdio boundary detail" in result["failure"]["error"]["message"]
+
+
+def test_mcp_facade_from_config_rejects_unsafe_defaults() -> None:
+    with pytest.raises(UnsafeFacadeConfigError) as error:
+        run(build_mcp_facade_from_config({}))
+
+    message = str(error.value)
+    assert "local_unsafe" in message
+    assert "ambient" in message
+
+
+def test_mcp_facade_from_config_allows_explicit_safe_policy() -> None:
+    app = run(
+        build_mcp_facade_from_config(
+            {
+                "toolplane": {"default_backend": "pyodide-deno"},
+                "cli": {"mode": "disabled"},
+            }
+        )
+    )
+
+    assert app.name == "Toolplane"
+
+
+def test_mcp_facade_from_config_allows_unsafe_when_explicit() -> None:
+    app = run(build_mcp_facade_from_config({}, allow_unsafe=True))
+
+    assert app.name == "Toolplane"
+
+
+def test_cli_serve_mcp_reports_unsafe_config(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text("", encoding="utf-8")
+
+    assert main(["serve", "mcp", "--config", str(config_path)]) == 2
+    captured = capsys.readouterr()
+    assert "unsafe policy" in captured.err
+    assert "local_unsafe" in captured.err
+    assert "ambient" in captured.err
 
 
 def test_cli_requires_nested_serve_command(capsys: pytest.CaptureFixture[str]) -> None:
