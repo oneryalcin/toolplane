@@ -256,6 +256,38 @@ explain_policy()
 It should not re-export every underlying tool as a flat MCP catalog by default.
 That recreates context bloat and loses the workbench model.
 
+## FastMCP CodeMode Decision
+
+FastMCP's experimental `CodeMode` transform already provides the same broad
+shape as the Toolplane facade: staged discovery, schema lookup, and code
+execution through a sandbox provider. Before expanding Toolplane's custom
+facade, evaluate whether Toolplane should instead integrate as a CodeMode
+`SandboxProvider` plus capability adapter layer.
+
+A throwaway spike showed this is technically viable:
+
+- CodeMode can own the client-visible `search`, `get_schema`, and `execute`
+  tools.
+- Toolplane-backed capabilities can be adapted into the hidden FastMCP catalog.
+- A custom sandbox provider can inject Toolplane-style scoped namespaces such as
+  `demo.add(...)` while delegating calls through CodeMode's `external_functions`.
+
+The spike also exposed semantic differences that need an explicit product
+decision before replacing the custom facade:
+
+- CodeMode's discovery and schema rendering are FastMCP-native, not
+  Toolplane-native.
+- Tool names exposed to CodeMode need safe FastMCP wrapper names, so canonical
+  Toolplane ids and aliases need a stable mapping.
+- Scalar tool results are wrapped as `{"result": value}` inside CodeMode's
+  execution path, which differs from Toolplane's current direct Python return
+  semantics.
+- CodeMode is currently documented as experimental, so depending on it makes
+  FastMCP's transform API part of Toolplane's compatibility surface.
+
+Do not build more custom facade depth until this decision is made consciously.
+The custom no-auth skeleton remains useful as a product proof and fallback.
+
 ## Non-Goals
 
 Toolplane should not:
