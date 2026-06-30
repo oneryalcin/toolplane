@@ -6,6 +6,7 @@ __pycache__/
 .mypy_cache/
 .venv/
 .omx/
+.understand-anything/
 uv.lock
 dist/
 build/

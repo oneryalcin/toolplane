@@ -89,7 +89,7 @@ The first stable command-line surface should optimize for explicit setup:
 
 ```bash
 toolplane init
-toolplane mcp add linear --url https://mcp.linear.app/mcp --auth oauth
+toolplane mcp add linear --url https://mcp.linear.app/mcp
 toolplane mcp login linear
 toolplane cli allow git gh rg
 toolplane doctor
@@ -104,7 +104,21 @@ allow = ["git", "gh", "rg"]
 
 [mcpServers.linear]
 url = "https://mcp.linear.app/mcp"
-auth = "oauth"
+```
+
+Toolplane should also accept stdio-style upstream server definitions, including
+bridges used by stdio-only hosts:
+
+```bash
+toolplane mcp add linear -- npx -y mcp-remote https://mcp.linear.app/mcp
+```
+
+which maps to:
+
+```toml
+[mcpServers.linear]
+command = "npx"
+args = ["-y", "mcp-remote", "https://mcp.linear.app/mcp"]
 ```
 
 Then a user can connect Toolplane to an MCP client:
@@ -128,25 +142,60 @@ A later Claude plugin can make this lower friction:
 The plugin is distribution sugar. The core product remains the configured
 Toolplane runtime.
 
+## Walking Skeleton
+
+Build `toolplane serve mcp` before the full auth lifecycle. The facade is the
+highest-information slice: it proves whether clients can use Toolplane as one
+MCP server that offers progressive discovery and code execution over a curated
+namespace.
+
+The first slice should deliberately avoid remote auth:
+
+```bash
+toolplane serve mcp --config ./toolplane.toml
+```
+
+Validate it against a config with only no-auth capabilities, such as host Python
+helpers, allowlisted CLI binaries, and a local stdio MCP server. Then connect an
+MCP client and run:
+
+```text
+search_capabilities -> get_capability_schemas -> execute_code
+```
+
+This skeleton is not the production-ready completion state for this issue. It is
+the early risk-reduction step before implementing OAuth lifecycle and durable
+token storage.
+
 ## Auth Boundary
 
 Remote MCP authentication belongs to the host process, not to agent-written
 Python.
 
-For OAuth-backed remote MCP servers:
+For remote MCP servers, adding a server and authenticating to it should remain
+separate operations. The add command records how to reach the server. The login
+command discovers or negotiates the required authentication flow and stores
+credentials outside project TOML.
+
+For a remote server:
 
 ```toml
 [mcpServers.linear]
 url = "https://mcp.linear.app/mcp"
-auth = "oauth"
 ```
 
-Toolplane should delegate the actual MCP OAuth flow to FastMCP's client layer:
+Toolplane should delegate the actual MCP OAuth flow to FastMCP's client layer,
+while owning the durable token storage and lifecycle around that lower-level
+machinery:
 
+- first verify the current FastMCP client behavior for remote MCP OAuth,
+  including whether `Client(..., auth="oauth")` can authenticate to real servers
+  and which token storage hooks are available.
 - browser-based authorization code flow with PKCE.
 - dynamic client registration when the server supports it.
 - token refresh handled by the MCP client implementation.
-- persistent token storage owned by Toolplane.
+- persistent token storage owned by Toolplane and injected into FastMCP's OAuth
+  provider.
 
 Toolplane should provide host commands around that lower-level machinery:
 
@@ -177,6 +226,11 @@ Rules:
   credentials.
 - Token storage must be encrypted or delegated to the operating system keychain
   before it is marketed as a production feature.
+- The first public MCP facade should not rely on FastMCP's default in-memory
+  OAuth token storage, because that requires users to reauthenticate after every
+  Toolplane process restart.
+- `toolplane.toml` should describe upstream MCP servers and policy, not contain
+  long-lived secrets.
 
 ## What Toolplane-MCP Should Expose
 
@@ -213,14 +267,16 @@ Toolplane should not:
 
 ## Dependency Order
 
-`toolplane-mcp` should wait until config and policy are real:
+`toolplane-mcp` should front-load the facade skeleton once config and policy are
+real, then harden auth before calling the public surface complete:
 
 ```text
 config-driven runtime setup
   -> CLI policy: disabled, allowlist, ambient
   -> MCP server config loading
-  -> MCP auth command surface
-  -> toolplane serve mcp
+  -> minimal toolplane serve mcp walking skeleton without remote auth
+  -> FastMCP OAuth/token-storage behavior verification
+  -> MCP auth command surface and durable token storage
   -> client install helpers
   -> Claude plugin packaging
 ```
