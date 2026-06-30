@@ -109,7 +109,7 @@ auth model.
 - [x] [#3](https://github.com/oneryalcin/toolplane/issues/3): Add host callback RPC bridge for sandboxed backends.
 - [x] [#2](https://github.com/oneryalcin/toolplane/issues/2): Add `cli-to-py` adapter.
 - [x] [#4](https://github.com/oneryalcin/toolplane/issues/4): Add MCP capability adapter.
-- [ ] [#7](https://github.com/oneryalcin/toolplane/issues/7): Add config-driven runtime setup.
+- [x] [#7](https://github.com/oneryalcin/toolplane/issues/7): Add config-driven runtime setup.
 - [x] [#10](https://github.com/oneryalcin/toolplane/issues/10): Make code-mode authoring frictionless with scoped capability namespaces.
 - [ ] [#16](https://github.com/oneryalcin/toolplane/issues/16): Define Toolplane MCP facade, auth, and client install boundary.
 

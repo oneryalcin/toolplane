@@ -29,3 +29,7 @@ class BackendCapabilityError(ToolplaneError):
 
 class CliPolicyError(ToolplaneError):
     """Raised when code tries to use a CLI binary disallowed by policy."""
+
+
+class UnsafeFacadeConfigError(ToolplaneError):
+    """Raised when an MCP facade config exposes unsafe defaults."""

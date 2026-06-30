@@ -85,11 +85,12 @@ controlled Python runtime where multiple capability sources become composable.
 
 ## User Flow
 
-The first stable command-line surface should optimize for explicit setup:
+The first stable command-line surface should optimize for explicit setup. This
+section is the target lifecycle; only `toolplane serve mcp` exists today.
 
 ```bash
 toolplane init
-toolplane mcp add linear --url https://mcp.linear.app/mcp --auth oauth
+toolplane mcp add linear --url https://mcp.linear.app/mcp
 toolplane mcp login linear
 toolplane cli allow git gh rg
 toolplane doctor
@@ -98,13 +99,30 @@ toolplane doctor
 This writes project config:
 
 ```toml
+[toolplane]
+default_backend = "pyodide-deno"
+
 [cli]
 mode = "allowlist"
 allow = ["git", "gh", "rg"]
 
-[mcpServers.linear]
+[mcp.servers.linear]
 url = "https://mcp.linear.app/mcp"
-auth = "oauth"
+```
+
+Toolplane should also accept stdio-style upstream server definitions, including
+bridges used by stdio-only hosts:
+
+```bash
+toolplane mcp add linear -- npx -y mcp-remote https://mcp.linear.app/mcp
+```
+
+which maps to:
+
+```toml
+[mcp.servers.linear]
+command = "npx"
+args = ["-y", "mcp-remote", "https://mcp.linear.app/mcp"]
 ```
 
 Then a user can connect Toolplane to an MCP client:
@@ -128,25 +146,72 @@ A later Claude plugin can make this lower friction:
 The plugin is distribution sugar. The core product remains the configured
 Toolplane runtime.
 
+## Walking Skeleton
+
+Build `toolplane serve mcp` before the full auth lifecycle. The facade is the
+highest-information slice: it proves whether clients can use Toolplane as one
+MCP server that offers progressive discovery and code execution over a curated
+namespace.
+
+The current implementation provides this no-auth skeleton, exposes only the
+three Toolplane meta-tools, and guards the config-backed MCP facade from unsafe
+defaults. It does not yet include MCP auth login, durable token storage, or
+client install helpers.
+
+The first slice should deliberately avoid remote auth:
+
+```bash
+toolplane serve mcp --config ./toolplane.toml
+```
+
+For trusted local development with the `local_unsafe` backend or ambient CLI
+policy, the operator must opt in explicitly:
+
+```bash
+toolplane serve mcp --config ./toolplane.toml --unsafe
+```
+
+Validate it against a config with only no-auth capabilities, such as host Python
+helpers, allowlisted CLI binaries, and a local stdio MCP server. Then connect an
+MCP client and run:
+
+```text
+search_capabilities -> get_capability_schemas -> execute_code
+```
+
+This skeleton is not the production-ready completion state for this issue. It is
+the early risk-reduction step before implementing OAuth lifecycle and durable
+token storage.
+
 ## Auth Boundary
 
 Remote MCP authentication belongs to the host process, not to agent-written
 Python.
 
-For OAuth-backed remote MCP servers:
+For remote MCP servers, adding a server and authenticating to it should remain
+separate operations. The add command records how to reach the server. The login
+command discovers or negotiates the required authentication flow and stores
+credentials outside project TOML.
+
+For a remote server:
 
 ```toml
-[mcpServers.linear]
+[mcp.servers.linear]
 url = "https://mcp.linear.app/mcp"
-auth = "oauth"
 ```
 
-Toolplane should delegate the actual MCP OAuth flow to FastMCP's client layer:
+Toolplane should delegate the actual MCP OAuth flow to FastMCP's client layer,
+while owning the durable token storage and lifecycle around that lower-level
+machinery:
 
+- first verify the current FastMCP client behavior for remote MCP OAuth,
+  including whether `Client(..., auth="oauth")` can authenticate to real servers
+  and which token storage hooks are available.
 - browser-based authorization code flow with PKCE.
 - dynamic client registration when the server supports it.
 - token refresh handled by the MCP client implementation.
-- persistent token storage owned by Toolplane.
+- persistent token storage owned by Toolplane and injected into FastMCP's OAuth
+  provider.
 
 Toolplane should provide host commands around that lower-level machinery:
 
@@ -160,10 +225,10 @@ For non-interactive environments, secrets should be referenced, not stored in
 plain TOML:
 
 ```toml
-[mcpServers.linear]
+[mcp.servers.linear]
 url = "https://mcp.linear.app/mcp"
 
-[mcpServers.linear.auth]
+[mcp.servers.linear.auth]
 type = "bearer"
 env = "LINEAR_MCP_TOKEN"
 ```
@@ -177,10 +242,15 @@ Rules:
   credentials.
 - Token storage must be encrypted or delegated to the operating system keychain
   before it is marketed as a production feature.
+- The first public MCP facade should not rely on FastMCP's default in-memory
+  OAuth token storage, because that requires users to reauthenticate after every
+  Toolplane process restart.
+- `toolplane.toml` should describe upstream MCP servers and policy, not contain
+  long-lived secrets.
 
 ## What Toolplane-MCP Should Expose
 
-`toolplane-mcp` should expose a small meta-tool surface:
+`toolplane-mcp` currently exposes a small meta-tool surface:
 
 ```text
 search_capabilities(query, tags?)
@@ -198,6 +268,51 @@ explain_policy()
 It should not re-export every underlying tool as a flat MCP catalog by default.
 That recreates context bloat and loses the workbench model.
 
+## FastMCP CodeMode Decision
+
+FastMCP's experimental `CodeMode` transform already provides the same broad
+shape as the Toolplane facade: staged discovery, schema lookup, and code
+execution through a sandbox provider.
+
+A throwaway spike showed this is technically viable:
+
+- CodeMode can own the client-visible `search`, `get_schema`, and `execute`
+  tools.
+- Toolplane-backed capabilities can be adapted into the hidden FastMCP catalog.
+- A custom sandbox provider can inject Toolplane-style scoped namespaces such as
+  `demo.add(...)` while delegating calls through CodeMode's `external_functions`.
+
+The spike also exposed the deciding semantic difference:
+
+- Scalar tool results are wrapped as `{"result": value}` inside CodeMode's
+  intra-snippet execution path. This means an agent composing normal Python would
+  receive `{"result": 12}` from a scalar tool call instead of `12`.
+- Toolplane's custom execution path preserves normal Python values inside the
+  snippet, which is central to the product contract. At the final MCP boundary,
+  Toolplane returns an explicit `ExecutionResult` object such as
+  `{"value": 12, ...}`.
+
+The product decision is therefore: keep Toolplane's custom execute/namespace
+core, and treat CodeMode as a parts bin for commodity pieces where it is clearly
+better:
+
+- BM25-style search instead of Toolplane's current token-count baseline.
+- Discovery-tool patterns.
+- Execute-time tool-call caps.
+
+Do not adopt CodeMode wholesale unless FastMCP makes scalar unwrapping
+configurable or Toolplane intentionally changes its Python-first composition
+semantics.
+
+Remaining integration caveats:
+
+- CodeMode's discovery and schema rendering are FastMCP-native, not
+  Toolplane-native.
+- Tool names exposed to CodeMode need safe FastMCP wrapper names, so canonical
+  Toolplane ids and aliases need a stable mapping.
+- CodeMode is currently documented as experimental, so depending on it makes
+  FastMCP's transform API part of Toolplane's compatibility surface.
+
 ## Non-Goals
 
 Toolplane should not:
@@ -213,14 +328,16 @@ Toolplane should not:
 
 ## Dependency Order
 
-`toolplane-mcp` should wait until config and policy are real:
+`toolplane-mcp` should front-load the facade skeleton once config and policy are
+real, then harden auth before calling the public surface complete:
 
 ```text
 config-driven runtime setup
   -> CLI policy: disabled, allowlist, ambient
   -> MCP server config loading
-  -> MCP auth command surface
-  -> toolplane serve mcp
+  -> minimal toolplane serve mcp walking skeleton without remote auth
+  -> FastMCP OAuth/token-storage behavior verification
+  -> MCP auth command surface and durable token storage
   -> client install helpers
   -> Claude plugin packaging
 ```
