@@ -149,6 +149,10 @@ highest-information slice: it proves whether clients can use Toolplane as one
 MCP server that offers progressive discovery and code execution over a curated
 namespace.
 
+The current implementation provides this no-auth skeleton and exposes only the
+three Toolplane meta-tools. It does not yet include MCP auth login, durable token
+storage, or client install helpers.
+
 The first slice should deliberately avoid remote auth:
 
 ```bash

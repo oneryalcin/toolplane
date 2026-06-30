@@ -26,6 +26,7 @@ from .errors import (
     ToolplaneError,
 )
 from .execution import BackendCapabilities, ExecutionError, ExecutionResult
+from .mcp_facade import build_mcp_facade, build_mcp_facade_from_config
 from .registry import CapabilityRegistry
 from .runtime import Toolplane
 
@@ -36,6 +37,8 @@ __all__ = [
     "BackendCapabilities",
     "BackendCapabilityError",
     "BackendNotFoundError",
+    "build_mcp_facade",
+    "build_mcp_facade_from_config",
     "Capability",
     "CapabilityNotFoundError",
     "CapabilityRegistry",
