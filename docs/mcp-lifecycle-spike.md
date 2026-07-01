@@ -186,6 +186,180 @@ not needed for v1.
 its own tokens under `~/.fastmcp/remote`; Toolplane should not duplicate that
 unless it needs tighter integration later.
 
+## FastMCP Remote Bridge Spike
+
+Date: 2026-07-01
+
+Test the bridge path first because it is the delete-code hypothesis: if
+`fastmcp-remote` works as a normal stdio MCP server, Toolplane may not need to
+own OAuth token storage for remote servers in v1.
+
+### Upstream Behavior
+
+FastMCP's `fastmcp-remote` docs state that HTTPS servers use OAuth by default
+and that the first connection opens the browser-based OAuth flow when the server
+requires authentication. They also document the relevant lifecycle controls:
+
+- `--auth-timeout` bounds how long the bridge waits for the OAuth callback.
+- `--resource` isolates token storage for one remote identity.
+- `FASTMCP_REMOTE_CONFIG_DIR` moves the bridge token directory.
+- `--auth none` disables OAuth for unauthenticated HTTP development servers.
+
+The installed `uvx fastmcp-remote --help` output in this environment matches
+those options.
+
+### No-Auth Bridge Proof
+
+A local FastMCP HTTP server was bridged through stdio with:
+
+```toml
+[mcp.servers.bridge]
+command = "uvx"
+args = [
+  "fastmcp-remote",
+  "http://127.0.0.1:8791/mcp",
+  "--auth",
+  "none",
+  "--silent",
+]
+```
+
+Observed results:
+
+```text
+toolplane mcp status --config /tmp/toolplane-fastmcp-remote-bridge.toml --timeout 20
+-> bridge: ok transport=stdio auth=none tools=1
+```
+
+`Toolplane.from_config` registered the bridged tool as `mcp:bridge/add`, and
+`execute_code` successfully called it:
+
+```python
+return await bridge.add(x=20, y=22)
+```
+
+Result: `42`.
+
+Conclusion: from Toolplane's perspective, a `fastmcp-remote` bridge is ordinary
+stdio MCP after it initializes.
+
+### Unprimed Auth Bridge Behavior
+
+An unprimed Linear bridge was tested with an isolated token directory, disabled
+browser command, and short auth timeout:
+
+```toml
+[mcp.servers.linear_bridge]
+command = "uvx"
+args = [
+  "fastmcp-remote",
+  "https://mcp.linear.app/mcp",
+  "--auth-timeout",
+  "1",
+  "--resource",
+  "toolplane-spike",
+  "--silent",
+]
+
+[mcp.servers.linear_bridge.env]
+FASTMCP_REMOTE_CONFIG_DIR = "/tmp/toolplane-fastmcp-remote-linear-empty"
+BROWSER = "/usr/bin/false"
+```
+
+Observed result:
+
+```text
+toolplane mcp status --config /tmp/toolplane-fastmcp-remote-linear-unprimed.toml --timeout 5
+-> linear_bridge: error transport=stdio auth=none
+   detail=Client failed to connect: OAuth callback timed out after 1.0 seconds
+```
+
+Toolplane returned exit 0 because status ran successfully and reported the
+server failure as data. The bridge wrote FastMCP remote metadata into the
+isolated temp token directory during the failed OAuth attempt.
+
+Do not put this unprimed behavior in automated tests: a real unprimed
+`fastmcp-remote` HTTPS bridge can open a browser and otherwise waits up to the
+configured auth timeout.
+
+### Primed Linear Bridge Proof
+
+Linear was then primed once through the bridge using an isolated token
+directory:
+
+```toml
+[mcp.servers.linear_bridge]
+command = "uvx"
+args = [
+  "fastmcp-remote",
+  "https://mcp.linear.app/mcp",
+  "--auth-timeout",
+  "180",
+  "--resource",
+  "toolplane-linear-spike",
+  "--silent",
+]
+
+[mcp.servers.linear_bridge.env]
+FASTMCP_REMOTE_CONFIG_DIR = "/tmp/toolplane-fastmcp-remote-linear-prime"
+```
+
+After browser consent, `toolplane mcp status` reported:
+
+```text
+linear_bridge: ok transport=stdio auth=none tools=47
+```
+
+`Toolplane.from_config` registered the Linear tools, `search("issue")` returned
+Linear capabilities such as `mcp:linear_bridge/list_issues`, and `execute_code`
+successfully called the scoped namespace:
+
+```python
+issues = await linear_bridge.list_issues(query="", limit=1)
+return {
+    "type": type(issues).__name__,
+    "count": len(issues) if hasattr(issues, "__len__") else None,
+}
+```
+
+Observed execution result:
+
+```json
+{"type": "str", "count": 1193}
+```
+
+The Linear tool returned a string payload, so the count is string length, not
+issue count. The important product proof still holds: authenticated Linear
+tools reached Toolplane's namespace and were callable inside `execute_code`.
+
+### Slice-2 Decision
+
+V1 remote MCP auth uses the `fastmcp-remote` stdio bridge path. Toolplane will
+not build direct `OAuth(token_storage=...)` storage for v1.
+
+Rationale:
+
+- Toolplane needs no OAuth protocol or token-storage code for the bridge path.
+- `mcp add --command ... fastmcp-remote ...` already emits the right config
+  shape.
+- `mcp status`, `Toolplane.from_config`, search, and `execute_code` already
+  work once the bridge is primed.
+- Logout and token cleanup belong to `fastmcp-remote`'s token directory for this
+  path.
+
+The sharp edge is unprimed HTTPS bridges: spawning them can initiate OAuth. The
+operator contract should be explicit:
+
+- Prime the bridge deliberately before relying on status or execute workflows.
+- Use `--auth-timeout` to avoid long hangs.
+- Use `--resource` and `FASTMCP_REMOTE_CONFIG_DIR` when isolation matters.
+
+Direct Toolplane-managed OAuth is deferred. Revisit it only when a concrete
+trigger appears, such as a remote MCP server that cannot work through
+`fastmcp-remote`, a headless deployment that cannot rely on browser priming, or
+a product requirement for Toolplane-owned logout, token encryption, or token
+auditing semantics.
+
 ### `toolplane doctor`
 
 Doctor should reuse `EffectivePolicy`; it must not re-derive backend or CLI
