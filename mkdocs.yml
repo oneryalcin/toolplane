@@ -50,6 +50,7 @@ nav:
       - Configuration: configuration.md
       - Code Mode Backends: code-mode-backends.md
       - Toolplane And MCP: toolplane-mcp.md
+      - MCP Lifecycle Spike: mcp-lifecycle-spike.md
   - Examples:
       - Overview: examples/index.md
       - Ambient CLI: examples/ambient-cli.md
