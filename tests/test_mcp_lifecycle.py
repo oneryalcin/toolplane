@@ -16,7 +16,53 @@ pytest.importorskip("fastmcp")
 from fastmcp.mcp_config import MCPConfig  # noqa: E402
 
 
-def test_mcp_add_url_emits_round_trippable_toml(
+def test_mcp_add_url_writes_config_and_preserves_existing_comments(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text(
+        '# existing config\n\n[cli]\nmode = "disabled"\n',
+        encoding="utf-8",
+    )
+
+    code = main(
+        [
+            "mcp",
+            "add",
+            "linear",
+            "--config",
+            str(config_path),
+            "--url",
+            "https://mcp.linear.app/mcp",
+            "--auth",
+            "oauth",
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert code == 0
+    assert captured.err == ""
+    assert captured.out == f"Added MCP server 'linear' to {config_path}\n"
+    written = config_path.read_text(encoding="utf-8")
+    assert written == (
+        "# existing config\n"
+        "\n"
+        "[cli]\n"
+        'mode = "disabled"\n'
+        "\n"
+        "[mcp.servers.linear]\n"
+        'url = "https://mcp.linear.app/mcp"\n'
+        'auth = "oauth"\n'
+        "# warning: direct OAuth tokens are ephemeral in Toolplane v1.\n"
+        "# use a fastmcp-remote bridge for persistent login.\n"
+    )
+    config = load_toolplane_config(config_path)
+    MCPConfig.from_dict(config.mcp.to_fastmcp_config())
+
+
+def test_mcp_add_print_url_emits_round_trippable_toml(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
@@ -30,6 +76,7 @@ def test_mcp_add_url_emits_round_trippable_toml(
             "mcp",
             "add",
             "linear",
+            "--print",
             "--url",
             "https://mcp.linear.app/mcp",
             "--auth",
@@ -53,7 +100,7 @@ def test_mcp_add_url_emits_round_trippable_toml(
     assert_emitted_config_loads(tmp_path, captured.out)
 
 
-def test_mcp_add_command_emits_round_trippable_toml(
+def test_mcp_add_print_command_emits_round_trippable_toml(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -62,6 +109,7 @@ def test_mcp_add_command_emits_round_trippable_toml(
             "mcp",
             "add",
             "linear-bridge",
+            "--print",
             "--command",
             "npx",
             "--arg",
@@ -92,6 +140,35 @@ def test_mcp_add_command_emits_round_trippable_toml(
     ]
 
 
+def test_mcp_add_creates_missing_config(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "toolplane.toml"
+
+    code = main(
+        [
+            "mcp",
+            "add",
+            "context7",
+            "--config",
+            str(config_path),
+            "--url",
+            "https://mcp.context7.com/mcp",
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert code == 0
+    assert captured.err == ""
+    assert captured.out == f"Added MCP server 'context7' to {config_path}\n"
+    config = load_toolplane_config(config_path)
+    assert config.mcp.servers["context7"] == {
+        "url": "https://mcp.context7.com/mcp",
+    }
+
+
 def test_mcp_add_fastmcp_remote_emits_prime_guidance(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -101,6 +178,7 @@ def test_mcp_add_fastmcp_remote_emits_prime_guidance(
             "mcp",
             "add",
             "linear-bridge",
+            "--print",
             "--command",
             "uvx",
             "--arg",
@@ -136,7 +214,7 @@ def test_mcp_add_emits_astral_characters_as_valid_toml(
 ) -> None:
     url = "https://mcp.example/mcp?name=café😀"
 
-    code = main(["mcp", "add", "unicode", "--url", url])
+    code = main(["mcp", "add", "unicode", "--print", "--url", url])
 
     captured = capsys.readouterr()
 
@@ -146,6 +224,124 @@ def test_mcp_add_emits_astral_characters_as_valid_toml(
     assert "\\ud" not in captured.out
     config = assert_emitted_config_loads(tmp_path, captured.out)
     assert config.mcp.servers["unicode"]["url"] == url
+
+
+def test_mcp_add_rejects_existing_server_without_force(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text(
+        textwrap.dedent(
+            """
+            [mcp.servers.linear]
+            url = "https://old.example/mcp"
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    code = main(
+        [
+            "mcp",
+            "add",
+            "linear",
+            "--config",
+            str(config_path),
+            "--url",
+            "https://mcp.linear.app/mcp",
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert captured.out == ""
+    assert "already exists; use --force" in captured.err
+    assert 'url = "https://old.example/mcp"' in config_path.read_text(
+        encoding="utf-8"
+    )
+
+
+def test_mcp_add_force_replaces_existing_server(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text(
+        textwrap.dedent(
+            """
+            [mcp.servers.linear]
+            url = "https://old.example/mcp"
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    code = main(
+        [
+            "mcp",
+            "add",
+            "linear",
+            "--config",
+            str(config_path),
+            "--force",
+            "--command",
+            "uvx",
+            "--arg",
+            "fastmcp-remote",
+            "--arg",
+            "https://mcp.linear.app/mcp",
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert code == 0
+    assert captured.err == ""
+    assert captured.out == f"Added MCP server 'linear' to {config_path}\n"
+    config = load_toolplane_config(config_path)
+    assert config.mcp.servers["linear"] == {
+        "command": "uvx",
+        "args": ["fastmcp-remote", "https://mcp.linear.app/mcp"],
+    }
+
+
+def test_mcp_add_preserves_original_config_when_atomic_replace_fails(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = tmp_path / "toolplane.toml"
+    original = '# keep me\n\n[mcp.servers.old]\nurl = "https://old.example/mcp"\n'
+    config_path.write_text(original, encoding="utf-8")
+
+    def fail_replace(src: str, dst: str) -> None:
+        raise OSError("simulated replace failure")
+
+    monkeypatch.setattr(lifecycle.os, "replace", fail_replace)
+
+    code = main(
+        [
+            "mcp",
+            "add",
+            "linear",
+            "--config",
+            str(config_path),
+            "--url",
+            "https://mcp.linear.app/mcp",
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert captured.out == ""
+    assert "simulated replace failure" in captured.err
+    assert config_path.read_text(encoding="utf-8") == original
+    assert list(tmp_path.glob(".toolplane.toml.*.tmp")) == []
 
 
 @pytest.mark.parametrize("name", ["linear.prod", "linear/prod", "linear prod", ""])
