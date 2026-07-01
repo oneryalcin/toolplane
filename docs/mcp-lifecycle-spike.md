@@ -11,7 +11,7 @@ FastMCP version inspected locally: `3.4.2`
 Toolplane should build the MCP lifecycle CLI as thin config and operator UX over
 FastMCP, not as a new OAuth or transport implementation.
 
-The first implementation slice should be emit-only:
+The first implementation slice is emit-only:
 
 ```bash
 toolplane mcp add linear --url https://mcp.linear.app/mcp --auth oauth

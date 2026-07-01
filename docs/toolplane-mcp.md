@@ -86,7 +86,9 @@ controlled Python runtime where multiple capability sources become composable.
 ## User Flow
 
 The first stable command-line surface should optimize for explicit setup. This
-section is the target lifecycle; only `toolplane serve mcp` exists today.
+section is the target lifecycle. Today, `toolplane mcp add` emits config snippets
+and `toolplane serve mcp` serves the configured facade; login, CLI allow, doctor,
+and in-place config writing are still planned.
 
 ```bash
 toolplane init
@@ -96,16 +98,11 @@ toolplane cli allow git gh rg
 toolplane doctor
 ```
 
-This writes project config:
+The current `mcp add` command prints a block for the user to add to project
+config:
 
 ```toml
-[toolplane]
-default_backend = "pyodide-deno"
-
-[cli]
-mode = "allowlist"
-allow = ["git", "gh", "rg"]
-
+# add this to your toolplane.toml:
 [mcp.servers.linear]
 url = "https://mcp.linear.app/mcp"
 ```
@@ -114,7 +111,7 @@ Toolplane should also accept stdio-style upstream server definitions, including
 bridges used by stdio-only hosts:
 
 ```bash
-toolplane mcp add linear -- npx -y mcp-remote https://mcp.linear.app/mcp
+toolplane mcp add linear --command npx --arg -y --arg mcp-remote --arg https://mcp.linear.app/mcp
 ```
 
 which maps to:
