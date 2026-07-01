@@ -15,8 +15,30 @@ Run one example directly:
 uv run --no-project --with-editable . python examples/ambient_cli_git.py
 uv run --no-project --with-editable . python examples/fastmcp_in_process.py
 uv run --no-project --with-editable . python examples/mcp_stdio_config.py
+uv run --no-project --with-editable . python examples/multi_server.py
 uv run --no-project --with-editable . python examples/from_config.py
 ```
+
+## Multiple servers, mixed transports and auth
+
+`multi_server.py` registers two local stdio MCP servers under one runtime and
+composes tools from *both* in a single `execute_code` snippet — the point of
+Toolplane: agent code doesn't care which server a tool came from.
+
+`multi_server.toml` shows the same shape as a config file, mixing all the
+supported postures per server (stdio/remote transport; none/bearer/OAuth auth).
+The two local servers in it actually respond, so you can health-check them:
+
+```bash
+toolplane mcp status --config examples/multi_server.toml
+# - math: ok transport=stdio auth=none tools=1
+# - text: ok transport=stdio auth=none tools=1
+```
+
+The remote/OAuth/bearer blocks are commented out because they need external
+setup - an OAuth server is added via the `fastmcp-remote` bridge and primed once
+(`uvx fastmcp-remote <url>`); a bearer server keeps its token in an environment
+variable via `--header`. See the comments in the file for each form.
 
 The Context7 example uses the live remote MCP endpoint, so it is intentionally
 not part of `make examples`:
