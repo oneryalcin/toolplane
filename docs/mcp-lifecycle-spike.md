@@ -154,13 +154,24 @@ tokens without a supplied token store. For stdio bridge snippets using
 
 ### `toolplane mcp status`
 
-Defer implementation until after `mcp add`. Status should be a deterministic
-connection check over configured servers, likely using FastMCP `Client` or the
-same adapter path as `Toolplane.from_config`.
+Implemented after `mcp add`. Status is a deterministic connection check over
+configured servers using FastMCP `Client` directly, not `Toolplane.from_config`.
+It reads config, selects one or more servers, strips FastMCP `auth` from the
+probe config, and lists tools under a per-server timeout.
 
-Status may trigger OAuth if a server has `auth = "oauth"`, so the first version
-should either be no-auth/status-only or require an explicit `--login`/`--auth`
-flag before opening a browser.
+Status must not open a browser or write OAuth tokens. That guarantee is
+structural: the probe client is never constructed with FastMCP `auth=...`.
+Servers that require credentials are reported as `auth_required` or `error` in
+the output.
+
+Exit codes reflect whether the status command itself ran. Bad arguments,
+unknown server names, or malformed config return non-zero. A reachable config
+with a down, timed-out, or auth-protected server returns zero and reports that
+server state as data.
+
+Stdio status checks execute the configured command in order to list tools. That
+is the honest connection check, but it means status can run user-configured
+processes and those processes may write diagnostics to stderr.
 
 ### `toolplane mcp login/logout`
 

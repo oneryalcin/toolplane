@@ -10,7 +10,13 @@ from collections.abc import Sequence
 from .config import load_toolplane_config
 from .errors import UnsafeFacadeConfigError
 from .mcp_facade import serve_mcp_facade
-from .mcp_lifecycle import McpAddError, render_mcp_add_snippet
+from .mcp_lifecycle import (
+    McpAddError,
+    McpStatusError,
+    check_mcp_status,
+    format_mcp_status,
+    render_mcp_add_snippet,
+)
 from .policy import EffectivePolicy, ensure_safe_facade_policy, format_effective_policy
 
 
@@ -53,6 +59,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"toolplane: {exc}", file=sys.stderr)
             return 2
         print(snippet, end="")
+        return 0
+    if args.command == "mcp" and args.mcp_command == "status":
+        try:
+            config = load_toolplane_config(args.config)
+            statuses = asyncio.run(
+                check_mcp_status(
+                    config,
+                    names=tuple(args.names or ()),
+                    timeout_seconds=args.timeout,
+                )
+            )
+        except (McpStatusError, OSError, ValueError) as exc:
+            print(f"toolplane: {exc}", file=sys.stderr)
+            return 2
+        print(format_mcp_status(statuses), end="")
         return 0
     parser.print_help()
     return 2
@@ -113,6 +134,27 @@ def _build_parser() -> argparse.ArgumentParser:
         "--auth",
         choices=("oauth",),
         help="Authentication mode for remote URL snippets",
+    )
+
+    mcp_status = mcp_subcommands.add_parser(
+        "status",
+        help="Check configured MCP servers without authenticating",
+    )
+    mcp_status.add_argument(
+        "names",
+        nargs="*",
+        help="Optional MCP server name(s) to check",
+    )
+    mcp_status.add_argument(
+        "--config",
+        default="toolplane.toml",
+        help="Path to a Toolplane TOML config file",
+    )
+    mcp_status.add_argument(
+        "--timeout",
+        type=float,
+        default=5.0,
+        help="Per-server status timeout in seconds",
     )
 
     return parser
