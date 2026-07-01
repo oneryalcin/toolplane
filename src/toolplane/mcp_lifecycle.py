@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -87,12 +88,37 @@ def render_mcp_add_snippet(
         if args:
             rendered_args = ", ".join(_toml_string(arg) for arg in args)
             lines.append(f"args = [{rendered_args}]")
+        if _is_fastmcp_remote_bridge(command or "", args):
+            lines.extend(
+                [
+                    "# prime this bridge before relying on status or execute:",
+                    f"# {_shell_join(command or '', args)}",
+                ]
+            )
 
     return "\n".join(lines) + "\n"
 
 
 def _toml_string(value: str) -> str:
     return json.dumps(value, ensure_ascii=False)
+
+
+def _is_fastmcp_remote_bridge(command: str, args: Sequence[str]) -> bool:
+    return any(_command_basename(part) == "fastmcp-remote" for part in (command, *args))
+
+
+def _command_basename(value: str) -> str:
+    return value.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+
+
+def _shell_join(command: str, args: Sequence[str]) -> str:
+    return " ".join(_shell_quote(part) for part in (command, *args))
+
+
+def _shell_quote(value: str) -> str:
+    if value and re.fullmatch(r"[A-Za-z0-9_@%+=:,./-]+", value):
+        return value
+    return "'" + value.replace("'", "'\"'\"'") + "'"
 
 
 async def check_mcp_status(
@@ -218,7 +244,26 @@ def _status_probe_server_config(server_config: Mapping[str, Any]) -> dict[str, A
     sanitized = dict(server_config)
     sanitized.pop("auth", None)
     sanitized.pop("authentication", None)
+    if _server_kind(sanitized) == "stdio":
+        sanitized["env"] = _status_probe_stdio_env(sanitized.get("env"))
+        sanitized["keep_alive"] = False
     return sanitized
+
+
+def _status_probe_stdio_env(configured_env: Any) -> dict[str, str]:
+    env = dict(os.environ)
+    if configured_env is not None:
+        if not isinstance(configured_env, Mapping):
+            raise McpStatusError("stdio MCP server env must be a table")
+        env.update({str(key): str(value) for key, value in configured_env.items()})
+    env["BROWSER"] = _disabled_browser_command()
+    return env
+
+
+def _disabled_browser_command() -> str:
+    if os.path.exists("/usr/bin/false"):
+        return "/usr/bin/false"
+    return "false"
 
 
 def _server_kind(server_config: Mapping[str, Any]) -> McpServerKind:

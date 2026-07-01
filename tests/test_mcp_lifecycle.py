@@ -90,6 +90,44 @@ def test_mcp_add_command_emits_round_trippable_toml(
     ]
 
 
+def test_mcp_add_fastmcp_remote_emits_prime_guidance(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code = main(
+        [
+            "mcp",
+            "add",
+            "linear-bridge",
+            "--command",
+            "uvx",
+            "--arg",
+            "fastmcp-remote",
+            "--arg",
+            "https://mcp.linear.app/mcp",
+            "--arg",
+            "--resource",
+            "--arg",
+            "linear-prod",
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert code == 0
+    assert captured.err == ""
+    assert captured.out == (
+        "# add this to your toolplane.toml:\n"
+        "[mcp.servers.linear-bridge]\n"
+        'command = "uvx"\n'
+        'args = ["fastmcp-remote", "https://mcp.linear.app/mcp", '
+        '"--resource", "linear-prod"]\n'
+        "# prime this bridge before relying on status or execute:\n"
+        "# uvx fastmcp-remote https://mcp.linear.app/mcp --resource linear-prod\n"
+    )
+    assert_emitted_config_loads(tmp_path, captured.out)
+
+
 def test_mcp_add_emits_astral_characters_as_valid_toml(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -262,6 +300,60 @@ def test_mcp_status_uses_no_auth_probe(
     assert captured_probe["server_config"] == {
         "url": "https://mcp.linear.app/mcp",
     }
+
+
+def test_mcp_status_stdio_probe_neutralizes_browser_and_preserves_env(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_probe: dict[str, object] = {}
+
+    async def fake_list_mcp_tools(
+        name: str,
+        server_config: object,
+        *,
+        timeout_seconds: float,
+    ) -> list[object]:
+        captured_probe["server_config"] = server_config
+        return []
+
+    monkeypatch.setenv("PATH", "/toolplane/test/path")
+    monkeypatch.setenv("FASTMCP_REMOTE_CONFIG_DIR", "/home/default-fastmcp")
+    monkeypatch.setattr(lifecycle, "_list_mcp_tools", fake_list_mcp_tools)
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text(
+        textwrap.dedent(
+            """
+            [mcp.servers.linear_bridge]
+            command = "uvx"
+            args = ["fastmcp-remote", "https://mcp.linear.app/mcp"]
+
+            [mcp.servers.linear_bridge.env]
+            FASTMCP_REMOTE_CONFIG_DIR = "/project/fastmcp"
+            BROWSER = "/usr/bin/open"
+            LINEAR_REGION = "eu"
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    code = main(["mcp", "status", "--config", str(config_path)])
+
+    captured = capsys.readouterr()
+    server_config = captured_probe["server_config"]
+    assert isinstance(server_config, dict)
+    env = server_config["env"]
+    assert isinstance(env, dict)
+
+    assert code == 0
+    assert captured.err == ""
+    assert env["PATH"] == "/toolplane/test/path"
+    assert env["FASTMCP_REMOTE_CONFIG_DIR"] == "/project/fastmcp"
+    assert env["LINEAR_REGION"] == "eu"
+    assert env["BROWSER"] == lifecycle._disabled_browser_command()
+    assert server_config["keep_alive"] is False
 
 
 def test_mcp_status_reports_timeout_as_data(
