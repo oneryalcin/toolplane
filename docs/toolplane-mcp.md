@@ -108,6 +108,10 @@ config:
 url = "https://mcp.linear.app/mcp"
 ```
 
+If a direct remote URL is configured with `auth = "oauth"`, Toolplane warns that
+those tokens are ephemeral in v1. Persistent OAuth login should use a
+`fastmcp-remote` stdio bridge, which owns its own token cache.
+
 Toolplane should also accept stdio-style upstream server definitions, including
 bridges used by stdio-only hosts:
 
@@ -137,6 +141,8 @@ configured command and listing tools, so status can surface child-process
 diagnostics from the configured server. For stdio probes, Toolplane preserves
 the current process environment plus configured server env, overrides `BROWSER`
 so probes cannot open a browser, and forces one-shot subprocess teardown.
+Status also reports a warning for direct `url` + `auth = "oauth"` configs,
+because that direct FastMCP OAuth shape does not persist tokens in Toolplane v1.
 
 Then a user can connect Toolplane to an MCP client:
 

@@ -46,6 +46,8 @@ def test_mcp_add_url_emits_round_trippable_toml(
         "[mcp.servers.linear]\n"
         'url = "https://mcp.linear.app/mcp"\n'
         'auth = "oauth"\n'
+        "# warning: direct OAuth tokens are ephemeral in Toolplane v1.\n"
+        "# use a fastmcp-remote bridge for persistent login.\n"
     )
     assert existing_config.read_text(encoding="utf-8") == "# existing config\n"
     assert_emitted_config_loads(tmp_path, captured.out)
@@ -293,7 +295,9 @@ def test_mcp_status_uses_no_auth_probe(
     assert captured.err == ""
     assert captured.out == (
         "MCP servers:\n"
-        "- linear: ok transport=url auth=oauth tools=2\n"
+        "- linear: ok transport=url auth=oauth tools=2 "
+        "warning=direct OAuth tokens are ephemeral in Toolplane v1; "
+        "use a fastmcp-remote bridge for persistent login\n"
     )
     assert captured_probe["name"] == "linear"
     assert captured_probe["timeout_seconds"] == 5.0
@@ -432,6 +436,47 @@ def test_mcp_status_reports_auth_required_as_data(
     assert captured.out == (
         "MCP servers:\n"
         "- linear: auth_required transport=url auth=none detail=401 Unauthorized\n"
+    )
+
+
+def test_mcp_status_warns_for_direct_oauth_when_auth_required(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def unauthorized_list_mcp_tools(
+        name: str,
+        server_config: object,
+        *,
+        timeout_seconds: float,
+    ) -> list[object]:
+        raise RuntimeError("401 Unauthorized")
+
+    monkeypatch.setattr(lifecycle, "_list_mcp_tools", unauthorized_list_mcp_tools)
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text(
+        textwrap.dedent(
+            """
+            [mcp.servers.linear]
+            url = "https://mcp.linear.app/mcp"
+            auth = "oauth"
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    code = main(["mcp", "status", "--config", str(config_path)])
+
+    captured = capsys.readouterr()
+
+    assert code == 0
+    assert captured.err == ""
+    assert captured.out == (
+        "MCP servers:\n"
+        "- linear: auth_required transport=url auth=oauth detail=401 Unauthorized "
+        "warning=direct OAuth tokens are ephemeral in Toolplane v1; "
+        "use a fastmcp-remote bridge for persistent login\n"
     )
 
 

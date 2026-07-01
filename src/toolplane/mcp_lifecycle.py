@@ -35,6 +35,7 @@ class McpServerStatus:
     state: McpStatusState
     tool_count: int | None = None
     detail: str = ""
+    warning: str = ""
 
 
 _SERVER_NAME = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -45,6 +46,10 @@ _AUTH_REQUIRED_MARKERS = (
     "forbidden",
     "authentication",
     "authorization",
+)
+_DIRECT_OAUTH_WARNING = (
+    "direct OAuth tokens are ephemeral in Toolplane v1; use a fastmcp-remote "
+    "bridge for persistent login"
 )
 
 
@@ -83,6 +88,7 @@ def render_mcp_add_snippet(
         lines.append(f"url = {_toml_string(url)}")
         if auth is not None:
             lines.append(f"auth = {_toml_string(auth)}")
+            lines.extend(_direct_oauth_warning_comments())
     else:
         lines.append(f"command = {_toml_string(command or '')}")
         if args:
@@ -169,6 +175,8 @@ def format_mcp_status(statuses: Sequence[McpServerStatus]) -> str:
             parts.append(f"tools={status.tool_count}")
         if status.detail:
             parts.append(f"detail={status.detail}")
+        if status.warning:
+            parts.append(f"warning={status.warning}")
         lines.append(" ".join(parts))
     return "\n".join(lines) + "\n"
 
@@ -181,6 +189,7 @@ async def _check_one_mcp_server(
 ) -> McpServerStatus:
     kind = _server_kind(server_config)
     auth = _auth_label(server_config)
+    warning = _server_warning(server_config)
     probe_config = _status_probe_server_config(server_config)
 
     try:
@@ -195,6 +204,7 @@ async def _check_one_mcp_server(
             auth=auth,
             state="timeout",
             detail=f"timed out after {timeout_seconds:g}s",
+            warning=warning,
         )
     except Exception as exc:
         detail = _one_line_error(exc)
@@ -204,6 +214,7 @@ async def _check_one_mcp_server(
             auth=auth,
             state="auth_required" if _looks_auth_required(detail) else "error",
             detail=detail,
+            warning=warning,
         )
 
     return McpServerStatus(
@@ -212,6 +223,7 @@ async def _check_one_mcp_server(
         auth=auth,
         state="ok",
         tool_count=len(tools),
+        warning=warning,
     )
 
 
@@ -285,6 +297,26 @@ def _auth_label(server_config: Mapping[str, Any]) -> str:
             return str(auth_type)
         return "configured"
     return "none"
+
+
+def _server_warning(server_config: Mapping[str, Any]) -> str:
+    if _is_direct_oauth_server(server_config):
+        return _DIRECT_OAUTH_WARNING
+    return ""
+
+
+def _is_direct_oauth_server(server_config: Mapping[str, Any]) -> bool:
+    return (
+        _server_kind(server_config) == "url"
+        and server_config.get("auth") == "oauth"
+    )
+
+
+def _direct_oauth_warning_comments() -> list[str]:
+    return [
+        "# warning: direct OAuth tokens are ephemeral in Toolplane v1.",
+        "# use a fastmcp-remote bridge for persistent login.",
+    ]
 
 
 def _looks_auth_required(detail: str) -> bool:

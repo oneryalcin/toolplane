@@ -24,6 +24,8 @@ prints:
 [mcp.servers.linear]
 url = "https://mcp.linear.app/mcp"
 auth = "oauth"
+# warning: direct OAuth tokens are ephemeral in Toolplane v1.
+# use a fastmcp-remote bridge for persistent login.
 ```
 
 It should not mutate `toolplane.toml` in v1. Python has `tomllib` for reading
@@ -151,6 +153,9 @@ slice.
 Toolplane's direct config path because FastMCP direct config does not persist
 tokens without a supplied token store. For stdio bridge snippets using
 `fastmcp-remote`, FastMCP's bridge owns its own OAuth defaults and token store.
+When `mcp add` emits direct `url` + `auth = "oauth"`, include a warning comment
+that the token is ephemeral and a `fastmcp-remote` bridge is the persistent v1
+path.
 
 When `mcp add` emits a `fastmcp-remote` bridge snippet, include a comment that
 the bridge should be primed before relying on status or execute workflows. Do
@@ -169,6 +174,10 @@ Status must not open a browser or write OAuth tokens. That guarantee is
 structural: the probe client is never constructed with FastMCP `auth=...`.
 Servers that require credentials are reported as `auth_required` or `error` in
 the output.
+
+Status reports the same warning for configured direct `url` + `auth = "oauth"`
+servers. The warning is data in the status output, not stderr and not a non-zero
+exit condition.
 
 Exit codes reflect whether the status command itself ran. Bad arguments,
 unknown server names, or malformed config return non-zero. A reachable config
