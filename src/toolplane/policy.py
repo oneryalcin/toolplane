@@ -18,7 +18,7 @@ class EffectivePolicy:
     mcp_server_names: tuple[str, ...]
     unsafe_allowed: bool
     unsafe_reasons: tuple[str, ...]
-    blocked_backend_overrides: tuple[str, ...]
+    allowed_backend_overrides: tuple[str, ...] | None
 
     @classmethod
     def from_config(
@@ -40,9 +40,9 @@ class EffectivePolicy:
             mcp_server_names=tuple(sorted(config.mcp.servers)),
             unsafe_allowed=allow_unsafe,
             unsafe_reasons=tuple(unsafe_reasons),
-            blocked_backend_overrides=()
+            allowed_backend_overrides=None
             if allow_unsafe
-            else ("local_unsafe",),
+            else (config.toolplane.default_backend,),
         )
 
 
@@ -73,7 +73,7 @@ def format_effective_policy(policy: EffectivePolicy) -> str:
         f"cli={policy.cli_mode}",
         f"allow={allowed}",
         f"mcp_servers={_join_or_none(policy.mcp_server_names)}",
-        f"blocked_backends={_join_or_none(policy.blocked_backend_overrides)}",
+        f"allowed_backend_overrides={_join_or_all(policy.allowed_backend_overrides)}",
         f"unsafe={str(unsafe).lower()}",
     ]
     if unsafe:
@@ -85,3 +85,9 @@ def _join_or_none(values: tuple[str, ...]) -> str:
     if not values:
         return "none"
     return ",".join(values)
+
+
+def _join_or_all(values: tuple[str, ...] | None) -> str:
+    if values is None:
+        return "ALL"
+    return _join_or_none(values)
