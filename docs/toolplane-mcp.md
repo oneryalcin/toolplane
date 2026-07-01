@@ -86,9 +86,10 @@ controlled Python runtime where multiple capability sources become composable.
 ## User Flow
 
 The first stable command-line surface should optimize for explicit setup. This
-section is the target lifecycle. Today, `toolplane mcp add` emits config snippets
-and `toolplane serve mcp` serves the configured facade; login, CLI allow, doctor,
-and in-place config writing are still planned.
+section is the target lifecycle. Today, `toolplane mcp add` emits config
+snippets, `toolplane mcp status` checks configured servers, and
+`toolplane serve mcp` serves the configured facade; login, CLI allow, doctor, and
+in-place config writing are still planned.
 
 ```bash
 toolplane init
@@ -121,6 +122,19 @@ which maps to:
 command = "npx"
 args = ["-y", "mcp-remote", "https://mcp.linear.app/mcp"]
 ```
+
+The current `mcp status` command reads the project config and reports each
+configured MCP server as data:
+
+```bash
+toolplane mcp status --config ./toolplane.toml
+```
+
+Status probes do not construct FastMCP OAuth providers, so they do not open a
+browser or write OAuth tokens. A protected remote server is reported as
+`auth_required` or `error` instead. Stdio servers are checked by executing the
+configured command and listing tools, so status can surface child-process
+diagnostics from the configured server.
 
 Then a user can connect Toolplane to an MCP client:
 
