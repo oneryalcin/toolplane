@@ -1,0 +1,58 @@
+# Multiple MCP servers, mixed transports and auth, in one config.
+#
+# Each [mcp.servers.<name>] block is independent and passed straight through to
+# FastMCP, so you can freely mix stdio/remote transports and none/bearer/OAuth
+# auth. Their tools land under per-server scoped namespaces
+# (e.g. math.multiply(...), context7.get_docs(...)), so two servers may even
+# share a tool name without clashing.
+#
+# Check them with:   toolplane mcp status --config examples/multi_server.toml
+# (run from the repo root; the two local servers below actually respond).
+
+[toolplane]
+default_backend = "local_unsafe"   # dev only; serve mcp refuses this without --unsafe
+
+# --- stdio, NO auth (local) -------------------------------------------------
+[mcp.servers.math]
+command = "uv"
+args = [
+  "--no-config",
+  "run",
+  "--no-project",
+  "--with-editable",
+  ".",
+  "python",
+  "examples/mcp_stdio_server.py",
+]
+
+[mcp.servers.text]
+command = "uv"
+args = [
+  "--no-config",
+  "run",
+  "--no-project",
+  "--with-editable",
+  ".",
+  "python",
+  "examples/mcp_text_server.py",
+]
+
+# --- remote HTTP, NO auth (direct, no bridge) -------------------------------
+# [mcp.servers.context7]
+# url = "https://mcp.context7.com/mcp"
+
+# --- remote, interactive OAuth (via the fastmcp-remote bridge) ---------------
+# Tokens persist on disk (plaintext) under ~/.fastmcp/remote.
+# Prime once before use:  uvx fastmcp-remote https://mcp.linear.app/mcp
+# [mcp.servers.linear]
+# command = "uvx"
+# args = ["fastmcp-remote", "https://mcp.linear.app/mcp"]
+
+# --- remote, STATIC bearer token from the environment (no disk storage) ------
+# The token stays in $INTERNAL_TOKEN; an Authorization header disables OAuth.
+# [mcp.servers.internal]
+# command = "uvx"
+# args = [
+#   "fastmcp-remote", "https://api.internal.example/mcp",
+#   "--header", "Authorization: Bearer ${INTERNAL_TOKEN}",
+# ]
