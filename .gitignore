@@ -10,5 +10,6 @@ __pycache__/
 uv.lock
 dist/
 build/
+site/
 *.egg-info/
 .DS_Store
