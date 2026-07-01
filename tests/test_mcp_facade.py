@@ -95,11 +95,11 @@ def test_effective_policy_reports_allowlist_and_server_names() -> None:
     assert policy.cli_allowed_binaries == ("git", "rg")
     assert policy.mcp_server_names == ("docs", "linear")
     assert policy.unsafe_reasons == ()
-    assert policy.blocked_backend_overrides == ("local_unsafe",)
+    assert policy.allowed_backend_overrides == ("pyodide-deno",)
     assert format_effective_policy(policy) == (
         "Toolplane MCP policy: backend=pyodide-deno cli=allowlist "
-        "allow=git,rg mcp_servers=docs,linear blocked_backends=local_unsafe "
-        "unsafe=false"
+        "allow=git,rg mcp_servers=docs,linear "
+        "allowed_backend_overrides=pyodide-deno unsafe=false"
     )
 
 
@@ -107,10 +107,10 @@ def test_effective_policy_renders_ambient_as_all_when_unsafe_allowed() -> None:
     policy = EffectivePolicy.from_config(ToolplaneConfig(), allow_unsafe=True)
 
     assert policy.unsafe_reasons == ("local_unsafe", "ambient_cli")
-    assert policy.blocked_backend_overrides == ()
+    assert policy.allowed_backend_overrides is None
     assert format_effective_policy(policy) == (
         "Toolplane MCP policy: backend=local_unsafe cli=ambient allow=ALL "
-        "mcp_servers=none blocked_backends=none unsafe=true "
+        "mcp_servers=none allowed_backend_overrides=ALL unsafe=true "
         "reasons=local_unsafe,ambient_cli"
     )
 
@@ -224,7 +224,7 @@ def test_cli_stdio_facade_round_trip_crosses_process_boundary(tmp_path: Path) ->
     assert "cli=disabled" in stderr
     assert "allow=none" in stderr
     assert "mcp_servers=docs" in stderr
-    assert "blocked_backends=none" in stderr
+    assert "allowed_backend_overrides=ALL" in stderr
     assert "unsafe=true" in stderr
     assert "reasons=local_unsafe" in stderr
 
@@ -274,7 +274,37 @@ def test_mcp_facade_from_config_blocks_local_unsafe_backend_override() -> None:
     assert result["value"] is None
     assert result["backend"] == "local_unsafe"
     assert result["error"]["type"] == "BackendPolicyError"
-    assert "blocked by Toolplane MCP facade policy" in result["error"]["message"]
+    assert "is not allowed by Toolplane MCP facade policy" in result["error"][
+        "message"
+    ]
+
+
+def test_mcp_facade_from_config_blocks_unknown_backend_override() -> None:
+    async def exercise() -> dict[str, object]:
+        app = await build_mcp_facade_from_config(
+            {
+                "toolplane": {"default_backend": "pyodide-deno"},
+                "cli": {"mode": "disabled"},
+            }
+        )
+        async with Client(app) as client:
+            result = await client.call_tool(
+                "execute_code",
+                {
+                    "code": "return 'custom backend'",
+                    "backend": "future_custom_backend",
+                },
+            )
+        return result.data
+
+    result = run(exercise())
+
+    assert result["value"] is None
+    assert result["backend"] == "future_custom_backend"
+    assert result["error"]["type"] == "BackendPolicyError"
+    assert "is not allowed by Toolplane MCP facade policy" in result["error"][
+        "message"
+    ]
 
 
 def test_mcp_facade_from_config_allows_unsafe_when_explicit() -> None:

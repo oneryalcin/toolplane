@@ -69,15 +69,20 @@ def build_mcp_facade(
         packages: list[str] | None = None,
     ) -> dict[str, Any]:
         """Execute Python against the configured Toolplane namespace."""
-        if policy is not None and backend in policy.blocked_backend_overrides:
+        if (
+            policy is not None
+            and backend is not None
+            and policy.allowed_backend_overrides is not None
+            and backend not in policy.allowed_backend_overrides
+        ):
             return ExecutionResult(
                 backend=backend or "",
                 error=ExecutionError(
                     type="BackendPolicyError",
                     message=(
-                        f"Backend '{backend}' is blocked by Toolplane MCP "
-                        "facade policy. Pass --unsafe only for trusted local "
-                        "development."
+                        f"Backend override '{backend}' is not allowed by "
+                        "Toolplane MCP facade policy. Pass --unsafe only for "
+                        "trusted local development."
                     ),
                 ),
             ).model_dump(mode="json")
