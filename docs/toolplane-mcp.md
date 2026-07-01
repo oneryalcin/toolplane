@@ -134,7 +134,9 @@ Status probes do not construct FastMCP OAuth providers, so they do not open a
 browser or write OAuth tokens. A protected remote server is reported as
 `auth_required` or `error` instead. Stdio servers are checked by executing the
 configured command and listing tools, so status can surface child-process
-diagnostics from the configured server.
+diagnostics from the configured server. For stdio probes, Toolplane preserves
+the current process environment plus configured server env, overrides `BROWSER`
+so probes cannot open a browser, and forces one-shot subprocess teardown.
 
 Then a user can connect Toolplane to an MCP client:
 

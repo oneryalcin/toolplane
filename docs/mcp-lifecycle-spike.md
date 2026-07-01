@@ -152,6 +152,12 @@ Toolplane's direct config path because FastMCP direct config does not persist
 tokens without a supplied token store. For stdio bridge snippets using
 `fastmcp-remote`, FastMCP's bridge owns its own OAuth defaults and token store.
 
+When `mcp add` emits a `fastmcp-remote` bridge snippet, include a comment that
+the bridge should be primed before relying on status or execute workflows. Do
+not bake `--auth-timeout` into the persisted snippet: short timeouts are useful
+for probes but bad for human login, and long timeouts are useful for login but
+bad for status.
+
 ### `toolplane mcp status`
 
 Implemented after `mcp add`. Status is a deterministic connection check over
@@ -172,6 +178,13 @@ server state as data.
 Stdio status checks execute the configured command in order to list tools. That
 is the honest connection check, but it means status can run user-configured
 processes and those processes may write diagnostics to stderr.
+
+For stdio probes, status passes an explicit subprocess environment built from
+the current process environment plus the configured server `env`, then overrides
+`BROWSER` with a non-opening command. This preserves required values such as
+`PATH` and `FASTMCP_REMOTE_CONFIG_DIR` while preventing a status probe from
+opening a browser. Status also forces `keep_alive = false` on the probe config
+so the subprocess is not reused after the one-shot check.
 
 ### `toolplane mcp login/logout`
 
@@ -353,6 +366,11 @@ operator contract should be explicit:
 - Prime the bridge deliberately before relying on status or execute workflows.
 - Use `--auth-timeout` to avoid long hangs.
 - Use `--resource` and `FASTMCP_REMOTE_CONFIG_DIR` when isolation matters.
+
+Toolplane status reduces the unprimed sharp edge by neutralizing `BROWSER` for
+stdio probes and applying its normal per-server timeout. It does not rewrite the
+persisted command arguments and does not make unprimed bridges equivalent to a
+real login; it only prevents a status check from opening a browser.
 
 Direct Toolplane-managed OAuth is deferred. Revisit it only when a concrete
 trigger appears, such as a remote MCP server that cannot work through
