@@ -97,17 +97,6 @@ def _check_cli(config: ToolplaneConfig) -> list[DoctorCheck]:
                 )
             else:
                 checks.append(DoctorCheck(name=f"cli allow {binary}", status="ok"))
-    if config.toolplane.default_backend == MontyBackend.name:
-        checks.append(
-            DoctorCheck(
-                name="cli namespace",
-                status="warn",
-                detail=(
-                    "the monty backend does not expose the cli namespace; "
-                    "CLI calls need local_unsafe or pyodide-deno"
-                ),
-            )
-        )
     return checks
 
 

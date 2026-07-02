@@ -296,32 +296,63 @@ def test_cli_run_reports_unknown_backend_cleanly(
     assert captured.err == "toolplane: Unknown backend: nope\n"
 
 
-def test_cli_run_reports_backend_capability_error_cleanly(
+def test_cli_allow_creates_allowlist_config(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "toolplane.toml"
+
+    code = main(["cli", "allow", "git", "gh", "rg", "--config", str(config_path)])
+
+    captured = capsys.readouterr()
+
+    assert code == 0
+    assert captured.err == ""
+    assert captured.out == (
+        f"Allowed CLI binaries in {config_path}: git, gh, rg (mode=allowlist)\n"
+    )
+    config = load_toolplane_config(config_path)
+    assert config.cli.mode == "allowlist"
+    assert config.cli.allow == ("git", "gh", "rg")
+
+
+def test_cli_allow_merges_dedupes_and_preserves_comments(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     config_path = tmp_path / "toolplane.toml"
     config_path.write_text(
-        textwrap.dedent(
-            """
-            [cli]
-            mode = "allowlist"
-            allow = ["git"]
-            """
-        ).strip()
-        + "\n",
+        "# keep me\n\n[cli]\nmode = \"ambient\"\nallow = [\"git\"]\n",
         encoding="utf-8",
     )
-    script_path = tmp_path / "snippet.py"
-    script_path.write_text("return 1\n", encoding="utf-8")
 
-    code = main(["run", str(script_path), "--config", str(config_path)])
+    code = main(["cli", "allow", "git", "rg", "--config", str(config_path)])
+
+    captured = capsys.readouterr()
+
+    assert code == 0
+    assert "git, rg (mode=allowlist)" in captured.out
+    written = config_path.read_text(encoding="utf-8")
+    assert written.startswith("# keep me\n")
+    config = load_toolplane_config(config_path)
+    assert config.cli.mode == "allowlist"
+    assert config.cli.allow == ("git", "rg")
+
+
+def test_cli_allow_rejects_invalid_binary_name(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "toolplane.toml"
+
+    code = main(["cli", "allow", "git status", "--config", str(config_path)])
 
     captured = capsys.readouterr()
 
     assert code == 2
     assert captured.out == ""
-    assert captured.err.startswith("toolplane: monty does not support")
+    assert "Invalid CLI binary name" in captured.err
+    assert not config_path.exists()
 
 
 def test_cli_run_rejects_missing_script(

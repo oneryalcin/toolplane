@@ -15,6 +15,7 @@ from pydantic_monty import (
     ResourceLimits,
 )
 
+from ..adapters.ambient_cli import AMBIENT_CLI_CAPABILITY, is_safe_cli_name
 from ..bridges.base import HostBridge
 from ..errors import BackendCapabilityError, NamespaceCollisionError
 from ..execution import BackendCapabilities, ExecutionError, ExecutionResult
@@ -27,7 +28,11 @@ class MontyBackend:
     Monty is a pure-wheel dependency with no filesystem or network access, so
     it is safe to serve by default. Its Python subset has no class definitions,
     so capabilities are exposed as flat callables (e.g. ``math_multiply``) and
-    ``call_tool`` rather than scoped ``math.multiply`` namespaces.
+    ``call_tool`` rather than scoped ``math.multiply`` namespaces. Ambient CLI
+    binaries follow the same shape: ``await git("status", short=True)`` per
+    allowed binary, plus ``cli_run(binary, subcommand, options)`` for names
+    that are not Python identifiers. Allowlist policy is enforced host-side by
+    the bridge, not by these sandbox bindings.
     """
 
     name = "monty"
@@ -63,15 +68,18 @@ class MontyBackend:
                 "monty cannot install or import third-party packages; "
                 "use the pyodide-deno backend for package workflows"
             )
-        if ambient_cli:
-            raise BackendCapabilityError(
-                "monty does not support the ambient CLI namespace; "
-                "use local_unsafe (dev) or pyodide-deno, or disable CLI policy"
-            )
 
         started = time.perf_counter()
         input_namespace = dict(inputs or {})
         external_functions = self._external_functions(bridge, namespace or {})
+        if ambient_cli:
+            reserved = set(external_functions) | set(input_namespace)
+            for name, fn in _cli_external_functions(
+                bridge,
+                ambient_cli_names,
+                reserved=reserved,
+            ).items():
+                external_functions.setdefault(name, fn)
         _ensure_no_input_collisions(input_namespace, set(external_functions))
 
         streams = CollectStreams()
@@ -156,6 +164,54 @@ def _make_bound_tool(bridge: HostBridge, capability_name: str) -> Any:
         return await bridge.call_tool(capability_name, params)
 
     return call_bound_tool
+
+
+def _cli_external_functions(
+    bridge: HostBridge,
+    names: Sequence[str],
+    *,
+    reserved: set[str],
+) -> dict[str, Any]:
+    external: dict[str, Any] = {}
+    if "cli_run" not in reserved:
+        external["cli_run"] = _make_cli_run(bridge)
+    for name in names:
+        if name not in reserved and is_safe_cli_name(name):
+            external[name] = _make_cli_binary(bridge, name)
+    return external
+
+
+def _make_cli_run(bridge: HostBridge) -> Any:
+    async def cli_run(
+        binary: str,
+        subcommand: str | None = None,
+        options: Mapping[str, Any] | None = None,
+    ) -> Any:
+        return await bridge.call_tool(
+            AMBIENT_CLI_CAPABILITY,
+            {
+                "binary": binary,
+                "subcommand": subcommand,
+                "options": dict(options or {}),
+            },
+        )
+
+    return cli_run
+
+
+def _make_cli_binary(bridge: HostBridge, binary: str) -> Any:
+    async def run_binary(subcommand: str | None = None, **options: Any) -> Any:
+        return await bridge.call_tool(
+            AMBIENT_CLI_CAPABILITY,
+            {
+                "binary": binary,
+                "subcommand": subcommand,
+                "options": options,
+            },
+        )
+
+    run_binary.__name__ = binary
+    return run_binary
 
 
 def _split_streams(streams: CollectStreams) -> tuple[str, str]:
