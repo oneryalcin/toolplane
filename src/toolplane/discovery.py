@@ -33,7 +33,12 @@ def render_capabilities(
         text = "\n".join(_render_brief(capability) for capability in capabilities)
 
     if missing:
-        text += f"\n\nCapabilities not found: {', '.join(missing)}"
+        text += (
+            f"\n\nCapabilities not found: {', '.join(missing)}. Names must "
+            "be canonical (as returned by search_capabilities) — search "
+            "with an empty query to list them all, or read the "
+            "toolplane://namespace resource."
+        )
     return text
 
 

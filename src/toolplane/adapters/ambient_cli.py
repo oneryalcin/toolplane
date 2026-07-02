@@ -363,7 +363,11 @@ def _toolplane_ensure_cli_allowed(binary):
         _TOOLPLANE_ALLOWED_CLI_BINARIES is not None
         and binary not in _TOOLPLANE_ALLOWED_CLI_BINARIES
     ):
-        raise RuntimeError(f"CLI binary is not allowed by Toolplane policy: {{binary}}")
+        allowed = ", ".join(sorted(_TOOLPLANE_ALLOWED_CLI_BINARIES)) or "none"
+        raise RuntimeError(
+            "CLI binary is not allowed by Toolplane policy: " + binary
+            + ". Allowed binaries: " + allowed + "."
+        )
 
 cli = _ToolplaneCliRoot()
 {assignments}
@@ -375,6 +379,8 @@ def _ensure_binary_allowed(
     allowed_binaries: frozenset[str] | None,
 ) -> None:
     if allowed_binaries is not None and binary not in allowed_binaries:
+        allowed = ", ".join(sorted(allowed_binaries)) or "none"
         raise CliPolicyError(
-            f"CLI binary is not allowed by Toolplane policy: {binary}"
+            f"CLI binary is not allowed by Toolplane policy: {binary}. "
+            f"Allowed binaries: {allowed}."
         )

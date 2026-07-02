@@ -64,7 +64,15 @@ def build_mcp_facade(
         detail: SchemaDetail = "brief",
         limit: int | None = None,
     ) -> str:
-        """Search the configured Toolplane capability registry."""
+        """Search the Toolplane capability registry by keyword.
+
+        Matching is exact-word, not fuzzy: if nothing matches, retry with
+        different words, or pass an empty query to list every capability.
+        Before writing code with execute_code, read the
+        toolplane://namespace resource — it documents every binding in the
+        execution namespace with call shapes and gotchas, including
+        surfaces (CLI, result store) that this search does not cover.
+        """
         return await runtime.search(
             query,
             tags=frozenset(tags or ()),
@@ -77,7 +85,12 @@ def build_mcp_facade(
         names: list[str],
         detail: SchemaDetail = "detailed",
     ) -> str:
-        """Return schemas for selected Toolplane capabilities."""
+        """Return parameter schemas for the named Toolplane capabilities.
+
+        Names must be canonical, exactly as returned by
+        search_capabilities (e.g. "mcp:server/tool") — guessed or
+        abbreviated names will not resolve.
+        """
         return await runtime.get_schema(names, detail=detail)
 
     @mcp.tool
@@ -89,11 +102,12 @@ def build_mcp_facade(
     ) -> dict[str, Any]:
         """Execute Python against the configured Toolplane namespace.
 
-        The snippet's namespace binds capability functions, flat CLI
+        Read the toolplane://namespace resource BEFORE writing code — it
+        documents every binding with exact call shapes; guessing shapes
+        fails. The namespace binds capability functions, flat CLI
         functions for allowed binaries, and save_result/load_result for
         passing JSON-shaped data between runs. Every binding is async —
-        always `await` it. Read the toolplane://namespace resource for
-        the full namespace with call shapes.
+        always `await` it.
         """
         if (
             policy is not None

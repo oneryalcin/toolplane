@@ -138,7 +138,11 @@ class CapabilityRegistry:
         try:
             return self._capabilities[canonical_name]
         except KeyError as exc:
-            raise CapabilityNotFoundError(f"Unknown capability: {name}") from exc
+            raise CapabilityNotFoundError(
+                f"Unknown capability: {name}. Search capabilities with an "
+                "empty query to list all canonical names, or read the "
+                "toolplane://namespace resource."
+            ) from exc
 
     def search(
         self,
