@@ -19,6 +19,15 @@ through `cli-to-py` only when agent code first calls it.
     return version
     ```
 
+=== "Default backend (monty)"
+
+    ```python
+    # Flat form: no `cli` root or `.text()` helpers; results are raw dicts.
+    status = await git("status", short=True)
+    version = await cli_run("docker-compose", "version")
+    return {"status": status["stdout"].strip(), "ok": version["ok"]}
+    ```
+
 === "Host policy"
 
     ```python
@@ -28,7 +37,11 @@ through `cli-to-py` only when agent code first calls it.
     ```
 
 The `cli` root is the escape hatch for names that are not valid Python
-identifiers, such as `docker-compose`.
+identifiers, such as `docker-compose`. The `git.status(...)` and `cli(...)`
+object forms need the `local_unsafe` or `pyodide-deno` backends; on the
+default `monty` backend each allowed binary is a flat async function and
+`cli_run` is the non-identifier escape hatch. Allowlist policy is enforced
+host-side on every call in all forms.
 
 !!! warning "Policy belongs to the host"
 
