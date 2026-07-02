@@ -26,8 +26,13 @@ from ..bridges.base import HostBridge
 from ..bridges.rpc import HttpCallbackBridge
 from ..errors import NamespaceCollisionError
 from ..execution import BackendCapabilities, ExecutionError, ExecutionResult
-from ..results import render_pyodide_result_bindings
-from ._python import wrap_async_main
+from ..results import _NON_JSON_GUIDANCE, render_pyodide_result_bindings
+from ._python import (
+    UNAWAITED_CALL_ERROR_TYPE,
+    UNAWAITED_CALL_MESSAGE,
+    find_unawaited_calls,
+    wrap_async_main,
+)
 
 
 class PyodideDenoBackend:
@@ -63,6 +68,23 @@ class PyodideDenoBackend:
         ambient_cli_allowed_binaries: Sequence[str] | None = None,
     ) -> ExecutionResult:
         started = time.perf_counter()
+        preflight = find_unawaited_calls(
+            code,
+            _async_binding_names(
+                inputs=inputs or {},
+                namespace=namespace or {},
+                scoped_namespace=scoped_namespace or {},
+                ambient_cli=ambient_cli,
+                ambient_cli_names=ambient_cli_names,
+            ),
+        )
+        if preflight:
+            return _error_result(
+                backend=self.name,
+                started=started,
+                error_type=UNAWAITED_CALL_ERROR_TYPE,
+                message="; ".join(preflight),
+            )
         if shutil.which(self.deno_path) is None:
             return _error_result(
                 backend=self.name,
@@ -175,6 +197,37 @@ class PyodideDenoBackend:
         )
 
 
+def _async_binding_names(
+    *,
+    inputs: Mapping[str, Any],
+    namespace: Mapping[str, str],
+    scoped_namespace: Mapping[str, Mapping[str, str]],
+    ambient_cli: bool,
+    ambient_cli_names: Sequence[str],
+) -> set[str]:
+    """Names bound to async callables in the rendered sandbox.
+
+    Mirrors the render precedence in _build_pyodide_code closely enough for
+    preflight: inputs shadow everything, so subtracting them can only cause
+    false negatives, never false positives.
+    """
+    names = {"call_tool"}
+    names |= {name for name in namespace if name.isidentifier()}
+    reserved = set(inputs) | set(namespace) | set(scoped_namespace)
+    cli_names: set[str] = set()
+    if ambient_cli:
+        cli_names = {
+            name
+            for name in ambient_cli_names
+            if name not in reserved and is_safe_cli_name(name)
+        }
+        names |= cli_names
+    for result_name in ("save_result", "load_result"):
+        if result_name not in reserved | cli_names:
+            names.add(result_name)
+    return names - set(inputs)
+
+
 def _build_pyodide_code(
     code: str,
     *,
@@ -220,16 +273,45 @@ def _build_pyodide_code(
     results_code = render_pyodide_result_bindings(reserved=results_reserved)
     namespace_code = _render_callable_namespace(namespace)
     scoped_namespace_code = _render_scoped_namespace(scoped_namespace)
+    non_json_guidance = _NON_JSON_GUIDANCE
     return f"""
+import inspect as __toolplane_inspect__
 import json
 from js import Object, fetch
 from pyodide.ffi import to_js
 
 __toolplane_callback_url__ = {callback_url!r}
 __toolplane_callback_token__ = {callback_token!r}
+__toolplane_unawaited_flag__ = False
+
+def __toolplane_scan_unawaited__(value):
+    if __toolplane_inspect__.iscoroutine(value):
+        value.close()
+        return True
+    if __toolplane_inspect__.isawaitable(value):
+        return True
+    if isinstance(value, dict):
+        found = [
+            __toolplane_scan_unawaited__(item)
+            for pair in value.items()
+            for item in pair
+        ]
+        return any(found)
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return any([__toolplane_scan_unawaited__(item) for item in value])
+    return False
 
 async def call_tool(name, params=None):
-    payload = json.dumps({{"name": name, "params": params or {{}}}})
+    try:
+        payload = json.dumps(
+            {{"name": name, "params": params or {{}}}}, allow_nan=False
+        )
+    except (TypeError, ValueError) as exc:
+        raise Exception(
+            "arguments for " + repr(name) + " are not JSON-serializable ("
+            + str(exc) + "); only JSON-shaped values can cross the sandbox "
+            "bridge; " + {non_json_guidance!r}
+        )
     response = await fetch(
         __toolplane_callback_url__,
         to_js({{
@@ -259,7 +341,11 @@ globals().update(json.loads({inputs_json!r}))
 
 {wrapped}
 
-await __toolplane_main__()
+__toolplane_result__ = await __toolplane_main__()
+if __toolplane_scan_unawaited__(__toolplane_result__):
+    __toolplane_unawaited_flag__ = True
+    __toolplane_result__ = None
+__toolplane_result__
 """
 
 
@@ -414,6 +500,20 @@ def _response_to_result(
                 traceback=error.get("traceback") or error.get("stack") or "",
             ),
         )
+    # out-of-band signal from the runner: raising in-sandbox surfaces as an
+    # opaque PythonError through the Deno layer, and a marker inside the
+    # result would reserve a user-visible JSON shape
+    if response.get("unawaited"):
+        return ExecutionResult(
+            stdout=response.get("stdout") or "",
+            stderr=response.get("stderr") or "",
+            duration_ms=_elapsed_ms(started),
+            backend=backend,
+            error=ExecutionError(
+                type=UNAWAITED_CALL_ERROR_TYPE,
+                message=UNAWAITED_CALL_MESSAGE,
+            ),
+        )
     return ExecutionResult(
         value=response.get("result"),
         stdout=response.get("stdout") or "",
@@ -506,9 +606,20 @@ sys.stderr = io.StringIO()
     };
   }
 
+  // out-of-band: the unawaited-call signal must never live inside the user
+  // result payload, where it would reserve a JSON shape
+  let unawaited = false;
+  try {
+    unawaited = !!pyodide.runPython(
+      "globals().get('__toolplane_unawaited_flag__', False)",
+    );
+  } catch (_err) {
+    unawaited = false;
+  }
+
   const stdout = pyodide.runPython("sys.stdout.getvalue()");
   const stderr = pyodide.runPython("sys.stderr.getvalue()");
-  return { result, stdout, stderr, error };
+  return { result, stdout, stderr, error, unawaited };
 }
 
 serve(async (request) => {

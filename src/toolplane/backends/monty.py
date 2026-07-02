@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -20,7 +21,21 @@ from ..bridges.base import HostBridge
 from ..errors import BackendCapabilityError, NamespaceCollisionError
 from ..execution import BackendCapabilities, ExecutionError, ExecutionResult
 from ..results import build_result_bindings
-from ._python import wrap_async_main
+from ._python import (
+    UNAWAITED_CALL_ERROR_TYPE,
+    UNAWAITED_CALL_MESSAGE,
+    find_unawaited_calls,
+    wrap_async_main,
+)
+
+# Monty stringifies an un-awaited external-function future to this exact repr
+# before it reaches the host, so the string is the only detectable trace.
+# Anchored on purpose: a future embedded in a larger string (e.g. via
+# f-string) is NOT detected, and a user string exactly matching the repr is a
+# false positive — both accepted until pydantic-monty exposes the future
+# out-of-band. Anchoring keeps the false-positive window to a string that is
+# meaningless as data.
+_UNAWAITED_FUTURE = re.compile(r"^<coroutine external_future\(\d+\)>$")
 
 
 class MontyBackend:
@@ -89,6 +104,16 @@ class MontyBackend:
         _ensure_no_input_collisions(input_namespace, set(external_functions))
 
         streams = CollectStreams()
+        preflight = find_unawaited_calls(code, set(external_functions))
+        if preflight:
+            return self._result(
+                started,
+                streams,
+                error=ExecutionError(
+                    type=UNAWAITED_CALL_ERROR_TYPE,
+                    message="; ".join(preflight),
+                ),
+            )
         try:
             interpreter = await Monty.acreate(
                 wrap_async_main(code) + "\n\nawait __toolplane_main__()",
@@ -133,6 +158,15 @@ class MontyBackend:
                     message=str(exc),
                 ),
             )
+        if _contains_unawaited_future(value) or _printed_unawaited_future(streams):
+            return self._result(
+                started,
+                streams,
+                error=ExecutionError(
+                    type=UNAWAITED_CALL_ERROR_TYPE,
+                    message=UNAWAITED_CALL_MESSAGE,
+                ),
+            )
         return self._result(started, streams, value=value)
 
     def _external_functions(
@@ -163,6 +197,27 @@ class MontyBackend:
             backend=self.name,
             error=error,
         )
+
+
+def _printed_unawaited_future(streams: CollectStreams) -> bool:
+    """Catch `print(save_result(...))` — inspecting a value is how agents
+    most often hit the missing-await bug, and the printed repr is the trace."""
+    stdout, _ = _split_streams(streams)
+    return any(_UNAWAITED_FUTURE.match(line) for line in stdout.splitlines())
+
+
+def _contains_unawaited_future(value: Any) -> bool:
+    if isinstance(value, str):
+        return bool(_UNAWAITED_FUTURE.match(value))
+    if isinstance(value, Mapping):
+        return any(
+            _contains_unawaited_future(item)
+            for pair in value.items()
+            for item in pair
+        )
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return any(_contains_unawaited_future(item) for item in value)
+    return False
 
 
 def _make_bound_tool(bridge: HostBridge, capability_name: str) -> Any:

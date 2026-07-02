@@ -258,3 +258,102 @@ def test_runtime_default_backends_include_monty() -> None:
 
     assert result.error is None, result.error
     assert result.value == 42
+
+
+def test_monty_unawaited_call_fails_instead_of_returning_repr() -> None:
+    runtime = Toolplane(ambient_cli=False)
+
+    result = run(
+        runtime.execute("h = save_result({'v': 1})\nreturn h", backend="monty")
+    )
+
+    assert result.error is not None
+    assert result.error.type == "UnawaitedToolCallError"
+    assert "await" in result.error.message
+
+
+def test_monty_unawaited_call_detected_when_nested() -> None:
+    runtime = Toolplane(ambient_cli=False)
+
+    result = run(
+        runtime.execute(
+            "return {'handle': save_result({'v': 1}), 'n': 5}",
+            backend="monty",
+        )
+    )
+
+    assert result.error is not None
+    assert result.error.type == "UnawaitedToolCallError"
+
+
+def test_monty_awaited_call_still_succeeds() -> None:
+    runtime = Toolplane(ambient_cli=False)
+
+    result = run(
+        runtime.execute(
+            "h = await save_result({'v': 1})\nreturn h",
+            backend="monty",
+        )
+    )
+
+    assert result.error is None, result.error
+    assert result.value.startswith("res_")
+
+
+def test_monty_printed_unawaited_call_fails_instead_of_success() -> None:
+    runtime = Toolplane(ambient_cli=False)
+
+    result = run(
+        runtime.execute(
+            "print(save_result({'v': 1}))",
+            backend="monty",
+        )
+    )
+
+    assert result.error is not None
+    assert result.error.type == "UnawaitedToolCallError"
+
+
+def test_monty_discarded_unawaited_call_fails_at_preflight() -> None:
+    runtime = Toolplane(ambient_cli=False)
+
+    result = run(
+        runtime.execute(
+            "save_result({'v': 1})\nreturn 1",
+            backend="monty",
+        )
+    )
+
+    assert result.error is not None
+    assert result.error.type == "UnawaitedToolCallError"
+    assert "save_result" in result.error.message
+    assert "line 1" in result.error.message
+
+
+def test_monty_fstring_unawaited_call_fails_at_preflight() -> None:
+    runtime = Toolplane(ambient_cli=False)
+
+    result = run(
+        runtime.execute(
+            "return f\"handle={save_result({'v': 1})}\"",
+            backend="monty",
+        )
+    )
+
+    assert result.error is not None
+    assert result.error.type == "UnawaitedToolCallError"
+    assert "f-string" in result.error.message
+
+
+def test_monty_deferred_await_is_not_a_false_positive() -> None:
+    runtime = Toolplane(ambient_cli=False)
+
+    result = run(
+        runtime.execute(
+            "pending = save_result({'v': 1})\nreturn await pending",
+            backend="monty",
+        )
+    )
+
+    assert result.error is None, result.error
+    assert result.value.startswith("res_")

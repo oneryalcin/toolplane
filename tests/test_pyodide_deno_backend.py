@@ -130,3 +130,77 @@ return {
         ],
         "docs": {"topic": "pandas groupby", "hint": "use groupby then reset_index"},
     }
+
+
+@pytest.mark.skipif(shutil.which("deno") is None, reason="Deno is not installed")
+def test_pyodide_save_result_non_json_error_carries_guidance() -> None:
+    async def exercise():
+        runtime = Toolplane(ambient_cli=False)
+        return await runtime.execute(
+            """
+try:
+    await save_result({1, 2})
+except Exception as exc:
+    return str(exc)
+""",
+            backend="pyodide-deno",
+        )
+
+    result = run(exercise())
+
+    assert result.error is None, result.error
+    assert "save a JSON-shaped projection instead" in result.value
+    assert "set" in result.value
+
+
+@pytest.mark.skipif(shutil.which("deno") is None, reason="Deno is not installed")
+def test_pyodide_nested_unawaited_call_fails_instead_of_corrupting() -> None:
+    async def exercise():
+        runtime = Toolplane(ambient_cli=False)
+        return await runtime.execute(
+            "return {'h': save_result({'v': 1}), 'n': 5}",
+            backend="pyodide-deno",
+        )
+
+    result = run(exercise())
+
+    # previously serialized the coroutine to {} with error=None
+    assert result.error is not None
+    assert result.error.type == "UnawaitedToolCallError"
+    assert "await" in result.error.message
+
+
+@pytest.mark.skipif(shutil.which("deno") is None, reason="Deno is not installed")
+def test_pyodide_canonical_call_tool_non_json_error_carries_guidance() -> None:
+    async def exercise():
+        runtime = Toolplane(ambient_cli=False)
+        return await runtime.execute(
+            """
+try:
+    await call_tool("toolplane:results/save", {"value": {1, 2}})
+except Exception as exc:
+    return str(exc)
+""",
+            backend="pyodide-deno",
+        )
+
+    result = run(exercise())
+
+    assert result.error is None, result.error
+    assert "save a JSON-shaped projection instead" in result.value
+
+
+@pytest.mark.skipif(shutil.which("deno") is None, reason="Deno is not installed")
+def test_pyodide_user_value_matching_old_sentinel_returns_unchanged() -> None:
+    async def exercise():
+        runtime = Toolplane(ambient_cli=False)
+        return await runtime.execute(
+            "return {'__toolplane_unawaited_call__': True, 'data': 123}",
+            backend="pyodide-deno",
+        )
+
+    result = run(exercise())
+
+    # the unawaited signal is out-of-band; no user JSON shape is reserved
+    assert result.error is None, result.error
+    assert result.value == {"__toolplane_unawaited_call__": True, "data": 123}
