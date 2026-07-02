@@ -219,6 +219,33 @@ def _command_basename(value: str) -> str:
     return value.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
 
 
+def format_mcp_list(config: ToolplaneConfig) -> str:
+    """Render configured MCP servers from config alone, without connecting."""
+    servers = config.mcp.servers
+    lines = ["MCP servers:"]
+    if not servers:
+        lines.append("(none)")
+        return "\n".join(lines) + "\n"
+
+    for name in sorted(servers):
+        server = servers[name]
+        kind = _server_kind(server)
+        parts = [f"- {name}:", f"transport={kind}"]
+        if kind == "url":
+            parts.append(f"url={server.get('url')}")
+        elif kind == "stdio":
+            parts.append(f"command={server.get('command')}")
+            args = server.get("args")
+            if args:
+                parts.append(f"args={len(args)}")
+        parts.append(f"auth={_auth_label(server)}")
+        warning = _server_warning(server)
+        if warning:
+            parts.append(f"warning={warning}")
+        lines.append(" ".join(parts))
+    return "\n".join(lines) + "\n"
+
+
 async def check_mcp_status(
     config: ToolplaneConfig,
     *,

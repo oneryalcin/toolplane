@@ -86,11 +86,13 @@ controlled Python runtime where multiple capability sources become composable.
 ## User Flow
 
 The first stable command-line surface should optimize for explicit setup. This
-section is the target lifecycle. Today, `toolplane mcp add` edits the project
-config with comment-preserving TOML writes, `toolplane mcp login` primes a
-server interactively, `toolplane mcp status` checks configured servers, and
-`toolplane serve mcp` serves the configured facade; CLI allow and doctor are
-still planned.
+section is the target lifecycle. Today, `toolplane init` writes a safe starter
+config, `toolplane mcp add` edits the project config with comment-preserving
+TOML writes, `toolplane mcp login` primes a server interactively,
+`toolplane mcp list`/`status` inspect configured servers, `toolplane config
+check`/`doctor` validate the config and local environment, `toolplane run`
+executes a snippet file, and `toolplane serve mcp` serves the configured
+facade; `toolplane cli allow` is still planned.
 
 ```bash
 toolplane init
