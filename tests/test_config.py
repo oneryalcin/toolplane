@@ -105,10 +105,11 @@ def test_from_config_cli_allowlist_blocks_unlisted_binary() -> None:
     runtime = run(
         Toolplane.from_config(
             {
+                "toolplane": {"default_backend": "local_unsafe"},
                 "cli": {
                     "mode": "allowlist",
                     "allow": ["git"],
-                }
+                },
             }
         )
     )
@@ -230,10 +231,11 @@ def test_from_config_registers_mcp_server_from_stdio_config(tmp_path: Path) -> N
         runtime = await Toolplane.from_config(config_path)
         result = await runtime.execute(
             """
-return await docs.multiply(x=6, y=7)
+return await docs_multiply(x=6, y=7)
 """
         )
         assert result.ok, result.error
+        assert result.backend == "monty"
         return result.value
 
     assert run(exercise()) == 42

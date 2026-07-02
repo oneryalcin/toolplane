@@ -51,6 +51,7 @@ nav:
       - Code Mode Backends: code-mode-backends.md
       - Toolplane And MCP: toolplane-mcp.md
       - MCP Lifecycle Spike: mcp-lifecycle-spike.md
+      - Monty Default Spike: monty-default-spike.md
   - Examples:
       - Overview: examples/index.md
       - Ambient CLI: examples/ambient-cli.md

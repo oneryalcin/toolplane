@@ -22,10 +22,10 @@ runtime = await Toolplane.from_config("toolplane.toml")
 
 ```toml
 [toolplane]
-default_backend = "local_unsafe"
+default_backend = "monty" # the default: sandboxed, no filesystem or network
 
 [cli]
-mode = "allowlist" # disabled | allowlist | ambient
+mode = "allowlist" # disabled (default) | allowlist | ambient
 allow = ["git", "gh", "rg"]
 
 [mcp.servers.linear]
@@ -39,6 +39,13 @@ args = ["examples/mcp_stdio_server.py"]
 
 Toolplane-native TOML uses `[mcp.servers.<name>]`. Internally, Toolplane maps
 that to FastMCP's `{"mcpServers": ...}` config shape.
+
+Config defaults are safe: `default_backend = "monty"` and `cli.mode =
+"disabled"`, so a fresh config can be served with `toolplane serve mcp` and no
+`--unsafe` flag. On the monty backend, capabilities are called through flat
+aliases (`math_multiply(...)`) or `call_tool(...)` rather than scoped
+`math.multiply(...)` namespaces — see the backends page. Opting into
+`local_unsafe` or `ambient` CLI mode is an explicit per-project choice.
 
 ## CLI Policy
 

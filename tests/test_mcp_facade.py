@@ -103,8 +103,25 @@ def test_effective_policy_reports_allowlist_and_server_names() -> None:
     )
 
 
+def test_effective_policy_defaults_are_safe() -> None:
+    policy = EffectivePolicy.from_config(ToolplaneConfig())
+
+    assert policy.unsafe_reasons == ()
+    assert policy.allowed_backend_overrides == ("monty",)
+    assert format_effective_policy(policy) == (
+        "Toolplane MCP policy: backend=monty cli=disabled allow=none "
+        "mcp_servers=none allowed_backend_overrides=monty unsafe=false"
+    )
+
+
 def test_effective_policy_renders_ambient_as_all_when_unsafe_allowed() -> None:
-    policy = EffectivePolicy.from_config(ToolplaneConfig(), allow_unsafe=True)
+    config = ToolplaneConfig.model_validate(
+        {
+            "toolplane": {"default_backend": "local_unsafe"},
+            "cli": {"mode": "ambient"},
+        }
+    )
+    policy = EffectivePolicy.from_config(config, allow_unsafe=True)
 
     assert policy.unsafe_reasons == ("local_unsafe", "ambient_cli")
     assert policy.allowed_backend_overrides is None
@@ -157,11 +174,11 @@ def test_mcp_facade_from_config_executes_stdio_mcp_tool(tmp_path: Path) -> None:
     config_path = write_stdio_demo_config(tmp_path)
 
     async def exercise() -> dict[str, object]:
-        app = await build_mcp_facade_from_config(config_path, allow_unsafe=True)
+        app = await build_mcp_facade_from_config(config_path)
         async with Client(app) as client:
             result = await client.call_tool(
                 "execute_code",
-                {"code": "return await docs.multiply(x=6, y=7)"},
+                {"code": "return await docs_multiply(x=6, y=7)"},
             )
         return result.data
 
@@ -169,6 +186,7 @@ def test_mcp_facade_from_config_executes_stdio_mcp_tool(tmp_path: Path) -> None:
 
     assert result["value"] == 42
     assert result["error"] is None
+    assert result["backend"] == "monty"
 
 
 def test_cli_stdio_facade_round_trip_crosses_process_boundary(tmp_path: Path) -> None:
@@ -185,7 +203,6 @@ def test_cli_stdio_facade_round_trip_crosses_process_boundary(tmp_path: Path) ->
                 "mcp",
                 "--config",
                 str(config_path),
-                "--unsafe",
             ],
             cwd=str(Path.cwd()),
             keep_alive=False,
@@ -195,7 +212,7 @@ def test_cli_stdio_facade_round_trip_crosses_process_boundary(tmp_path: Path) ->
             tools = await client.list_tools()
             execution = await client.call_tool(
                 "execute_code",
-                {"code": "return await docs.multiply(x=6, y=7)"},
+                {"code": "return await docs_multiply(x=6, y=7)"},
             )
             failure = await client.call_tool(
                 "execute_code",
@@ -220,18 +237,29 @@ def test_cli_stdio_facade_round_trip_crosses_process_boundary(tmp_path: Path) ->
     assert "stdio boundary detail" in result["failure"]["error"]["message"]
     stderr = stderr_path.read_text(encoding="utf-8")
     assert "Toolplane MCP policy:" in stderr
-    assert "backend=local_unsafe" in stderr
+    assert "backend=monty" in stderr
     assert "cli=disabled" in stderr
     assert "allow=none" in stderr
     assert "mcp_servers=docs" in stderr
-    assert "allowed_backend_overrides=ALL" in stderr
-    assert "unsafe=true" in stderr
-    assert "reasons=local_unsafe" in stderr
+    assert "allowed_backend_overrides=monty" in stderr
+    assert "unsafe=false" in stderr
+    assert "reasons=" not in stderr
+
+
+def test_mcp_facade_from_config_serves_default_config_without_unsafe() -> None:
+    run(build_mcp_facade_from_config({}))
 
 
 def test_mcp_facade_from_config_rejects_unsafe_defaults() -> None:
     with pytest.raises(UnsafeFacadeConfigError) as error:
-        run(build_mcp_facade_from_config({}))
+        run(
+            build_mcp_facade_from_config(
+                {
+                    "toolplane": {"default_backend": "local_unsafe"},
+                    "cli": {"mode": "ambient"},
+                }
+            )
+        )
 
     message = str(error.value)
     assert "local_unsafe" in message
@@ -332,7 +360,19 @@ def test_cli_serve_mcp_reports_unsafe_config(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     config_path = tmp_path / "toolplane.toml"
-    config_path.write_text("", encoding="utf-8")
+    config_path.write_text(
+        textwrap.dedent(
+            """
+            [toolplane]
+            default_backend = "local_unsafe"
+
+            [cli]
+            mode = "ambient"
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
 
     assert main(["serve", "mcp", "--config", str(config_path)]) == 2
     captured = capsys.readouterr()

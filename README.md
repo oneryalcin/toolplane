@@ -114,6 +114,8 @@ Early implementation. Toolplane can register Python functions, explicit
 `cli-to-py` wrappers, and FastMCP-backed MCP tools, then discover them, inspect
 schemas, and execute agent-written Python through:
 
+- `monty`: the default; sandboxed Monty interpreter with no filesystem or
+  network access, flat capability calls, and host bridge `call_tool` callbacks.
 - `local_unsafe`: development-only in-process execution.
 - `pyodide-deno`: experimental Pyodide-in-Deno sandbox execution with package
   loading and host bridge `call_tool` callbacks.
