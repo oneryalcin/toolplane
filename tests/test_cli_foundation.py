@@ -278,6 +278,52 @@ def test_cli_serve_mcp_reports_malformed_config_cleanly(
     assert captured.err.startswith("toolplane:")
 
 
+def test_cli_run_reports_unknown_backend_cleanly(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text('[toolplane]\ndefault_backend = "nope"\n', encoding="utf-8")
+    script_path = tmp_path / "snippet.py"
+    script_path.write_text("return 1\n", encoding="utf-8")
+
+    code = main(["run", str(script_path), "--config", str(config_path)])
+
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert captured.out == ""
+    assert captured.err == "toolplane: Unknown backend: nope\n"
+
+
+def test_cli_run_reports_backend_capability_error_cleanly(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text(
+        textwrap.dedent(
+            """
+            [cli]
+            mode = "allowlist"
+            allow = ["git"]
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    script_path = tmp_path / "snippet.py"
+    script_path.write_text("return 1\n", encoding="utf-8")
+
+    code = main(["run", str(script_path), "--config", str(config_path)])
+
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert captured.out == ""
+    assert captured.err.startswith("toolplane: monty does not support")
+
+
 def test_cli_run_rejects_missing_script(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

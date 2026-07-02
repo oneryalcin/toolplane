@@ -11,7 +11,7 @@ from pathlib import Path
 
 from .config import ToolplaneConfig, load_toolplane_config
 from .doctor import doctor_exit_code, format_doctor_checks, run_doctor_checks
-from .errors import UnsafeFacadeConfigError
+from .errors import ToolplaneError, UnsafeFacadeConfigError
 from .execution import ExecutionResult
 from .mcp_facade import serve_mcp_facade
 from .mcp_lifecycle import (
@@ -165,7 +165,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
     try:
         result = asyncio.run(execute())
-    except (OSError, ValueError) as exc:
+    except (ToolplaneError, OSError, ValueError) as exc:
         print(f"toolplane: {exc}", file=sys.stderr)
         return 2
 
