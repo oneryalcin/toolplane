@@ -6,6 +6,7 @@ import inspect
 import keyword
 import re
 from builtins import __dict__ as _builtins
+from collections import Counter
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
@@ -153,14 +154,20 @@ class CapabilityRegistry:
             if not capability.hidden
             and (not tag_filter or capability.tags & tag_filter)
         ]
-        tokens = _tokenize(query)
-        if not tokens:
+        raw_tokens = _tokenize(query)
+        if not raw_tokens:
+            # empty query keeps its list-everything semantics
             return candidates[:limit]
+        tokens = [token for token in raw_tokens if token not in _STOPWORDS]
+        if not tokens:
+            # a query made only of function words matches nothing, rather
+            # than matching every description that contains "the" or "in"
+            return []
 
         scored: list[tuple[int, str, Capability]] = []
         for capability in candidates:
-            text = capability.searchable_text.lower()
-            score = sum(text.count(token) for token in tokens)
+            counts = _token_counts(capability.searchable_text)
+            score = sum(counts[token] for token in tokens)
             if score:
                 scored.append((score, capability.name, capability))
         scored.sort(key=lambda item: (-item[0], item[1]))
@@ -217,6 +224,35 @@ class CapabilityRegistry:
 
 def _tokenize(text: str) -> list[str]:
     return [token for token in re.split(r"[^a-z0-9_]+", text.lower()) if token]
+
+
+# function words only: never what distinguishes one capability from another,
+# but present in most tool descriptions, so they match everything
+_STOPWORDS = frozenset(
+    """
+    a an the is are am be been was were do does did done of in on at to for
+    and or but not no it its this that these those with from by as about
+    into onto over under what which who whom whose how when where why i you
+    he she we they them me my your our their can could should would will
+    shall may might must
+    """.split()
+)
+
+
+def _token_counts(text: str) -> Counter[str]:
+    """Token multiset for search scoring, matched token-to-token.
+
+    Underscored tokens also contribute their parts so a query like ``wiki``
+    still finds ``read_wiki_structure``. Query tokens are never matched as
+    raw substrings — that made ``is`` match inside "list" and ``git`` inside
+    "GitHub", returning everything for unrelated queries.
+    """
+    tokens = _tokenize(text)
+    expanded = list(tokens)
+    for token in tokens:
+        if "_" in token:
+            expanded.extend(part for part in token.split("_") if part)
+    return Counter(expanded)
 
 
 def _validate_alias(alias: str) -> None:
