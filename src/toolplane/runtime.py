@@ -301,6 +301,9 @@ class Toolplane:
                     "- `handle = await save_result(value)` — JSON-shaped "
                     "values only",
                     "- `value = await load_result(handle)`",
+                    "- A saved value is also readable directly as the MCP "
+                    "resource `toolplane://results/<handle>` (canonical "
+                    "JSON, no execute_code run needed).",
                     "",
                     "Handles persist across execute_code calls within this "
                     "server session; nothing persists to disk.",

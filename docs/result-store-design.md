@@ -158,6 +158,27 @@ host owns the store, the sandbox only sends requests.
 | NaN / Infinity       | fails at save; would corrupt to null in MCP responses |
 | store disabled       | `save_result`/`load_result` fail with "results store is disabled" |
 
+## MCP resource lane
+
+Saved values are also readable as MCP resources: `toolplane://results/<handle>`
+serves the stored canonical JSON verbatim, letting a client (or a human via
+@-mention in Claude Code) read a result without an `execute_code` round-trip.
+
+- Same authority model: the handle is the sole key; the resource handler
+  reads through the runtime's own store (`ResultStore.payload`).
+- Same transport policy: the template is only registered when the store is
+  enabled — `resolve_serve_config` disables the store on multi-client
+  transports before the facade is built, so no dead template is advertised.
+- Unknown or expired handles surface the store's own error message through
+  the resource read.
+- Discovery is pointer-driven, not enumeration-driven (Claude Code does not
+  list resource templates, and agents do not browse resources unaided): the
+  URI shape is stated in the `toolplane://namespace` manifest and in the
+  `save_result` capability description.
+- Known cosmetic quirk: fastmcp labels str-returning template reads
+  `text/plain` at read time even though the template advertises
+  `application/json`; content is canonical JSON either way.
+
 ## Out of scope (follow-ups)
 
 - **Artifacts** are the second lane for files and blobs (parquet, images,

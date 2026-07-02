@@ -132,12 +132,20 @@ class ResultStore:
 
     def load(self, handle: str) -> Any:
         """Return the canonicalized value for a handle saved in an earlier run."""
+        return json.loads(self.payload(handle))
+
+    def payload(self, handle: str) -> str:
+        """Return the canonical JSON payload for a handle, verbatim.
+
+        This is what the MCP resource lane serves: the stored text itself,
+        with the same authority model as load — the handle is the sole key.
+        """
         self._ensure_enabled()
         self._purge_expired()
         entry = self._entries.get(handle) if isinstance(handle, str) else None
         if entry is None:
             raise ResultStoreError(f"unknown or expired result handle: {handle!r}")
-        return json.loads(entry.payload)
+        return entry.payload
 
     def _ensure_enabled(self) -> None:
         if self._disabled_reason is not None:
@@ -187,7 +195,9 @@ def register_result_capabilities(
         callable=_bridge_dispatch_only,
         description=(
             "Save a JSON-shaped value to the host result store; "
-            "returns a handle usable in later runs."
+            "returns a handle usable in later runs. Saved values are "
+            "also readable directly as the MCP resource "
+            "toolplane://results/<handle>."
         ),
         parameters={
             "type": "object",

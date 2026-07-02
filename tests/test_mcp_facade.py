@@ -102,6 +102,45 @@ def test_schemas_not_found_signposts_on_every_detail_level() -> None:
     assert payload[-1]["not_found"] == ["git"]
 
 
+def test_results_resource_serves_saved_values_and_signposts_misses() -> None:
+    async def exercise() -> tuple[list[str], str, str]:
+        runtime = Toolplane(ambient_cli=False)
+        handle = runtime.result_store.save({"answer": 42})
+        app = build_mcp_facade(runtime)
+        async with Client(app) as client:
+            templates = [
+                t.uriTemplate for t in await client.list_resource_templates()
+            ]
+            content = await client.read_resource(f"toolplane://results/{handle}")
+            try:
+                await client.read_resource("toolplane://results/res_nope")
+                missing_error = ""
+            except Exception as exc:
+                missing_error = str(exc)
+        return templates, content[0].text, missing_error
+
+    templates, payload, missing_error = run(exercise())
+    assert templates == ["toolplane://results/{handle}"]
+    assert json.loads(payload) == {"answer": 42}
+    # the store's own message must reach the client, not a generic failure
+    assert "unknown or expired result handle" in missing_error
+
+
+def test_results_resource_template_absent_when_store_disabled() -> None:
+    from toolplane.results import ResultStore
+
+    async def exercise() -> list[str]:
+        runtime = Toolplane(
+            ambient_cli=False, result_store=ResultStore(enabled=False)
+        )
+        app = build_mcp_facade(runtime)
+        async with Client(app) as client:
+            return [t.uriTemplate for t in await client.list_resource_templates()]
+
+    # a template over a disabled store would be a signpost to nowhere
+    assert run(exercise()) == []
+
+
 def test_mcp_facade_namespace_resource_reflects_live_runtime() -> None:
     async def exercise() -> str:
         runtime = Toolplane(ambient_cli=True, ambient_cli_allowlist=["git", "jq"])
