@@ -131,11 +131,109 @@ def test_monty_rejects_packages() -> None:
         run(backend.run("return 1", bridge=_StubBridge(), packages=["pandas"]))
 
 
-def test_monty_rejects_ambient_cli() -> None:
+def test_monty_binds_allowlisted_cli_binaries_as_flat_functions() -> None:
+    async def fake_cli(binary: str, subcommand=None, options=None) -> dict:
+        return {"ok": True, "binary": binary}
+
+    backend = MontyBackend()
+    bridge = _StubBridge({"toolplane:cli/run": fake_cli})
+
+    result = run(
+        backend.run(
+            'return await git("status", short=True)',
+            bridge=bridge,
+            ambient_cli=True,
+            ambient_cli_names=("git",),
+        )
+    )
+
+    assert result.error is None, result.error
+    assert result.value == {"ok": True, "binary": "git"}
+    assert bridge.calls == [
+        (
+            "toolplane:cli/run",
+            {"binary": "git", "subcommand": "status", "options": {"short": True}},
+        )
+    ]
+
+
+def test_monty_cli_run_dispatches_non_identifier_binaries() -> None:
+    async def fake_cli(binary: str, subcommand=None, options=None) -> dict:
+        return {"ok": True}
+
+    backend = MontyBackend()
+    bridge = _StubBridge({"toolplane:cli/run": fake_cli})
+
+    result = run(
+        backend.run(
+            'return await cli_run("docker-compose", "up", {"detach": True})',
+            bridge=bridge,
+            ambient_cli=True,
+            ambient_cli_names=(),
+        )
+    )
+
+    assert result.error is None, result.error
+    assert bridge.calls == [
+        (
+            "toolplane:cli/run",
+            {
+                "binary": "docker-compose",
+                "subcommand": "up",
+                "options": {"detach": True},
+            },
+        )
+    ]
+
+
+def test_monty_capability_namespace_shadows_cli_binary_name() -> None:
+    backend = MontyBackend()
+    bridge = _StubBridge({"mcp.git.tool": _multiply})
+
+    result = run(
+        backend.run(
+            "return await git(x=2, y=3)",
+            bridge=bridge,
+            namespace={"git": "mcp.git.tool"},
+            ambient_cli=True,
+            ambient_cli_names=("git",),
+        )
+    )
+
+    assert result.error is None, result.error
+    assert result.value == 6
+    assert bridge.calls == [("mcp.git.tool", {"x": 2, "y": 3})]
+
+
+def test_monty_cli_calls_blocked_by_host_side_policy() -> None:
+    from toolplane import Toolplane
+
+    async def exercise():
+        runtime = await Toolplane.from_config(
+            {"cli": {"mode": "allowlist", "allow": ["git"]}}
+        )
+        return await runtime.execute('return await cli_run("curl")')
+
+    result = run(exercise())
+
+    assert result.error is not None
+    assert "CLI binary is not allowed by Toolplane policy: curl" in result.error.message
+
+
+def test_monty_does_not_bind_unlisted_cli_names() -> None:
     backend = MontyBackend()
 
-    with pytest.raises(BackendCapabilityError, match="ambient CLI"):
-        run(backend.run("return 1", bridge=_StubBridge(), ambient_cli=True))
+    result = run(
+        backend.run(
+            "return await curl()",
+            bridge=_StubBridge(),
+            ambient_cli=True,
+            ambient_cli_names=("git",),
+        )
+    )
+
+    assert result.error is not None
+    assert result.error.type == "NameError"
 
 
 def test_monty_rejects_input_collisions() -> None:

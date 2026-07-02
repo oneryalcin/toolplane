@@ -49,8 +49,9 @@ more custom code around it.
 - `local_unsafe` is only for development and shape validation.
 - Monty (`pydantic-monty`) is the default backend: safe by construction, pure
   pip install, flat callable namespace only (no classes, so no scoped
-  `ns.member` sugar). See `docs/monty-default-spike.md` for the decision record
-  and its empirical capability envelope.
+  `ns.member` sugar; CLI access is flat per-binary functions plus `cli_run`).
+  See `docs/monty-default-spike.md` for the decision record and its empirical
+  capability envelope.
 - Pyodide+Deno is the opt-in sandbox for package-capable snippets, especially
   pandas/NumPy-style workflows.
 - Docker, Modal, E2B, and Blaxel are needed for arbitrary CPython packages,

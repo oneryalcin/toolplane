@@ -25,6 +25,7 @@ The CLI covers the whole lifecycle from empty directory to served facade:
 ```bash
 toolplane init                  # write a starter toolplane.toml (safe defaults)
 toolplane config check          # validate and summarize, no network calls
+toolplane cli allow git gh rg   # switch to allowlist CLI policy
 toolplane mcp add linear --command uvx --arg fastmcp-remote --arg <url>
 toolplane mcp list              # what is configured, without connecting
 toolplane doctor                # local prerequisites (backends, binaries)
@@ -77,6 +78,13 @@ CLI policy is enforced by the runtime, not only hidden from discovery.
 | `disabled` | No `cli` root and no top-level ambient CLI names. |
 | `allowlist` | Only binaries in `allow` can be used through `cli.<name>`, `cli("name")`, or top-level aliases. |
 | `ambient` | Development-friendly lazy CLI access for binaries on `PATH`. |
+
+On the default `monty` backend, CLI access is flat: each allowed binary is a
+top-level async function (`await git("status", short=True)`) and
+`cli_run(binary, subcommand, options)` covers names that are not Python
+identifiers. The `cli.<name>` object forms need `local_unsafe` or
+`pyodide-deno`. The allowlist is enforced host-side by the bridge on every
+call, regardless of backend.
 
 In allowlist mode, non-identifier binaries can still be listed and used through
 the explicit root:

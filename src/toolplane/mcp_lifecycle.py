@@ -5,8 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import re
-import tempfile
-from collections.abc import Mapping, MutableMapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -14,9 +13,15 @@ from typing import Any, Literal
 import tomlkit
 
 from .config import ToolplaneConfig
+from .config_edit import (
+    ConfigEditError,
+    ensure_table,
+    parse_config_document,
+    write_text_atomic,
+)
 
 
-class McpAddError(ValueError):
+class McpAddError(ConfigEditError):
     """Raised when an MCP add snippet cannot be rendered."""
 
 
@@ -71,7 +76,7 @@ def render_mcp_add_snippet(
     """Render a self-contained Toolplane TOML snippet for one MCP server."""
     _validate_mcp_add_request(name, url=url, command=command, args=args, auth=auth)
     document = tomlkit.document()
-    servers = _ensure_table(_ensure_table(document, "mcp"), "servers")
+    servers = ensure_table(ensure_table(document, "mcp"), "servers")
     servers[name] = _build_mcp_server_table(
         name,
         url=url,
@@ -97,16 +102,10 @@ def write_mcp_add_config(
     _validate_mcp_add_request(name, url=url, command=command, args=args, auth=auth)
 
     path = Path(config_path).expanduser()
-    if path.exists():
-        try:
-            document = tomlkit.parse(path.read_text(encoding="utf-8"))
-        except Exception as exc:
-            raise McpAddError(f"Could not parse {path}: {exc}") from exc
-    else:
-        document = tomlkit.document()
+    document = parse_config_document(path)
 
-    mcp = _ensure_table(document, "mcp")
-    servers = _ensure_table(mcp, "servers")
+    mcp = ensure_table(document, "mcp")
+    servers = ensure_table(mcp, "servers")
     if name in servers and not force:
         raise McpAddError(
             f"MCP server {name!r} already exists; use --force to replace it"
@@ -119,27 +118,8 @@ def write_mcp_add_config(
         args=args,
         auth=auth,
     )
-    _write_text_atomic(path, tomlkit.dumps(document))
+    write_text_atomic(path, tomlkit.dumps(document))
     return path
-
-
-def _write_text_atomic(path: Path, text: str) -> None:
-    fd, tmp_name = tempfile.mkstemp(
-        dir=path.parent,
-        prefix=f".{path.name}.",
-        suffix=".tmp",
-        text=True,
-    )
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as file:
-            file.write(text)
-        os.replace(tmp_name, path)
-    except BaseException:
-        try:
-            os.unlink(tmp_name)
-        except FileNotFoundError:
-            pass
-        raise
 
 
 def _validate_mcp_add_request(
@@ -195,20 +175,6 @@ def _build_mcp_server_table(
         )
         server.add(tomlkit.comment(f"toolplane mcp login {name}"))
     return server
-
-
-def _ensure_table(
-    parent: MutableMapping[str, Any],
-    key: str,
-) -> MutableMapping[str, Any]:
-    value = parent.get(key)
-    if value is None:
-        table = tomlkit.table()
-        parent[key] = table
-        return table
-    if not isinstance(value, MutableMapping):
-        raise McpAddError(f"Config key {key!r} must be a TOML table")
-    return value
 
 
 def _is_fastmcp_remote_bridge(command: str, args: Sequence[str]) -> bool:

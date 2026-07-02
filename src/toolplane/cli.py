@@ -10,12 +10,12 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from .config import ToolplaneConfig, load_toolplane_config
+from .config_edit import ConfigEditError, write_cli_allow_config
 from .doctor import doctor_exit_code, format_doctor_checks, run_doctor_checks
 from .errors import ToolplaneError, UnsafeFacadeConfigError
 from .execution import ExecutionResult
 from .mcp_facade import serve_mcp_facade
 from .mcp_lifecycle import (
-    McpAddError,
     McpLoginError,
     McpStatusError,
     check_mcp_status,
@@ -37,7 +37,7 @@ default_backend = "monty" # monty | pyodide-deno | local_unsafe (dev only)
 
 [cli]
 mode = "disabled" # disabled | allowlist | ambient (dev only)
-# allow = ["git", "gh", "rg"]
+# Allow CLI binaries with: toolplane cli allow git gh rg
 
 # Add MCP servers with: toolplane mcp add <name> --url <url>
 # [mcp.servers.context7]
@@ -63,6 +63,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_doctor(args)
         case ("run", None):
             return _cmd_run(args)
+        case ("cli", "allow"):
+            return _cmd_cli_allow(args)
         case ("mcp", "list"):
             return _cmd_mcp_list(args)
         case ("mcp", "add"):
@@ -77,7 +79,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _subcommand(args: argparse.Namespace) -> str | None:
-    for attribute in ("serve_command", "config_command", "mcp_command"):
+    for attribute in ("serve_command", "config_command", "cli_command", "mcp_command"):
         value = getattr(args, attribute, None)
         if value is not None:
             return value
@@ -183,6 +185,16 @@ def _cmd_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_cli_allow(args: argparse.Namespace) -> int:
+    try:
+        path, binaries = write_cli_allow_config(args.config, tuple(args.binaries))
+    except (ConfigEditError, OSError) as exc:
+        print(f"toolplane: {exc}", file=sys.stderr)
+        return 2
+    print(f"Allowed CLI binaries in {path}: {', '.join(binaries)} (mode=allowlist)")
+    return 0
+
+
 def _cmd_mcp_list(args: argparse.Namespace) -> int:
     config = _load_config(args.config)
     if config is None:
@@ -213,7 +225,7 @@ def _cmd_mcp_add(args: argparse.Namespace) -> int:
                 force=args.force,
             )
             print(f"Added MCP server {args.name!r} to {path}")
-    except (McpAddError, OSError) as exc:
+    except (ConfigEditError, OSError) as exc:
         print(f"toolplane: {exc}", file=sys.stderr)
         return 2
     return 0
@@ -354,6 +366,23 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     run_parser.add_argument("script", help="Path to a Python snippet file")
     run_parser.add_argument(
+        "--config",
+        default="toolplane.toml",
+        help="Path to a Toolplane TOML config file",
+    )
+
+    cli_root = subcommands.add_parser("cli", help="Manage CLI policy")
+    cli_subcommands = cli_root.add_subparsers(dest="cli_command")
+    cli_allow = cli_subcommands.add_parser(
+        "allow",
+        help="Allow CLI binaries by switching the config to allowlist mode",
+    )
+    cli_allow.add_argument(
+        "binaries",
+        nargs="+",
+        help="CLI binary name(s) to add to the allowlist",
+    )
+    cli_allow.add_argument(
         "--config",
         default="toolplane.toml",
         help="Path to a Toolplane TOML config file",

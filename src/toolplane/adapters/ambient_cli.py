@@ -126,7 +126,7 @@ def discover_cli_names() -> tuple[str, ...]:
         with entries:
             for entry in entries:
                 name = entry.name
-                if _is_safe_cli_name(name) and _is_executable(entry.path):
+                if is_safe_cli_name(name) and _is_executable(entry.path):
                     names.add(name)
     return tuple(sorted(names))
 
@@ -135,7 +135,7 @@ def _is_executable(path: str) -> bool:
     return os.path.isfile(path) and os.access(path, os.X_OK)
 
 
-def _is_safe_cli_name(name: str) -> bool:
+def is_safe_cli_name(name: str) -> bool:
     return (
         name.isidentifier()
         and not keyword.iskeyword(name)
@@ -157,7 +157,7 @@ def build_local_cli_namespace(
     root = AmbientCliRoot(bridge, allowed_binaries=allowed)
     namespace: dict[str, Any] = {"cli": root}
     for name in names:
-        if name not in reserved_names and _is_safe_cli_name(name):
+        if name not in reserved_names and is_safe_cli_name(name):
             namespace[name] = AmbientCliBinary(bridge, name, allowed_binaries=allowed)
     return namespace
 
@@ -290,7 +290,7 @@ def render_pyodide_cli_namespace(
     top_level = [
         name
         for name in names
-        if name not in reserved_names and _is_safe_cli_name(name)
+        if name not in reserved_names and is_safe_cli_name(name)
     ]
     assignments = "\n".join(f"{name} = cli.{name}" for name in top_level)
     return f"""
