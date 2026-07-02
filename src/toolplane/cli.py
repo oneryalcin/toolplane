@@ -12,6 +12,7 @@ from pathlib import Path
 from .config import ToolplaneConfig, load_toolplane_config
 from .doctor import doctor_exit_code, format_doctor_checks, run_doctor_checks
 from .errors import UnsafeFacadeConfigError
+from .execution import ExecutionResult
 from .mcp_facade import serve_mcp_facade
 from .mcp_lifecycle import (
     McpAddError,
@@ -51,169 +52,115 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     raw_argv = sys.argv[1:] if argv is None else list(argv)
     args = parser.parse_args(_normalize_repeated_arg_values(raw_argv))
-    if args.command == "serve" and args.serve_command == "mcp":
-        try:
-            config = load_toolplane_config(args.config)
-            policy = EffectivePolicy.from_config(
+    match (args.command, _subcommand(args)):
+        case ("serve", "mcp"):
+            return _cmd_serve_mcp(args)
+        case ("init", None):
+            return _cmd_init(args)
+        case ("config", "check"):
+            return _cmd_config_check(args)
+        case ("doctor", None):
+            return _cmd_doctor(args)
+        case ("run", None):
+            return _cmd_run(args)
+        case ("mcp", "list"):
+            return _cmd_mcp_list(args)
+        case ("mcp", "add"):
+            return _cmd_mcp_add(args)
+        case ("mcp", "login"):
+            return _cmd_mcp_login(args)
+        case ("mcp", "status"):
+            return _cmd_mcp_status(args)
+        case _:
+            parser.print_help()
+            return 2
+
+
+def _subcommand(args: argparse.Namespace) -> str | None:
+    for attribute in ("serve_command", "config_command", "mcp_command"):
+        value = getattr(args, attribute, None)
+        if value is not None:
+            return value
+    return None
+
+
+def _load_config(config_path: str) -> ToolplaneConfig | None:
+    """Load and validate a config, or print the error and return None."""
+    try:
+        return load_toolplane_config(config_path)
+    except (OSError, ValueError) as exc:
+        print(f"toolplane: {exc}", file=sys.stderr)
+        return None
+
+
+def _cmd_serve_mcp(args: argparse.Namespace) -> int:
+    config = _load_config(args.config)
+    if config is None:
+        return 2
+    try:
+        policy = EffectivePolicy.from_config(config, allow_unsafe=args.unsafe)
+        ensure_safe_facade_policy(policy)
+        print(format_effective_policy(policy), file=sys.stderr)
+        asyncio.run(
+            serve_mcp_facade(
                 config,
+                transport=args.transport,
+                host=args.host,
+                port=args.port,
                 allow_unsafe=args.unsafe,
             )
-            ensure_safe_facade_policy(policy)
-            print(format_effective_policy(policy), file=sys.stderr)
-            asyncio.run(
-                serve_mcp_facade(
-                    config,
-                    transport=args.transport,
-                    host=args.host,
-                    port=args.port,
-                    allow_unsafe=args.unsafe,
-                )
-            )
-        except UnsafeFacadeConfigError as exc:
-            print(f"toolplane: {exc}", file=sys.stderr)
-            return 2
-        return 0
-    if args.command == "init":
-        path = Path(args.config)
-        if path.exists() and not args.force:
-            print(
-                f"toolplane: {path} already exists; use --force to overwrite",
-                file=sys.stderr,
-            )
-            return 2
-        try:
-            path.write_text(_INIT_TEMPLATE, encoding="utf-8")
-        except OSError as exc:
-            print(f"toolplane: {exc}", file=sys.stderr)
-            return 2
-        print(f"Wrote {path}")
-        return 0
-    if args.command == "config" and args.config_command == "check":
-        try:
-            config = load_toolplane_config(args.config)
-        except (OSError, ValueError) as exc:
-            print(f"toolplane: {exc}", file=sys.stderr)
-            return 2
-        print(_format_config_summary(args.config, config), end="")
-        return 0
-    if args.command == "doctor":
-        try:
-            config = load_toolplane_config(args.config)
-        except (OSError, ValueError) as exc:
-            print(f"toolplane: {exc}", file=sys.stderr)
-            return 2
-        checks = run_doctor_checks(config)
-        print(format_doctor_checks(checks), end="")
-        return doctor_exit_code(checks)
-    if args.command == "run":
-        return _run_script(args.script, args.config)
-    if args.command == "mcp" and args.mcp_command == "list":
-        try:
-            config = load_toolplane_config(args.config)
-        except (OSError, ValueError) as exc:
-            print(f"toolplane: {exc}", file=sys.stderr)
-            return 2
-        print(format_mcp_list(config), end="")
-        return 0
-    if args.command == "mcp" and args.mcp_command == "add":
-        try:
-            if args.print:
-                snippet = render_mcp_add_snippet(
-                    args.name,
-                    url=args.url,
-                    command=args.command_value,
-                    args=tuple(args.args or ()),
-                    auth=args.auth,
-                )
-                print(snippet, end="")
-            else:
-                path = write_mcp_add_config(
-                    args.config,
-                    args.name,
-                    url=args.url,
-                    command=args.command_value,
-                    args=tuple(args.args or ()),
-                    auth=args.auth,
-                    force=args.force,
-                )
-                print(f"Added MCP server {args.name!r} to {path}")
-        except (McpAddError, OSError) as exc:
-            print(f"toolplane: {exc}", file=sys.stderr)
-            return 2
-        return 0
-    if args.command == "mcp" and args.mcp_command == "login":
-        try:
-            config = load_toolplane_config(args.config)
-            if args.name in config.mcp.servers:
-                print(
-                    f"Logging in to {args.name!r}; a browser window may open "
-                    "to complete authentication...",
-                    file=sys.stderr,
-                )
-            status = asyncio.run(
-                login_mcp_server(
-                    config,
-                    args.name,
-                    timeout_seconds=args.timeout,
-                )
-            )
-        except (McpLoginError, McpStatusError, OSError, ValueError) as exc:
-            print(f"toolplane: {exc}", file=sys.stderr)
-            return 2
-        message = format_mcp_login(status, timeout_seconds=args.timeout)
-        if status.state == "ok":
-            print(message, end="")
-            return 0
-        print(f"toolplane: {message}", end="", file=sys.stderr)
+        )
+    except UnsafeFacadeConfigError as exc:
+        print(f"toolplane: {exc}", file=sys.stderr)
         return 2
-    if args.command == "mcp" and args.mcp_command == "status":
-        try:
-            config = load_toolplane_config(args.config)
-            statuses = asyncio.run(
-                check_mcp_status(
-                    config,
-                    names=tuple(args.names or ()),
-                    timeout_seconds=args.timeout,
-                )
-            )
-        except (McpStatusError, OSError, ValueError) as exc:
-            print(f"toolplane: {exc}", file=sys.stderr)
-            return 2
-        print(format_mcp_status(statuses), end="")
-        return 0
-    parser.print_help()
-    return 2
+    return 0
 
 
-def _format_config_summary(config_path: str, config: ToolplaneConfig) -> str:
-    cli = config.cli.mode
-    if cli == "allowlist":
-        cli += f" [{', '.join(config.cli.allow)}]"
-    servers = ", ".join(sorted(config.mcp.servers)) or "none"
-    lines = [
-        f"config: {config_path}",
-        f"backend: {config.toolplane.default_backend}",
-        f"cli: {cli}",
-        f"mcp servers: {servers}",
-    ]
-    if config.toolplane.default_backend == "local_unsafe" or config.cli.mode == "ambient":
-        lines.append("note: serve mcp will require --unsafe with this config")
-    lines.append("ok")
-    return "\n".join(lines) + "\n"
-
-
-def _run_script(script: str, config_path: str) -> int:
-    script_path = Path(script)
+def _cmd_init(args: argparse.Namespace) -> int:
+    path = Path(args.config)
+    if path.exists() and not args.force:
+        print(
+            f"toolplane: {path} already exists; use --force to overwrite",
+            file=sys.stderr,
+        )
+        return 2
     try:
-        code = script_path.read_text(encoding="utf-8")
+        path.write_text(_INIT_TEMPLATE, encoding="utf-8")
+    except OSError as exc:
+        print(f"toolplane: {exc}", file=sys.stderr)
+        return 2
+    print(f"Wrote {path}")
+    return 0
+
+
+def _cmd_config_check(args: argparse.Namespace) -> int:
+    config = _load_config(args.config)
+    if config is None:
+        return 2
+    print(_format_config_summary(args.config, config), end="")
+    return 0
+
+
+def _cmd_doctor(args: argparse.Namespace) -> int:
+    config = _load_config(args.config)
+    if config is None:
+        return 2
+    checks = run_doctor_checks(config)
+    print(format_doctor_checks(checks), end="")
+    return doctor_exit_code(checks)
+
+
+def _cmd_run(args: argparse.Namespace) -> int:
+    try:
+        code = Path(args.script).read_text(encoding="utf-8")
     except OSError as exc:
         print(f"toolplane: {exc}", file=sys.stderr)
         return 2
 
-    async def execute():
+    async def execute() -> ExecutionResult:
         from .runtime import Toolplane
 
-        runtime = await Toolplane.from_config(config_path)
+        runtime = await Toolplane.from_config(args.config)
         return await runtime.execute(code)
 
     try:
@@ -234,6 +181,107 @@ def _run_script(script: str, config_path: str) -> int:
         return 1
     print(json.dumps(result.value, indent=2, default=str))
     return 0
+
+
+def _cmd_mcp_list(args: argparse.Namespace) -> int:
+    config = _load_config(args.config)
+    if config is None:
+        return 2
+    print(format_mcp_list(config), end="")
+    return 0
+
+
+def _cmd_mcp_add(args: argparse.Namespace) -> int:
+    try:
+        if args.print:
+            snippet = render_mcp_add_snippet(
+                args.name,
+                url=args.url,
+                command=args.command_value,
+                args=tuple(args.args or ()),
+                auth=args.auth,
+            )
+            print(snippet, end="")
+        else:
+            path = write_mcp_add_config(
+                args.config,
+                args.name,
+                url=args.url,
+                command=args.command_value,
+                args=tuple(args.args or ()),
+                auth=args.auth,
+                force=args.force,
+            )
+            print(f"Added MCP server {args.name!r} to {path}")
+    except (McpAddError, OSError) as exc:
+        print(f"toolplane: {exc}", file=sys.stderr)
+        return 2
+    return 0
+
+
+def _cmd_mcp_login(args: argparse.Namespace) -> int:
+    config = _load_config(args.config)
+    if config is None:
+        return 2
+    if args.name in config.mcp.servers:
+        print(
+            f"Logging in to {args.name!r}; a browser window may open "
+            "to complete authentication...",
+            file=sys.stderr,
+        )
+    try:
+        status = asyncio.run(
+            login_mcp_server(
+                config,
+                args.name,
+                timeout_seconds=args.timeout,
+            )
+        )
+    except (McpLoginError, McpStatusError, OSError, ValueError) as exc:
+        print(f"toolplane: {exc}", file=sys.stderr)
+        return 2
+    message = format_mcp_login(status, timeout_seconds=args.timeout)
+    if status.state == "ok":
+        print(message, end="")
+        return 0
+    print(f"toolplane: {message}", end="", file=sys.stderr)
+    return 2
+
+
+def _cmd_mcp_status(args: argparse.Namespace) -> int:
+    config = _load_config(args.config)
+    if config is None:
+        return 2
+    try:
+        statuses = asyncio.run(
+            check_mcp_status(
+                config,
+                names=tuple(args.names or ()),
+                timeout_seconds=args.timeout,
+            )
+        )
+    except (McpStatusError, OSError, ValueError) as exc:
+        print(f"toolplane: {exc}", file=sys.stderr)
+        return 2
+    print(format_mcp_status(statuses), end="")
+    return 0
+
+
+def _format_config_summary(config_path: str, config: ToolplaneConfig) -> str:
+    cli = config.cli.mode
+    if cli == "allowlist":
+        cli += f" [{', '.join(config.cli.allow)}]"
+    servers = ", ".join(sorted(config.mcp.servers)) or "none"
+    lines = [
+        f"config: {config_path}",
+        f"backend: {config.toolplane.default_backend}",
+        f"cli: {cli}",
+        f"mcp servers: {servers}",
+    ]
+    if config.toolplane.default_backend == "local_unsafe" or config.cli.mode == "ambient":
+        lines.append("note: serve mcp will require --unsafe with this config")
+    lines.append("ok")
+    return "\n".join(lines) + "\n"
 
 
 def _build_parser() -> argparse.ArgumentParser:
