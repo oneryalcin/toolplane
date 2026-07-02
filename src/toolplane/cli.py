@@ -12,9 +12,12 @@ from .errors import UnsafeFacadeConfigError
 from .mcp_facade import serve_mcp_facade
 from .mcp_lifecycle import (
     McpAddError,
+    McpLoginError,
     McpStatusError,
     check_mcp_status,
+    format_mcp_login,
     format_mcp_status,
+    login_mcp_server,
     render_mcp_add_snippet,
     write_mcp_add_config,
 )
@@ -73,6 +76,31 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"toolplane: {exc}", file=sys.stderr)
             return 2
         return 0
+    if args.command == "mcp" and args.mcp_command == "login":
+        try:
+            config = load_toolplane_config(args.config)
+            if args.name in config.mcp.servers:
+                print(
+                    f"Logging in to {args.name!r}; a browser window may open "
+                    "to complete authentication...",
+                    file=sys.stderr,
+                )
+            status = asyncio.run(
+                login_mcp_server(
+                    config,
+                    args.name,
+                    timeout_seconds=args.timeout,
+                )
+            )
+        except (McpLoginError, McpStatusError, OSError, ValueError) as exc:
+            print(f"toolplane: {exc}", file=sys.stderr)
+            return 2
+        message = format_mcp_login(status, timeout_seconds=args.timeout)
+        if status.state == "ok":
+            print(message, end="")
+            return 0
+        print(f"toolplane: {message}", end="", file=sys.stderr)
+        return 2
     if args.command == "mcp" and args.mcp_command == "status":
         try:
             config = load_toolplane_config(args.config)
@@ -162,6 +190,23 @@ def _build_parser() -> argparse.ArgumentParser:
         "--auth",
         choices=("oauth",),
         help="Authentication mode for remote URL snippets",
+    )
+
+    mcp_login = mcp_subcommands.add_parser(
+        "login",
+        help="Prime an MCP server interactively (may open a browser)",
+    )
+    mcp_login.add_argument("name", help="MCP server name to log in")
+    mcp_login.add_argument(
+        "--config",
+        default="toolplane.toml",
+        help="Path to a Toolplane TOML config file",
+    )
+    mcp_login.add_argument(
+        "--timeout",
+        type=float,
+        default=180.0,
+        help="Login timeout in seconds, including the browser flow",
     )
 
     mcp_status = mcp_subcommands.add_parser(

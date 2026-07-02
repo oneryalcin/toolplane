@@ -203,7 +203,7 @@ def test_mcp_add_fastmcp_remote_emits_prime_guidance(
         'args = ["fastmcp-remote", "https://mcp.linear.app/mcp", '
         '"--resource", "linear-prod"]\n'
         "# prime this bridge before relying on status or execute:\n"
-        "# uvx fastmcp-remote https://mcp.linear.app/mcp --resource linear-prod\n"
+        "# toolplane mcp login linear-bridge\n"
     )
     assert_emitted_config_loads(tmp_path, captured.out)
 
@@ -731,6 +731,219 @@ def test_mcp_status_rejects_malformed_config(
     assert code == 2
     assert captured.out == ""
     assert "toolplane:" in captured.err
+
+
+def test_mcp_login_primes_stdio_server(
+    tmp_path: Path,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    server_path = tmp_path / "server.py"
+    server_path.write_text(
+        textwrap.dedent(
+            """
+            from fastmcp import FastMCP
+
+            mcp = FastMCP("Login Demo")
+
+            @mcp.tool
+            def ping() -> str:
+                return "pong"
+
+            if __name__ == "__main__":
+                mcp.run(show_banner=False)
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text(
+        textwrap.dedent(
+            f"""
+            [mcp.servers.docs]
+            command = {json.dumps(sys.executable)}
+            args = [{json.dumps(str(server_path))}]
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    code = main(["mcp", "login", "docs", "--config", str(config_path)])
+
+    captured = capfd.readouterr()
+
+    assert code == 0
+    assert captured.out == "Login succeeded for 'docs': 1 tools\n"
+    assert "browser window may open" in captured.err
+
+
+def test_mcp_login_keeps_browser_enabled_and_preserves_env(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_probe: dict[str, object] = {}
+
+    async def fake_list_mcp_tools(
+        name: str,
+        server_config: object,
+        *,
+        timeout_seconds: float,
+    ) -> list[object]:
+        captured_probe["server_config"] = server_config
+        captured_probe["timeout_seconds"] = timeout_seconds
+        return [object()]
+
+    monkeypatch.setenv("BROWSER", "/usr/bin/open")
+    monkeypatch.setenv("FASTMCP_REMOTE_CONFIG_DIR", "/home/default-fastmcp")
+    monkeypatch.setattr(lifecycle, "_list_mcp_tools", fake_list_mcp_tools)
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text(
+        textwrap.dedent(
+            """
+            [mcp.servers.linear_bridge]
+            command = "uvx"
+            args = ["fastmcp-remote", "https://mcp.linear.app/mcp"]
+
+            [mcp.servers.linear_bridge.env]
+            FASTMCP_REMOTE_CONFIG_DIR = "/project/fastmcp"
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    code = main(["mcp", "login", "linear_bridge", "--config", str(config_path)])
+
+    server_config = captured_probe["server_config"]
+    assert isinstance(server_config, dict)
+    env = server_config["env"]
+    assert isinstance(env, dict)
+
+    assert code == 0
+    assert env["BROWSER"] == "/usr/bin/open"
+    assert env["FASTMCP_REMOTE_CONFIG_DIR"] == "/project/fastmcp"
+    assert server_config["keep_alive"] is False
+    assert captured_probe["timeout_seconds"] == 180.0
+
+
+def test_mcp_login_rejects_direct_oauth_server(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text(
+        textwrap.dedent(
+            """
+            [mcp.servers.linear]
+            url = "https://mcp.linear.app/mcp"
+            auth = "oauth"
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    code = main(["mcp", "login", "linear", "--config", str(config_path)])
+
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert captured.out == ""
+    assert "fastmcp-remote bridge" in captured.err
+
+
+def test_mcp_login_rejects_unknown_server(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text("", encoding="utf-8")
+
+    code = main(["mcp", "login", "missing", "--config", str(config_path)])
+
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert captured.out == ""
+    assert "Unknown MCP server: missing" in captured.err
+
+
+def test_mcp_login_reports_auth_failure(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def unauthorized_list_mcp_tools(
+        name: str,
+        server_config: object,
+        *,
+        timeout_seconds: float,
+    ) -> list[object]:
+        raise RuntimeError("401 Unauthorized")
+
+    monkeypatch.setattr(lifecycle, "_list_mcp_tools", unauthorized_list_mcp_tools)
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text(
+        textwrap.dedent(
+            """
+            [mcp.servers.linear_bridge]
+            command = "uvx"
+            args = ["fastmcp-remote", "https://mcp.linear.app/mcp"]
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    code = main(["mcp", "login", "linear_bridge", "--config", str(config_path)])
+
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert captured.out == ""
+    assert "Login failed for 'linear_bridge': 401 Unauthorized" in captured.err
+
+
+def test_mcp_login_reports_timeout_with_retry_hint(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def slow_list_mcp_tools(
+        name: str,
+        server_config: object,
+        *,
+        timeout_seconds: float,
+    ) -> list[object]:
+        await asyncio.sleep(1)
+        return []
+
+    monkeypatch.setattr(lifecycle, "_list_mcp_tools", slow_list_mcp_tools)
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text(
+        textwrap.dedent(
+            """
+            [mcp.servers.slow]
+            command = "uvx"
+            args = ["fastmcp-remote", "https://mcp.example/slow"]
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    code = main(
+        ["mcp", "login", "slow", "--config", str(config_path), "--timeout", "0.01"]
+    )
+
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert captured.out == ""
+    assert "Login timed out for 'slow' after 0.01s" in captured.err
+    assert "--timeout" in captured.err
 
 
 def assert_emitted_config_loads(tmp_path: Path, output: str) -> ToolplaneConfig:

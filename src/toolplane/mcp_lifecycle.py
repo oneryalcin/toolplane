@@ -24,6 +24,10 @@ class McpStatusError(ValueError):
     """Raised when MCP status cannot inspect the requested config."""
 
 
+class McpLoginError(ValueError):
+    """Raised when an MCP server cannot be logged in from the CLI."""
+
+
 McpStatusState = Literal["ok", "auth_required", "timeout", "error"]
 McpServerKind = Literal["url", "stdio", "unknown"]
 
@@ -69,6 +73,7 @@ def render_mcp_add_snippet(
     document = tomlkit.document()
     servers = _ensure_table(_ensure_table(document, "mcp"), "servers")
     servers[name] = _build_mcp_server_table(
+        name,
         url=url,
         command=command,
         args=args,
@@ -108,6 +113,7 @@ def write_mcp_add_config(
         )
 
     servers[name] = _build_mcp_server_table(
+        name,
         url=url,
         command=command,
         args=args,
@@ -164,6 +170,7 @@ def _validate_mcp_add_request(
 
 
 def _build_mcp_server_table(
+    name: str,
     *,
     url: str | None,
     command: str | None,
@@ -186,7 +193,7 @@ def _build_mcp_server_table(
         server.add(
             tomlkit.comment("prime this bridge before relying on status or execute:")
         )
-        server.add(tomlkit.comment(_shell_join(command or "", args)))
+        server.add(tomlkit.comment(f"toolplane mcp login {name}"))
     return server
 
 
@@ -210,16 +217,6 @@ def _is_fastmcp_remote_bridge(command: str, args: Sequence[str]) -> bool:
 
 def _command_basename(value: str) -> str:
     return value.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
-
-
-def _shell_join(command: str, args: Sequence[str]) -> str:
-    return " ".join(_shell_quote(part) for part in (command, *args))
-
-
-def _shell_quote(value: str) -> str:
-    if value and re.fullmatch(r"[A-Za-z0-9_@%+=:,./-]+", value):
-        return value
-    return "'" + value.replace("'", "'\"'\"'") + "'"
 
 
 async def check_mcp_status(
@@ -276,16 +273,74 @@ def format_mcp_status(statuses: Sequence[McpServerStatus]) -> str:
     return "\n".join(lines) + "\n"
 
 
+async def login_mcp_server(
+    config: ToolplaneConfig,
+    name: str,
+    *,
+    timeout_seconds: float = 180.0,
+) -> McpServerStatus:
+    """Prime one MCP server interactively, allowing OAuth browser flows."""
+    if timeout_seconds <= 0:
+        raise McpLoginError("--timeout must be greater than zero")
+
+    servers = config.mcp.servers
+    if name not in servers:
+        raise McpLoginError(f"Unknown MCP server: {name}")
+
+    server_config = servers[name]
+    if _is_direct_oauth_server(server_config):
+        raise McpLoginError(
+            f"MCP server {name!r} uses direct OAuth; its tokens are ephemeral "
+            "in Toolplane v1, so login would not persist. Re-add it as a "
+            "fastmcp-remote bridge (mcp add --command uvx --arg fastmcp-remote "
+            "--arg <url>), then login."
+        )
+
+    return await _probe_mcp_server(
+        name,
+        server_config,
+        _login_server_config(server_config),
+        timeout_seconds=timeout_seconds,
+    )
+
+
+def format_mcp_login(status: McpServerStatus, *, timeout_seconds: float) -> str:
+    """Render one login attempt as a human-facing result line."""
+    if status.state == "ok":
+        return f"Login succeeded for {status.name!r}: {status.tool_count} tools\n"
+    if status.state == "timeout":
+        return (
+            f"Login timed out for {status.name!r} after {timeout_seconds:g}s; "
+            "complete the browser flow faster or retry with a larger "
+            "--timeout\n"
+        )
+    return f"Login failed for {status.name!r}: {status.detail}\n"
+
+
 async def _check_one_mcp_server(
     name: str,
     server_config: Mapping[str, Any],
     *,
     timeout_seconds: float,
 ) -> McpServerStatus:
+    return await _probe_mcp_server(
+        name,
+        server_config,
+        _status_probe_server_config(server_config),
+        timeout_seconds=timeout_seconds,
+    )
+
+
+async def _probe_mcp_server(
+    name: str,
+    server_config: Mapping[str, Any],
+    probe_config: Mapping[str, Any],
+    *,
+    timeout_seconds: float,
+) -> McpServerStatus:
     kind = _server_kind(server_config)
     auth = _auth_label(server_config)
     warning = _server_warning(server_config)
-    probe_config = _status_probe_server_config(server_config)
 
     try:
         tools = await asyncio.wait_for(
@@ -348,22 +403,37 @@ async def _list_mcp_tools(
 
 def _status_probe_server_config(server_config: Mapping[str, Any]) -> dict[str, Any]:
     """Return a probe config that cannot trigger FastMCP OAuth."""
+    sanitized = _sanitized_probe_config(server_config)
+    if _server_kind(sanitized) == "stdio":
+        env = _merged_stdio_env(sanitized.get("env"))
+        env["BROWSER"] = _disabled_browser_command()
+        sanitized["env"] = env
+    return sanitized
+
+
+def _login_server_config(server_config: Mapping[str, Any]) -> dict[str, Any]:
+    """Return a probe config that may open a browser to complete OAuth."""
+    prepared = _sanitized_probe_config(server_config)
+    if _server_kind(prepared) == "stdio":
+        prepared["env"] = _merged_stdio_env(prepared.get("env"))
+    return prepared
+
+
+def _sanitized_probe_config(server_config: Mapping[str, Any]) -> dict[str, Any]:
     sanitized = dict(server_config)
     sanitized.pop("auth", None)
     sanitized.pop("authentication", None)
     if _server_kind(sanitized) == "stdio":
-        sanitized["env"] = _status_probe_stdio_env(sanitized.get("env"))
         sanitized["keep_alive"] = False
     return sanitized
 
 
-def _status_probe_stdio_env(configured_env: Any) -> dict[str, str]:
+def _merged_stdio_env(configured_env: Any) -> dict[str, str]:
     env = dict(os.environ)
     if configured_env is not None:
         if not isinstance(configured_env, Mapping):
             raise McpStatusError("stdio MCP server env must be a table")
         env.update({str(key): str(value) for key, value in configured_env.items()})
-    env["BROWSER"] = _disabled_browser_command()
     return env
 
 

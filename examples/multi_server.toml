@@ -43,7 +43,8 @@ args = [
 
 # --- remote, interactive OAuth (via the fastmcp-remote bridge) ---------------
 # Tokens persist on disk (plaintext) under ~/.fastmcp/remote.
-# Prime once before use:  uvx fastmcp-remote https://mcp.linear.app/mcp
+# Prime once before use:
+#   toolplane mcp login linear --config examples/multi_server.toml
 # [mcp.servers.linear]
 # command = "uvx"
 # args = ["fastmcp-remote", "https://mcp.linear.app/mcp"]

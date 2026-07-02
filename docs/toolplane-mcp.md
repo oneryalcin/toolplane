@@ -87,9 +87,10 @@ controlled Python runtime where multiple capability sources become composable.
 
 The first stable command-line surface should optimize for explicit setup. This
 section is the target lifecycle. Today, `toolplane mcp add` edits the project
-config with comment-preserving TOML writes, `toolplane mcp status` checks
-configured servers, and `toolplane serve mcp` serves the configured facade;
-login, CLI allow, and doctor are still planned.
+config with comment-preserving TOML writes, `toolplane mcp login` primes a
+server interactively, `toolplane mcp status` checks configured servers, and
+`toolplane serve mcp` serves the configured facade; CLI allow and doctor are
+still planned.
 
 ```bash
 toolplane init
@@ -128,6 +129,20 @@ which maps to:
 command = "npx"
 args = ["-y", "mcp-remote", "https://mcp.linear.app/mcp"]
 ```
+
+The current `mcp login` command primes one configured server interactively by
+connecting with the exact configured command, args, and env, with the browser
+allowed and a long default timeout:
+
+```bash
+toolplane mcp login linear-bridge --config ./toolplane.toml
+```
+
+For a `fastmcp-remote` bridge this triggers the bridge's own OAuth flow on
+first connect and persists its tokens in the bridge's cache, so a later
+`mcp status` reports `ok` without opening a browser. Login refuses direct
+`url` + `auth = "oauth"` servers because those tokens are ephemeral in v1;
+logging in would appear to work but not persist.
 
 The current `mcp status` command reads the project config and reports each
 configured MCP server as data:
