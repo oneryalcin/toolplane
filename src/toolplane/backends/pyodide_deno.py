@@ -552,19 +552,25 @@ _EXCEPTION_HEADER = re.compile(r"^([A-Za-z_][A-Za-z0-9_.]*)(?::\s?(.*))?$")
 def _recover_python_error(stderr: str) -> tuple[str, str, str] | None:
     """Recover (type, message, traceback) from a Python traceback in stderr.
 
-    Scans the last traceback block for its final exception header. Multi-line
-    exception messages keep their continuation lines. Returns None when
-    stderr holds no traceback — the caller keeps the opaque original.
+    Every frame line between the marker and the exception header is
+    indented, so the header is the first non-indented line after the
+    marker — scanning bottom-up instead would misread a bare-identifier
+    continuation line of a multi-line message as the exception type.
+    Returns None when stderr holds no traceback or the block doesn't
+    parse — the caller keeps the opaque original.
     """
     marker = stderr.rfind(_PYTHON_TRACEBACK_MARKER)
     if marker == -1:
         return None
     block = stderr[marker:].rstrip()
     lines = block.splitlines()
-    for index in range(len(lines) - 1, 0, -1):
-        match = _EXCEPTION_HEADER.match(lines[index])
-        if match is None:
+    for index in range(1, len(lines)):
+        line = lines[index]
+        if not line or line.startswith((" ", "\t")):
             continue
+        match = _EXCEPTION_HEADER.match(line)
+        if match is None:
+            return None
         error_type = match.group(1).rsplit(".", 1)[-1]
         message_lines = [match.group(2) or ""]
         message_lines.extend(lines[index + 1 :])
