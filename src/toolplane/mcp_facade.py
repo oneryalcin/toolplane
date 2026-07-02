@@ -34,10 +34,28 @@ def build_mcp_facade(
     mcp = FastMCP(
         "Toolplane",
         instructions=(
-            "Discover capabilities, inspect schemas, then execute Python "
-            "against the configured Toolplane namespace."
+            "Discover capabilities with search_capabilities (an empty query "
+            "lists everything), inspect schemas with get_capability_schemas, "
+            "then execute Python with execute_code. The execution namespace "
+            "also has surfaces that are not registry capabilities: flat CLI "
+            "bindings for allowed binaries and save_result/load_result for "
+            "passing JSON-shaped data between runs. Read the "
+            "toolplane://namespace resource for the full namespace with "
+            "call shapes."
         ),
     )
+
+    @mcp.resource(
+        "toolplane://namespace",
+        name="namespace",
+        description=(
+            "Live manifest of the execute_code Python namespace: capability "
+            "functions, CLI bindings, result store, and their call shapes."
+        ),
+        mime_type="text/markdown",
+    )
+    def namespace_manifest() -> str:
+        return runtime.describe_namespace()
 
     @mcp.tool
     async def search_capabilities(
@@ -69,7 +87,14 @@ def build_mcp_facade(
         inputs: dict[str, Any] | None = None,
         packages: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Execute Python against the configured Toolplane namespace."""
+        """Execute Python against the configured Toolplane namespace.
+
+        The snippet's namespace binds capability functions, flat CLI
+        functions for allowed binaries, and save_result/load_result for
+        passing JSON-shaped data between runs. Every binding is async —
+        always `await` it. Read the toolplane://namespace resource for
+        the full namespace with call shapes.
+        """
         if (
             policy is not None
             and backend is not None

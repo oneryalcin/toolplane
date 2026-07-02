@@ -79,6 +79,33 @@ def test_mcp_facade_exposes_only_toolplane_meta_tools() -> None:
     ]
 
 
+def test_mcp_facade_namespace_resource_reflects_live_runtime() -> None:
+    async def exercise() -> str:
+        runtime = Toolplane(ambient_cli=True, ambient_cli_allowlist=["git", "jq"])
+
+        @runtime.tool(name="lookup")
+        def lookup(key: str) -> str:
+            """Fetch a value."""
+            return ""
+
+        app = build_mcp_facade(runtime)
+        async with Client(app) as client:
+            resources = await client.list_resources()
+            assert [str(r.uri) for r in resources] == ["toolplane://namespace"]
+            content = await client.read_resource("toolplane://namespace")
+            return content[0].text
+
+    manifest = run(exercise())
+    # the surfaces the cold-discovery test could not find: CLI allowlist
+    # with both call shapes, result-store sugar, and the call_tool fallback
+    assert "Allowed binaries: git, jq" in manifest
+    assert "await git(" in manifest
+    assert "cli_run" in manifest
+    assert "await save_result(value)" in manifest
+    assert "await lookup(...)" in manifest
+    assert "call_tool" in manifest
+
+
 def test_effective_policy_reports_allowlist_and_server_names() -> None:
     config = ToolplaneConfig.model_validate(
         {

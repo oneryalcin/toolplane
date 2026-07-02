@@ -13,6 +13,7 @@ from toolplane import (
     NamespaceCollisionError,
     Toolplane,
 )
+from toolplane.results import ResultStore
 
 
 def run(coro):
@@ -256,7 +257,10 @@ def test_search_does_not_match_query_words_as_substrings() -> None:
     # everything — each of these must now return no capabilities
     for query in ("is", "do", "git", "what is the weather in paris"):
         result = run(runtime.search(query))
-        assert result == "No capabilities matched the query.", (query, result)
+        assert result.startswith("No capabilities matched the query."), (
+            query,
+            result,
+        )
 
 
 def test_search_still_matches_words_inside_underscored_names() -> None:
@@ -269,6 +273,30 @@ def test_search_still_matches_words_inside_underscored_names() -> None:
 
     result = run(runtime.search("question"))
     assert "ask_question" in result
+
+
+def test_search_no_match_is_a_signpost_not_a_dead_end() -> None:
+    runtime = _deepwiki_like_runtime()
+
+    result = run(runtime.search("cli shell command"))
+
+    # a cold agent recovering from a failed search needs the registry size
+    # and a browse path, not silence
+    assert "2 capabilities are registered" in result
+    assert "empty query" in result
+    assert "toolplane://namespace" in result
+
+
+def test_describe_namespace_covers_disabled_surfaces() -> None:
+    runtime = Toolplane(
+        ambient_cli=False,
+        result_store=ResultStore(enabled=False),
+    )
+
+    manifest = runtime.describe_namespace()
+
+    assert "CLI access is disabled" in manifest
+    assert "result store is disabled" in manifest
 
 
 def test_search_matches_words_inside_camel_case_names() -> None:
@@ -286,4 +314,4 @@ def test_search_matches_words_inside_camel_case_names() -> None:
         assert "createIssue" in result, (query, result)
 
     result = run(runtime.search("wiki"))
-    assert result == "No capabilities matched the query."
+    assert result.startswith("No capabilities matched the query.")
