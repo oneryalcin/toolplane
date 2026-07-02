@@ -204,3 +204,19 @@ def test_pyodide_user_value_matching_old_sentinel_returns_unchanged() -> None:
     # the unawaited signal is out-of-band; no user JSON shape is reserved
     assert result.error is None, result.error
     assert result.value == {"__toolplane_unawaited_call__": True, "data": 123}
+
+
+@pytest.mark.skipif(shutil.which("deno") is None, reason="Deno is not installed")
+def test_pyodide_assign_then_print_unawaited_fails() -> None:
+    async def exercise():
+        runtime = Toolplane(ambient_cli=False)
+        return await runtime.execute(
+            "result = save_result({'a': 1})\nprint(result)",
+            backend="pyodide-deno",
+        )
+
+    result = run(exercise())
+
+    # the driver's original repro: assign, then print to inspect
+    assert result.error is not None
+    assert result.error.type == "UnawaitedToolCallError"

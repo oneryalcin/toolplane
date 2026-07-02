@@ -31,6 +31,7 @@ from ._python import (
     UNAWAITED_CALL_ERROR_TYPE,
     UNAWAITED_CALL_MESSAGE,
     find_unawaited_calls,
+    stderr_reports_unawaited,
     wrap_async_main,
 )
 
@@ -68,16 +69,14 @@ class PyodideDenoBackend:
         ambient_cli_allowed_binaries: Sequence[str] | None = None,
     ) -> ExecutionResult:
         started = time.perf_counter()
-        preflight = find_unawaited_calls(
-            code,
-            _async_binding_names(
-                inputs=inputs or {},
-                namespace=namespace or {},
-                scoped_namespace=scoped_namespace or {},
-                ambient_cli=ambient_cli,
-                ambient_cli_names=ambient_cli_names,
-            ),
+        binding_names = _async_binding_names(
+            inputs=inputs or {},
+            namespace=namespace or {},
+            scoped_namespace=scoped_namespace or {},
+            ambient_cli=ambient_cli,
+            ambient_cli_names=ambient_cli_names,
         )
+        preflight = find_unawaited_calls(code, binding_names)
         if preflight:
             return _error_result(
                 backend=self.name,
@@ -157,7 +156,12 @@ class PyodideDenoBackend:
                     self.timeout_seconds,
                     deno_token,
                 )
-                return _response_to_result(response, backend=self.name, started=started)
+                return _response_to_result(
+                    response,
+                    backend=self.name,
+                    started=started,
+                    binding_names=binding_names,
+                )
             except Exception as exc:
                 return ExecutionResult(
                     duration_ms=_elapsed_ms(started),
@@ -485,6 +489,7 @@ def _response_to_result(
     *,
     backend: str,
     started: float,
+    binding_names: set[str] = frozenset(),
 ) -> ExecutionResult:
     error = response.get("error")
     if error:
@@ -502,8 +507,11 @@ def _response_to_result(
         )
     # out-of-band signal from the runner: raising in-sandbox surfaces as an
     # opaque PythonError through the Deno layer, and a marker inside the
-    # result would reserve a user-visible JSON shape
-    if response.get("unawaited"):
+    # result would reserve a user-visible JSON shape. The stderr warning scan
+    # covers assign-then-inspect misuse the result scan cannot see.
+    if response.get("unawaited") or stderr_reports_unawaited(
+        response.get("stderr") or "", binding_names
+    ):
         return ExecutionResult(
             stdout=response.get("stdout") or "",
             stderr=response.get("stderr") or "",

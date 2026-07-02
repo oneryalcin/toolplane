@@ -441,3 +441,37 @@ def test_pyodide_discarded_unawaited_call_fails_at_preflight() -> None:
 
     assert result.error is not None
     assert result.error.type == "UnawaitedToolCallError"
+
+
+def test_local_unsafe_assign_then_print_unawaited_fails() -> None:
+    runtime = Toolplane(ambient_cli=False)
+
+    result = run(
+        runtime.execute(
+            "result = save_result({'a': 1})\nprint(result)",
+            backend="local_unsafe",
+        )
+    )
+
+    assert result.error is not None
+    assert result.error.type == "UnawaitedToolCallError"
+
+
+def test_local_unsafe_user_coroutine_never_false_positives() -> None:
+    runtime = Toolplane(ambient_cli=False)
+
+    result = run(
+        runtime.execute(
+            """
+async def my_own(): return 1
+c = my_own()
+print(c)
+return "fine"
+""",
+            backend="local_unsafe",
+        )
+    )
+
+    # a user's own un-awaited coroutine is their business, not a tool call
+    assert result.error is None, result.error
+    assert result.value == "fine"

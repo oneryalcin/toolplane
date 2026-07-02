@@ -7,6 +7,7 @@ import inspect
 import io
 import time
 import traceback
+import warnings
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -19,6 +20,7 @@ from ._python import (
     UNAWAITED_CALL_ERROR_TYPE,
     UNAWAITED_CALL_MESSAGE,
     find_unawaited_calls,
+    stderr_reports_unawaited,
     wrap_async_main,
 )
 
@@ -112,7 +114,8 @@ class LocalUnsafeBackend:
                 if inspect.iscoroutinefunction(bound)
             }
             scope.update(input_namespace)
-            preflight = find_unawaited_calls(code, binding_names - set(input_namespace))
+            binding_names -= set(input_namespace)
+            preflight = find_unawaited_calls(code, binding_names)
             if preflight:
                 return ExecutionResult(
                     duration_ms=_elapsed_ms(started),
@@ -123,8 +126,41 @@ class LocalUnsafeBackend:
                     ),
                 )
             exec(wrap_async_main(code), scope, scope)
-            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            # capture warnings directly: pytest or any upstream warnings
+            # filter can intercept them before they ever reach stderr
+            with (
+                contextlib.redirect_stdout(stdout),
+                contextlib.redirect_stderr(stderr),
+                warnings.catch_warnings(record=True) as caught,
+            ):
+                warnings.simplefilter("always")
                 value = await scope["__toolplane_main__"]()
+            unawaited_warning = False
+            for warning in caught:
+                if issubclass(
+                    warning.category, RuntimeWarning
+                ) and stderr_reports_unawaited(str(warning.message), binding_names):
+                    unawaited_warning = True
+                else:
+                    stderr.write(
+                        warnings.formatwarning(
+                            warning.message,
+                            warning.category,
+                            warning.filename,
+                            warning.lineno,
+                        )
+                    )
+            if unawaited_warning:
+                return ExecutionResult(
+                    stdout=stdout.getvalue(),
+                    stderr=stderr.getvalue(),
+                    duration_ms=_elapsed_ms(started),
+                    backend=self.name,
+                    error=ExecutionError(
+                        type=UNAWAITED_CALL_ERROR_TYPE,
+                        message=UNAWAITED_CALL_MESSAGE,
+                    ),
+                )
             if _close_unawaited(value):
                 return ExecutionResult(
                     stdout=stdout.getvalue(),
