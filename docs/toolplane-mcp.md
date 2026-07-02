@@ -215,6 +215,13 @@ the `local_unsafe` or `pyodide-deno` backends — see the
 [backends page](code-mode-backends.md) and the
 [Monty decision record](monty-default-spike.md).
 
+Across `execute_code` calls within one served process, snippets can hand data
+forward without routing it through the model's context:
+`await save_result(value, label=...)` returns a handle,
+`await load_result(handle)` retrieves it in a later run. See the
+[result store design record](result-store-design.md) and the
+[configuration page](configuration.md#result-store).
+
 For trusted local development with the `local_unsafe` backend or ambient CLI
 policy, the operator must opt in explicitly:
 

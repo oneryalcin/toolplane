@@ -62,6 +62,18 @@ class CliSettings(BaseModel):
         return frozenset(self.allow)
 
 
+class ResultsSettings(BaseModel):
+    """Result store policy: in-memory, capped, TTL'd (docs/result-store-design.md)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    max_entries: int = Field(default=64, gt=0)
+    max_total_bytes: int = Field(default=32 * 1024 * 1024, gt=0)
+    max_entry_bytes: int = Field(default=8 * 1024 * 1024, gt=0)
+    ttl_seconds: float = Field(default=3600.0, gt=0)
+
+
 class McpSettings(BaseModel):
     """MCP adapter settings.
 
@@ -88,6 +100,7 @@ class ToolplaneConfig(BaseModel):
 
     toolplane: ToolplaneSettings = Field(default_factory=ToolplaneSettings)
     cli: CliSettings = Field(default_factory=CliSettings)
+    results: ResultsSettings = Field(default_factory=ResultsSettings)
     mcp: McpSettings = Field(default_factory=McpSettings)
 
 

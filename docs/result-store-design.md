@@ -1,6 +1,6 @@
 # Result Store Design
 
-Status: accepted, not yet implemented. Tracking issue:
+Status: accepted, implemented (`src/toolplane/results.py`). Tracking issue:
 [#43](https://github.com/oneryalcin/toolplane/issues/43). This document
 consolidates the issue thread (three review rounds); where they differ, this
 document wins.

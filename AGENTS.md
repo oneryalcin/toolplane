@@ -54,6 +54,9 @@ more custom code around it.
   capability envelope.
 - Pyodide+Deno is the opt-in sandbox for package-capable snippets, especially
   pandas/NumPy-style workflows.
+- The result store (`save_result`/`load_result`, `docs/result-store-design.md`)
+  persists JSON-shaped data across runs within one process; it never persists
+  interpreters, live objects, or anything to disk.
 - Docker, Modal, E2B, and Blaxel are needed for arbitrary CPython packages,
   native system dependencies, subprocesses, GPUs, remote isolation, or
   long-running jobs.

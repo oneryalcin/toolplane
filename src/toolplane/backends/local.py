@@ -13,6 +13,7 @@ from ..adapters.ambient_cli import build_local_cli_namespace
 from ..bridges.base import HostBridge
 from ..errors import BackendCapabilityError, NamespaceCollisionError
 from ..execution import BackendCapabilities, ExecutionError, ExecutionResult
+from ..results import build_result_bindings
 from ._python import wrap_async_main
 
 
@@ -86,6 +87,15 @@ class LocalUnsafeBackend:
                         ),
                     )
                 )
+            scope.update(
+                build_result_bindings(
+                    bridge,
+                    reserved=set(scope)
+                    | set(capability_namespace)
+                    | set(scoped_capability_namespace)
+                    | set(input_namespace),
+                )
+            )
             scope.update(_callable_namespace(bridge, capability_namespace))
             scope.update(_scoped_namespace(bridge, scoped_capability_namespace))
             scope.update(input_namespace)

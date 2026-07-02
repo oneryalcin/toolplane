@@ -106,6 +106,32 @@ Only safe Python identifiers become top-level aliases.
     Do not expose ambient CLI mode through a client-facing MCP facade unless the
     project has explicitly chosen that risk.
 
+## Result Store
+
+Snippets can pass data between runs without routing it through the model's
+context: `save_result(value, label=None)` returns a `res_` handle, and
+`load_result(handle)` retrieves the value in a later run within the same
+long-lived process. Values are canonicalized to JSON at save time; anything
+that does not serialize is rejected loudly. See the
+[design record](result-store-design.md) for the full contract.
+
+The store is on by default with conservative caps, all tunable:
+
+```toml
+[results]
+enabled = true
+max_entries = 64
+max_total_bytes = 33554432 # 32 MiB
+max_entry_bytes = 8388608  # 8 MiB
+ttl_seconds = 3600
+```
+
+The store is in-memory and session-scoped: handles die with the process, and
+`toolplane run` builds a fresh runtime per invocation, so handles only survive
+across `execute_code` calls inside one `serve mcp` or embedded runtime.
+On multi-client transports (`serve mcp --transport http`) the store is
+disabled automatically rather than shared across clients.
+
 ## MCP Servers
 
 MCP server tables are preserved and passed through to FastMCP. Toolplane

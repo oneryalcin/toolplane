@@ -12,6 +12,7 @@ from .capabilities import Capability
 from .config import (
     CliSettings,
     McpSettings,
+    ResultsSettings,
     ToolplaneConfig,
     ToolplaneSettings,
     load_toolplane_config,
@@ -23,12 +24,14 @@ from .errors import (
     CliPolicyError,
     DuplicateCapabilityError,
     NamespaceCollisionError,
+    ResultStoreError,
     ToolplaneError,
     UnsafeFacadeConfigError,
 )
 from .execution import BackendCapabilities, ExecutionError, ExecutionResult
 from .mcp_facade import build_mcp_facade, build_mcp_facade_from_config
 from .registry import CapabilityRegistry
+from .results import ResultStore
 from .runtime import Toolplane
 
 __version__ = "0.2.0"
@@ -53,6 +56,9 @@ __all__ = [
     "McpSettings",
     "NamespaceCollisionError",
     "PyodideDenoBackend",
+    "ResultsSettings",
+    "ResultStore",
+    "ResultStoreError",
     "ToolCallError",
     "ToolCallRequest",
     "ToolCallResponse",
