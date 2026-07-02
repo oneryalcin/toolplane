@@ -75,16 +75,29 @@ def build_mcp_facade(
             and policy.allowed_backend_overrides is not None
             and backend not in policy.allowed_backend_overrides
         ):
-            return ExecutionResult(
-                backend=backend or "",
-                error=ExecutionError(
+            if backend in runtime.backends:
+                allowed = ", ".join(sorted(policy.allowed_backend_overrides))
+                error = ExecutionError(
                     type="BackendPolicyError",
                     message=(
-                        f"Backend override '{backend}' is not allowed by "
-                        "Toolplane MCP facade policy. Pass --unsafe only for "
+                        f"Backend '{backend}' exists but is blocked by "
+                        "Toolplane MCP facade policy. Allowed backend "
+                        f"overrides: {allowed}. Pass --unsafe only for "
                         "trusted local development."
                     ),
-                ),
+                )
+            else:
+                valid = ", ".join(sorted(runtime.backends))
+                error = ExecutionError(
+                    type="BackendNotFoundError",
+                    message=(
+                        f"Unknown backend '{backend}'. "
+                        f"Valid backends: {valid}."
+                    ),
+                )
+            return ExecutionResult(
+                backend=backend or "",
+                error=error,
             ).model_dump(mode="json")
         result = await runtime.execute(
             code,

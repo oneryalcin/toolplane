@@ -330,3 +330,44 @@ def test_serve_config_disables_results_on_multi_client_transports() -> None:
 
     stdio = resolve_serve_config(config, "stdio")
     assert stdio.results.enabled
+
+
+def test_local_unsafe_unawaited_call_fails_instead_of_returning_coroutine() -> None:
+    runtime = Toolplane(ambient_cli=False)
+
+    result = run(
+        runtime.execute(
+            "h = save_result({'v': 1})\nreturn h",
+            backend="local_unsafe",
+        )
+    )
+
+    assert result.error is not None
+    assert result.error.type == "UnawaitedToolCallError"
+    assert "await" in result.error.message
+
+
+def test_pyodide_save_result_renders_non_json_guidance() -> None:
+    from toolplane.results import render_pyodide_result_bindings
+
+    code = render_pyodide_result_bindings(reserved=frozenset())
+
+    # in-sandbox pre-check must mirror the store's admission rule and message:
+    # on pyodide the value dies at RPC serialization before the store can speak
+    assert "allow_nan=False" in code
+    assert "save a JSON-shaped projection instead" in code
+
+
+def test_store_and_pyodide_bindings_share_guidance_text() -> None:
+    from toolplane.results import render_pyodide_result_bindings
+
+    store = ResultStore()
+    try:
+        store.save(object())
+    except ResultStoreError as exc:
+        store_message = str(exc)
+
+    rendered = render_pyodide_result_bindings(reserved=frozenset())
+    guidance = "save a JSON-shaped projection instead"
+    assert guidance in store_message
+    assert guidance in rendered

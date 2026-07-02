@@ -130,3 +130,24 @@ return {
         ],
         "docs": {"topic": "pandas groupby", "hint": "use groupby then reset_index"},
     }
+
+
+@pytest.mark.skipif(shutil.which("deno") is None, reason="Deno is not installed")
+def test_pyodide_save_result_non_json_error_carries_guidance() -> None:
+    async def exercise():
+        runtime = Toolplane(ambient_cli=False)
+        return await runtime.execute(
+            """
+try:
+    await save_result({1, 2})
+except Exception as exc:
+    return str(exc)
+""",
+            backend="pyodide-deno",
+        )
+
+    result = run(exercise())
+
+    assert result.error is None, result.error
+    assert "save a JSON-shaped projection instead" in result.value
+    assert "set" in result.value

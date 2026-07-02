@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -20,7 +21,15 @@ from ..bridges.base import HostBridge
 from ..errors import BackendCapabilityError, NamespaceCollisionError
 from ..execution import BackendCapabilities, ExecutionError, ExecutionResult
 from ..results import build_result_bindings
-from ._python import wrap_async_main
+from ._python import (
+    UNAWAITED_CALL_ERROR_TYPE,
+    UNAWAITED_CALL_MESSAGE,
+    wrap_async_main,
+)
+
+# Monty stringifies an un-awaited external-function future to this exact repr
+# before it reaches the host, so the string is the only detectable trace.
+_UNAWAITED_FUTURE = re.compile(r"^<coroutine external_future\(\d+\)>$")
 
 
 class MontyBackend:
@@ -133,6 +142,15 @@ class MontyBackend:
                     message=str(exc),
                 ),
             )
+        if _contains_unawaited_future(value):
+            return self._result(
+                started,
+                streams,
+                error=ExecutionError(
+                    type=UNAWAITED_CALL_ERROR_TYPE,
+                    message=UNAWAITED_CALL_MESSAGE,
+                ),
+            )
         return self._result(started, streams, value=value)
 
     def _external_functions(
@@ -163,6 +181,16 @@ class MontyBackend:
             backend=self.name,
             error=error,
         )
+
+
+def _contains_unawaited_future(value: Any) -> bool:
+    if isinstance(value, str):
+        return bool(_UNAWAITED_FUTURE.match(value))
+    if isinstance(value, Mapping):
+        return any(_contains_unawaited_future(item) for item in value.values())
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return any(_contains_unawaited_future(item) for item in value)
+    return False
 
 
 def _make_bound_tool(bridge: HostBridge, capability_name: str) -> Any:

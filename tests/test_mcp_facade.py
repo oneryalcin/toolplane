@@ -302,9 +302,9 @@ def test_mcp_facade_from_config_blocks_local_unsafe_backend_override() -> None:
     assert result["value"] is None
     assert result["backend"] == "local_unsafe"
     assert result["error"]["type"] == "BackendPolicyError"
-    assert "is not allowed by Toolplane MCP facade policy" in result["error"][
-        "message"
-    ]
+    # a real-but-blocked backend says so and names what IS allowed
+    assert "exists but is blocked" in result["error"]["message"]
+    assert "pyodide-deno" in result["error"]["message"]
 
 
 def test_mcp_facade_from_config_blocks_unknown_backend_override() -> None:
@@ -329,10 +329,11 @@ def test_mcp_facade_from_config_blocks_unknown_backend_override() -> None:
 
     assert result["value"] is None
     assert result["backend"] == "future_custom_backend"
-    assert result["error"]["type"] == "BackendPolicyError"
-    assert "is not allowed by Toolplane MCP facade policy" in result["error"][
-        "message"
-    ]
+    # a nonexistent backend is a different problem than a blocked one:
+    # say it's unknown and list what exists, so a typo is self-correcting
+    assert result["error"]["type"] == "BackendNotFoundError"
+    assert "Unknown backend" in result["error"]["message"]
+    assert "monty" in result["error"]["message"]
 
 
 def test_mcp_facade_from_config_allows_unsafe_when_explicit() -> None:

@@ -258,3 +258,43 @@ def test_runtime_default_backends_include_monty() -> None:
 
     assert result.error is None, result.error
     assert result.value == 42
+
+
+def test_monty_unawaited_call_fails_instead_of_returning_repr() -> None:
+    runtime = Toolplane(ambient_cli=False)
+
+    result = run(
+        runtime.execute("h = save_result({'v': 1})\nreturn h", backend="monty")
+    )
+
+    assert result.error is not None
+    assert result.error.type == "UnawaitedToolCallError"
+    assert "await" in result.error.message
+
+
+def test_monty_unawaited_call_detected_when_nested() -> None:
+    runtime = Toolplane(ambient_cli=False)
+
+    result = run(
+        runtime.execute(
+            "return {'handle': save_result({'v': 1}), 'n': 5}",
+            backend="monty",
+        )
+    )
+
+    assert result.error is not None
+    assert result.error.type == "UnawaitedToolCallError"
+
+
+def test_monty_awaited_call_still_succeeds() -> None:
+    runtime = Toolplane(ambient_cli=False)
+
+    result = run(
+        runtime.execute(
+            "h = await save_result({'v': 1})\nreturn h",
+            backend="monty",
+        )
+    )
+
+    assert result.error is None, result.error
+    assert result.value.startswith("res_")

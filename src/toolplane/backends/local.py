@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import inspect
 import io
 import time
 import traceback
@@ -14,7 +15,11 @@ from ..bridges.base import HostBridge
 from ..errors import BackendCapabilityError, NamespaceCollisionError
 from ..execution import BackendCapabilities, ExecutionError, ExecutionResult
 from ..results import build_result_bindings
-from ._python import wrap_async_main
+from ._python import (
+    UNAWAITED_CALL_ERROR_TYPE,
+    UNAWAITED_CALL_MESSAGE,
+    wrap_async_main,
+)
 
 
 class LocalUnsafeBackend:
@@ -102,6 +107,17 @@ class LocalUnsafeBackend:
             exec(wrap_async_main(code), scope, scope)
             with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
                 value = await scope["__toolplane_main__"]()
+            if _close_unawaited(value):
+                return ExecutionResult(
+                    stdout=stdout.getvalue(),
+                    stderr=stderr.getvalue(),
+                    duration_ms=_elapsed_ms(started),
+                    backend=self.name,
+                    error=ExecutionError(
+                        type=UNAWAITED_CALL_ERROR_TYPE,
+                        message=UNAWAITED_CALL_MESSAGE,
+                    ),
+                )
             return ExecutionResult(
                 value=value,
                 stdout=stdout.getvalue(),
@@ -125,6 +141,24 @@ class LocalUnsafeBackend:
 
 def _elapsed_ms(started: float) -> float:
     return (time.perf_counter() - started) * 1000
+
+
+def _close_unawaited(value: Any) -> bool:
+    """Detect awaitables in a result value; close coroutines to avoid warnings.
+
+    The list comprehensions are deliberate: every item must be visited so all
+    coroutines get closed, so short-circuiting generators would be wrong.
+    """
+    if inspect.iscoroutine(value):
+        value.close()
+        return True
+    if inspect.isawaitable(value):
+        return True
+    if isinstance(value, Mapping):
+        return any([_close_unawaited(item) for item in value.values()])
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return any([_close_unawaited(item) for item in value])
+    return False
 
 
 def _callable_namespace(

@@ -29,6 +29,12 @@ RESULT_HANDLE_PREFIX = "res_"
 
 _DISABLED_MESSAGE = "results store is disabled"
 
+# Single source for the non-JSON guidance: the host store enforces the
+# admission rule, but on pyodide the value must serialize in-sandbox just to
+# cross the callback RPC, so the rendered bindings pre-check with the same
+# message — otherwise a bare json.dumps TypeError preempts this guidance.
+_NON_JSON_GUIDANCE = "save a JSON-shaped projection instead"
+
 
 @dataclass(frozen=True)
 class _Entry:
@@ -143,8 +149,7 @@ class ResultStore:
         except (TypeError, ValueError) as exc:
             raise ResultStoreError(
                 f"value of type {type(value).__name__!r} is not "
-                f"JSON-serializable ({exc}); save a JSON-shaped projection "
-                "instead"
+                f"JSON-serializable ({exc}); {_NON_JSON_GUIDANCE}"
             ) from exc
 
     def _purge_expired(self) -> None:
@@ -259,6 +264,15 @@ def render_pyodide_result_bindings(
     if "save_result" not in reserved:
         lines += [
             "async def save_result(value, label=None):",
+            "    import json as _tp_json",
+            "    try:",
+            "        _tp_json.dumps(value, allow_nan=False)",
+            "    except (TypeError, ValueError) as exc:",
+            "        raise Exception(",
+            '            "value of type " + repr(type(value).__name__)',
+            '            + " is not JSON-serializable (" + str(exc) + "); "',
+            f"            + {_NON_JSON_GUIDANCE!r}",
+            "        )",
             f"    return await call_tool({RESULTS_SAVE_CAPABILITY!r}, "
             '{"value": value, "label": label})',
             "",
