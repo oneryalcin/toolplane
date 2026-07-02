@@ -3,8 +3,15 @@
 from __future__ import annotations
 
 import ast
+import re
 import textwrap
 from collections.abc import Iterable
+
+# CPython names the coroutine when it garbage-collects one that was never
+# awaited; on backends with real coroutines (local, pyodide) this is the only
+# trace of assign-then-inspect misuse that neither the AST preflight nor the
+# result scan can see
+_UNAWAITED_WARNING = re.compile(r"coroutine '([^']+)' was never awaited")
 
 UNAWAITED_CALL_ERROR_TYPE = "UnawaitedToolCallError"
 UNAWAITED_CALL_MESSAGE = (
@@ -19,6 +26,21 @@ def wrap_async_main(code: str, *, function_name: str = "__toolplane_main__") -> 
     if not body.strip():
         body = "return None"
     return f"async def {function_name}():\n" + textwrap.indent(body, "    ")
+
+
+def stderr_reports_unawaited(stderr: str, binding_names: Iterable[str]) -> bool:
+    """True when a never-awaited-coroutine warning names one of our bindings.
+
+    Matching on the warning's coroutine name keeps this precise: a user's own
+    un-awaited coroutines never trip it. The qualname's last segment is
+    compared because local bindings surface as e.g.
+    ``build_result_bindings.<locals>.save_result``.
+    """
+    names = set(binding_names)
+    return any(
+        match.group(1).rsplit(".", 1)[-1] in names
+        for match in _UNAWAITED_WARNING.finditer(stderr)
+    )
 
 
 def find_unawaited_calls(code: str, binding_names: Iterable[str]) -> list[str]:
