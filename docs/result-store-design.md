@@ -19,6 +19,12 @@ Persist **data, not interpreters**. Snippets can save JSON-shaped values to a
 host-side, in-memory, session-scoped store and load them in later runs. The
 sandbox stays provably fresh on every run; only named data survives.
 
+"Later runs" means later `execute_code` calls **within one long-lived
+Toolplane process** — a `serve mcp` process or a Python-embedded runtime.
+`toolplane run` constructs a fresh runtime per invocation, so handles never
+survive across separate CLI invocations; that is the in-memory contract
+working as intended, not a gap.
+
 ```python
 # run 1
 issues = await linear_list_issues(query="label:bug")
@@ -38,8 +44,13 @@ pattern and is not part of v1.
 
 ## Contract
 
-One sentence: **if a value can cross the sandbox-to-host bridge, the store
-can hold it; if it cannot, it belongs in artifacts.**
+One sentence: **if `save_result` can canonicalize a value to JSON and measure
+its serialized bytes, the store can hold it; if it cannot, it belongs in
+artifacts.** The test is the serialization itself, not the transport: on
+`local_unsafe` the bridge is an in-process call where live objects can cross,
+so a transport-based rule would silently admit them on exactly the backend
+where they can sneak in. `save_result` serializes at save time on every
+backend and rejects what does not round-trip.
 
 - Values are JSON-shaped (the bridge boundary already enforces this on the
   sandboxed backends). Known fidelity limits apply: datetime becomes str,
@@ -84,7 +95,7 @@ can hold it; if it cannot, it belongs in artifacts.**
 ```text
   sandbox (fresh per run)              host (one process)
   ┌─────────────────────────┐          ┌──────────────────────────────┐
-  │ save_result(label, val) │ bridge   │ InProcessBridge              │
+  │ save_result(val, label) │ bridge   │ InProcessBridge              │
   │ load_result(handle)     │ ───────► │   └─ ResultStore             │
   │                         │ ◄─────── │       {res_ab12: entry, ...} │
   │ (bindings, like cli_run)│          │       caps + TTL, in-memory  │
@@ -108,7 +119,12 @@ host owns the store, the sandbox only sends requests.
   `toolplane:results/load`, registered hidden, dispatched via
   `bridge.call_tool`. This makes the store reachable from **every backend
   with zero backend-specific plumbing** via
-  `call_tool("toolplane:results/save", {...})`.
+  `call_tool("toolplane:results/save", {...})`. Note the precise meaning of
+  hidden in today's registry: **hidden from discovery** (search, list, and
+  namespaces omit it) but **callable by canonical name**, and
+  `get_capability_schemas(["toolplane:results/save"])` resolves it. That is
+  the intended behavior — the store is infrastructure, not a discoverable
+  capability, but nothing about it is secret.
 - **Sugar bindings per backend**, exactly like the CLI surface: monty binds
   `save_result`/`load_result` as external functions; local and pyodide gain
   the same names through their existing namespace injection. Capability and
