@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import secrets
 import shutil
 import socket
@@ -493,6 +494,17 @@ def _response_to_result(
 ) -> ExecutionResult:
     error = response.get("error")
     if error:
+        error_type = error.get("type") or error.get("name") or "ExecutionError"
+        message = error.get("message") or ""
+        traceback = error.get("traceback") or error.get("stack") or ""
+        # The Deno layer reports every uncaught in-sandbox exception as an
+        # opaque 'PythonError' with no usable message, but pyodide writes
+        # the real traceback to the redirected sys.stderr — recover the
+        # truth from there so crafted error messages stay visible.
+        if error_type == "PythonError" and message in ("", "PythonError"):
+            recovered = _recover_python_error(response.get("stderr") or "")
+            if recovered is not None:
+                error_type, message, traceback = recovered
         return ExecutionResult(
             value=None,
             stdout=response.get("stdout") or "",
@@ -500,9 +512,9 @@ def _response_to_result(
             duration_ms=_elapsed_ms(started),
             backend=backend,
             error=ExecutionError(
-                type=error.get("type") or error.get("name") or "ExecutionError",
-                message=error.get("message") or "",
-                traceback=error.get("traceback") or error.get("stack") or "",
+                type=error_type,
+                message=message,
+                traceback=traceback,
             ),
         )
     # out-of-band signal from the runner: raising in-sandbox surfaces as an
@@ -529,6 +541,35 @@ def _response_to_result(
         duration_ms=_elapsed_ms(started),
         backend=backend,
     )
+
+
+_PYTHON_TRACEBACK_MARKER = "Traceback (most recent call last):"
+# an exception header at column 0: "ZeroDivisionError: division by zero",
+# "pkg.mod.CustomError: msg", or a bare "KeyboardInterrupt"
+_EXCEPTION_HEADER = re.compile(r"^([A-Za-z_][A-Za-z0-9_.]*)(?::\s?(.*))?$")
+
+
+def _recover_python_error(stderr: str) -> tuple[str, str, str] | None:
+    """Recover (type, message, traceback) from a Python traceback in stderr.
+
+    Scans the last traceback block for its final exception header. Multi-line
+    exception messages keep their continuation lines. Returns None when
+    stderr holds no traceback — the caller keeps the opaque original.
+    """
+    marker = stderr.rfind(_PYTHON_TRACEBACK_MARKER)
+    if marker == -1:
+        return None
+    block = stderr[marker:].rstrip()
+    lines = block.splitlines()
+    for index in range(len(lines) - 1, 0, -1):
+        match = _EXCEPTION_HEADER.match(lines[index])
+        if match is None:
+            continue
+        error_type = match.group(1).rsplit(".", 1)[-1]
+        message_lines = [match.group(2) or ""]
+        message_lines.extend(lines[index + 1 :])
+        return error_type, "\n".join(message_lines).strip(), block
+    return None
 
 
 def _error_result(
