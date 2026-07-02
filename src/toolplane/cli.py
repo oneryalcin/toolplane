@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 
-from .config import load_toolplane_config
+from .config import ToolplaneConfig, load_toolplane_config
+from .doctor import doctor_exit_code, format_doctor_checks, run_doctor_checks
 from .errors import UnsafeFacadeConfigError
 from .mcp_facade import serve_mcp_facade
 from .mcp_lifecycle import (
@@ -15,6 +18,7 @@ from .mcp_lifecycle import (
     McpLoginError,
     McpStatusError,
     check_mcp_status,
+    format_mcp_list,
     format_mcp_login,
     format_mcp_status,
     login_mcp_server,
@@ -22,6 +26,25 @@ from .mcp_lifecycle import (
     write_mcp_add_config,
 )
 from .policy import EffectivePolicy, ensure_safe_facade_policy, format_effective_policy
+
+_INIT_TEMPLATE = """\
+# Toolplane project configuration.
+# Safe defaults: sandboxed monty backend, CLI disabled.
+
+[toolplane]
+default_backend = "monty" # monty | pyodide-deno | local_unsafe (dev only)
+
+[cli]
+mode = "disabled" # disabled | allowlist | ambient (dev only)
+# allow = ["git", "gh", "rg"]
+
+# Add MCP servers with: toolplane mcp add <name> --url <url>
+# [mcp.servers.context7]
+# url = "https://mcp.context7.com/mcp"
+
+# Inspect: toolplane config check / toolplane doctor / toolplane mcp list
+# Serve:   toolplane serve mcp
+"""
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -49,6 +72,48 @@ def main(argv: Sequence[str] | None = None) -> int:
         except UnsafeFacadeConfigError as exc:
             print(f"toolplane: {exc}", file=sys.stderr)
             return 2
+        return 0
+    if args.command == "init":
+        path = Path(args.config)
+        if path.exists() and not args.force:
+            print(
+                f"toolplane: {path} already exists; use --force to overwrite",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            path.write_text(_INIT_TEMPLATE, encoding="utf-8")
+        except OSError as exc:
+            print(f"toolplane: {exc}", file=sys.stderr)
+            return 2
+        print(f"Wrote {path}")
+        return 0
+    if args.command == "config" and args.config_command == "check":
+        try:
+            config = load_toolplane_config(args.config)
+        except (OSError, ValueError) as exc:
+            print(f"toolplane: {exc}", file=sys.stderr)
+            return 2
+        print(_format_config_summary(args.config, config), end="")
+        return 0
+    if args.command == "doctor":
+        try:
+            config = load_toolplane_config(args.config)
+        except (OSError, ValueError) as exc:
+            print(f"toolplane: {exc}", file=sys.stderr)
+            return 2
+        checks = run_doctor_checks(config)
+        print(format_doctor_checks(checks), end="")
+        return doctor_exit_code(checks)
+    if args.command == "run":
+        return _run_script(args.script, args.config)
+    if args.command == "mcp" and args.mcp_command == "list":
+        try:
+            config = load_toolplane_config(args.config)
+        except (OSError, ValueError) as exc:
+            print(f"toolplane: {exc}", file=sys.stderr)
+            return 2
+        print(format_mcp_list(config), end="")
         return 0
     if args.command == "mcp" and args.mcp_command == "add":
         try:
@@ -120,6 +185,57 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 2
 
 
+def _format_config_summary(config_path: str, config: ToolplaneConfig) -> str:
+    cli = config.cli.mode
+    if cli == "allowlist":
+        cli += f" [{', '.join(config.cli.allow)}]"
+    servers = ", ".join(sorted(config.mcp.servers)) or "none"
+    lines = [
+        f"config: {config_path}",
+        f"backend: {config.toolplane.default_backend}",
+        f"cli: {cli}",
+        f"mcp servers: {servers}",
+    ]
+    if config.toolplane.default_backend == "local_unsafe" or config.cli.mode == "ambient":
+        lines.append("note: serve mcp will require --unsafe with this config")
+    lines.append("ok")
+    return "\n".join(lines) + "\n"
+
+
+def _run_script(script: str, config_path: str) -> int:
+    script_path = Path(script)
+    try:
+        code = script_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        print(f"toolplane: {exc}", file=sys.stderr)
+        return 2
+
+    async def execute():
+        from .runtime import Toolplane
+
+        runtime = await Toolplane.from_config(config_path)
+        return await runtime.execute(code)
+
+    try:
+        result = asyncio.run(execute())
+    except (OSError, ValueError) as exc:
+        print(f"toolplane: {exc}", file=sys.stderr)
+        return 2
+
+    if result.stdout:
+        sys.stdout.write(result.stdout)
+    if result.stderr:
+        sys.stderr.write(result.stderr)
+    if result.error is not None:
+        print(
+            f"toolplane: {result.error.type}: {result.error.message}",
+            file=sys.stderr,
+        )
+        return 1
+    print(json.dumps(result.value, indent=2, default=str))
+    return 0
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="toolplane")
     subcommands = parser.add_subparsers(dest="command")
@@ -150,8 +266,63 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
 
+    init = subcommands.add_parser("init", help="Write a starter toolplane.toml")
+    init.add_argument(
+        "--config",
+        default="toolplane.toml",
+        help="Path to write the Toolplane TOML config file",
+    )
+    init.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite an existing config file",
+    )
+
+    config_root = subcommands.add_parser("config", help="Inspect Toolplane config")
+    config_subcommands = config_root.add_subparsers(dest="config_command")
+    config_check = config_subcommands.add_parser(
+        "check",
+        help="Validate a config file and print a summary without network calls",
+    )
+    config_check.add_argument(
+        "--config",
+        default="toolplane.toml",
+        help="Path to a Toolplane TOML config file",
+    )
+
+    doctor = subcommands.add_parser(
+        "doctor",
+        help="Check local prerequisites for a configured runtime",
+    )
+    doctor.add_argument(
+        "--config",
+        default="toolplane.toml",
+        help="Path to a Toolplane TOML config file",
+    )
+
+    run_parser = subcommands.add_parser(
+        "run",
+        help="Execute a Python snippet file against the configured runtime",
+    )
+    run_parser.add_argument("script", help="Path to a Python snippet file")
+    run_parser.add_argument(
+        "--config",
+        default="toolplane.toml",
+        help="Path to a Toolplane TOML config file",
+    )
+
     mcp_root = subcommands.add_parser("mcp", help="Manage MCP server snippets")
     mcp_subcommands = mcp_root.add_subparsers(dest="mcp_command")
+
+    mcp_list = mcp_subcommands.add_parser(
+        "list",
+        help="List configured MCP servers without connecting",
+    )
+    mcp_list.add_argument(
+        "--config",
+        default="toolplane.toml",
+        help="Path to a Toolplane TOML config file",
+    )
 
     mcp_add = mcp_subcommands.add_parser(
         "add",

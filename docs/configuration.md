@@ -18,6 +18,27 @@ from toolplane import Toolplane
 runtime = await Toolplane.from_config("toolplane.toml")
 ```
 
+## CLI Workflow
+
+The CLI covers the whole lifecycle from empty directory to served facade:
+
+```bash
+toolplane init                  # write a starter toolplane.toml (safe defaults)
+toolplane config check          # validate and summarize, no network calls
+toolplane mcp add linear --command uvx --arg fastmcp-remote --arg <url>
+toolplane mcp list              # what is configured, without connecting
+toolplane doctor                # local prerequisites (backends, binaries)
+toolplane mcp login linear      # prime an OAuth bridge interactively
+toolplane mcp status            # probe configured servers (connects)
+toolplane run snippet.py        # execute a snippet against the runtime
+toolplane serve mcp             # serve the facade to MCP clients
+```
+
+`config check`, `doctor`, and `mcp list` never open network connections, so
+they are safe in CI. `doctor` warns (without failing) when a config would
+require `serve mcp --unsafe`, and fails when an allowlisted binary or a
+required runtime like Deno is missing.
+
 ## Shape
 
 ```toml
