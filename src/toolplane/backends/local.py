@@ -155,7 +155,9 @@ def _close_unawaited(value: Any) -> bool:
     if inspect.isawaitable(value):
         return True
     if isinstance(value, Mapping):
-        return any([_close_unawaited(item) for item in value.values()])
+        return any(
+            [_close_unawaited(item) for pair in value.items() for item in pair]
+        )
     if isinstance(value, (list, tuple, set, frozenset)):
         return any([_close_unawaited(item) for item in value])
     return False

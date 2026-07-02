@@ -298,3 +298,17 @@ def test_monty_awaited_call_still_succeeds() -> None:
 
     assert result.error is None, result.error
     assert result.value.startswith("res_")
+
+
+def test_monty_printed_unawaited_call_fails_instead_of_success() -> None:
+    runtime = Toolplane(ambient_cli=False)
+
+    result = run(
+        runtime.execute(
+            "print(save_result({'v': 1}))",
+            backend="monty",
+        )
+    )
+
+    assert result.error is not None
+    assert result.error.type == "UnawaitedToolCallError"

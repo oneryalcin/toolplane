@@ -26,8 +26,12 @@ from ..bridges.base import HostBridge
 from ..bridges.rpc import HttpCallbackBridge
 from ..errors import NamespaceCollisionError
 from ..execution import BackendCapabilities, ExecutionError, ExecutionResult
-from ..results import render_pyodide_result_bindings
-from ._python import wrap_async_main
+from ..results import _NON_JSON_GUIDANCE, render_pyodide_result_bindings
+from ._python import (
+    UNAWAITED_CALL_ERROR_TYPE,
+    UNAWAITED_CALL_MESSAGE,
+    wrap_async_main,
+)
 
 
 class PyodideDenoBackend:
@@ -220,7 +224,9 @@ def _build_pyodide_code(
     results_code = render_pyodide_result_bindings(reserved=results_reserved)
     namespace_code = _render_callable_namespace(namespace)
     scoped_namespace_code = _render_scoped_namespace(scoped_namespace)
+    non_json_guidance = _NON_JSON_GUIDANCE
     return f"""
+import inspect as __toolplane_inspect__
 import json
 from js import Object, fetch
 from pyodide.ffi import to_js
@@ -228,8 +234,34 @@ from pyodide.ffi import to_js
 __toolplane_callback_url__ = {callback_url!r}
 __toolplane_callback_token__ = {callback_token!r}
 
+def __toolplane_scan_unawaited__(value):
+    if __toolplane_inspect__.iscoroutine(value):
+        value.close()
+        return True
+    if __toolplane_inspect__.isawaitable(value):
+        return True
+    if isinstance(value, dict):
+        found = [
+            __toolplane_scan_unawaited__(item)
+            for pair in value.items()
+            for item in pair
+        ]
+        return any(found)
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return any([__toolplane_scan_unawaited__(item) for item in value])
+    return False
+
 async def call_tool(name, params=None):
-    payload = json.dumps({{"name": name, "params": params or {{}}}})
+    try:
+        payload = json.dumps(
+            {{"name": name, "params": params or {{}}}}, allow_nan=False
+        )
+    except (TypeError, ValueError) as exc:
+        raise Exception(
+            "arguments for " + repr(name) + " are not JSON-serializable ("
+            + str(exc) + "); only JSON-shaped values can cross the sandbox "
+            "bridge; " + {non_json_guidance!r}
+        )
     response = await fetch(
         __toolplane_callback_url__,
         to_js({{
@@ -259,7 +291,10 @@ globals().update(json.loads({inputs_json!r}))
 
 {wrapped}
 
-await __toolplane_main__()
+__toolplane_result__ = await __toolplane_main__()
+if __toolplane_scan_unawaited__(__toolplane_result__):
+    __toolplane_result__ = {{"__toolplane_unawaited_call__": True}}
+__toolplane_result__
 """
 
 
@@ -414,8 +449,23 @@ def _response_to_result(
                 traceback=error.get("traceback") or error.get("stack") or "",
             ),
         )
+    value = response.get("result")
+    # sentinel from the rendered runner: raising in-sandbox surfaces as an
+    # opaque PythonError through the Deno layer, so the scan swaps the value
+    # for this marker and the host maps it to a typed error instead
+    if isinstance(value, dict) and value.get("__toolplane_unawaited_call__"):
+        return ExecutionResult(
+            stdout=response.get("stdout") or "",
+            stderr=response.get("stderr") or "",
+            duration_ms=_elapsed_ms(started),
+            backend=backend,
+            error=ExecutionError(
+                type=UNAWAITED_CALL_ERROR_TYPE,
+                message=UNAWAITED_CALL_MESSAGE,
+            ),
+        )
     return ExecutionResult(
-        value=response.get("result"),
+        value=value,
         stdout=response.get("stdout") or "",
         stderr=response.get("stderr") or "",
         duration_ms=_elapsed_ms(started),

@@ -371,3 +371,41 @@ def test_store_and_pyodide_bindings_share_guidance_text() -> None:
     guidance = "save a JSON-shaped projection instead"
     assert guidance in store_message
     assert guidance in rendered
+
+
+def test_local_unsafe_unawaited_call_detected_as_mapping_key() -> None:
+    runtime = Toolplane(ambient_cli=False)
+
+    result = run(
+        runtime.execute(
+            "return {save_result({'v': 1}): 'x'}",
+            backend="local_unsafe",
+        )
+    )
+
+    assert result.error is not None
+    assert result.error.type == "UnawaitedToolCallError"
+
+
+def test_pyodide_renders_unawaited_scan_and_call_tool_guidance() -> None:
+    from toolplane.backends.pyodide_deno import _build_pyodide_code
+
+    code = _build_pyodide_code(
+        "return 1",
+        inputs={},
+        namespace={},
+        scoped_namespace={},
+        ambient_cli=False,
+        ambient_cli_names=(),
+        ambient_cli_allowed_binaries=None,
+        callback_url="http://127.0.0.1:1/",
+        callback_token="token",
+    )
+
+    # nested un-awaited results must fail loudly, not serialize to garbage;
+    # the scan swaps in a sentinel the host maps to UnawaitedToolCallError
+    assert "__toolplane_scan_unawaited__" in code
+    assert "__toolplane_unawaited_call__" in code
+    # canonical call_tool path shares the store's admission rule and guidance
+    assert code.count("allow_nan=False") >= 2
+    assert "save a JSON-shaped projection instead" in code

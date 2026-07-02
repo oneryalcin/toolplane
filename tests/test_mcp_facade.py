@@ -388,3 +388,35 @@ def test_cli_requires_nested_serve_command(capsys: pytest.CaptureFixture[str]) -
     assert main(["serve"]) == 2
     captured = capsys.readouterr()
     assert "usage: toolplane" in captured.out
+
+
+def test_mcp_facade_unknown_default_backend_returns_structured_error() -> None:
+    async def exercise() -> dict[str, object]:
+        app = await build_mcp_facade_from_config(
+            {"toolplane": {"default_backend": "nope"}}
+        )
+        async with Client(app) as client:
+            result = await client.call_tool("execute_code", {"code": "return 1"})
+        return result.data
+
+    result = run(exercise())
+
+    assert result["error"]["type"] == "BackendNotFoundError"
+    assert "Unknown backend 'nope'" in result["error"]["message"]
+    assert "monty" in result["error"]["message"]
+
+
+def test_mcp_facade_unsafe_policy_unknown_backend_returns_structured_error() -> None:
+    async def exercise() -> dict[str, object]:
+        app = await build_mcp_facade_from_config({}, allow_unsafe=True)
+        async with Client(app) as client:
+            result = await client.call_tool(
+                "execute_code",
+                {"code": "return 1", "backend": "bogus"},
+            )
+        return result.data
+
+    result = run(exercise())
+
+    assert result["error"]["type"] == "BackendNotFoundError"
+    assert "Unknown backend 'bogus'" in result["error"]["message"]

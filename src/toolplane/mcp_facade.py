@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Literal
 
 from .config import ConfigSource, ToolplaneConfig, load_toolplane_config
+from .errors import BackendNotFoundError
 from .execution import ExecutionError, ExecutionResult
 from .policy import EffectivePolicy, ensure_safe_facade_policy
 from .runtime import Toolplane
@@ -99,12 +100,28 @@ def build_mcp_facade(
                 backend=backend or "",
                 error=error,
             ).model_dump(mode="json")
-        result = await runtime.execute(
-            code,
-            backend=backend,
-            inputs=inputs,
-            packages=tuple(packages or ()),
-        )
+        try:
+            result = await runtime.execute(
+                code,
+                backend=backend,
+                inputs=inputs,
+                packages=tuple(packages or ()),
+            )
+        except BackendNotFoundError:
+            # reachable when the configured default backend is unknown, or an
+            # unknown override slips past a permissive (--unsafe) policy
+            valid = ", ".join(sorted(runtime.backends))
+            requested = backend or runtime.default_backend
+            return ExecutionResult(
+                backend=requested,
+                error=ExecutionError(
+                    type="BackendNotFoundError",
+                    message=(
+                        f"Unknown backend '{requested}'. "
+                        f"Valid backends: {valid}."
+                    ),
+                ),
+            ).model_dump(mode="json")
         return result.model_dump(mode="json")
 
     return mcp
