@@ -112,8 +112,10 @@ Toolplane source inspected:
 
 ### `toolplane mcp add`
 
-V1 is emit-only. It prints a self-documenting TOML block to stdout and writes
-nothing.
+The initial implementation was emit-only. The current command edits
+`toolplane.toml` by default using `tomlkit`, preserving existing comments and
+formatting. `--print` keeps the old self-documenting TOML output when a user
+wants to paste the block manually.
 
 Remote URL form:
 
@@ -121,10 +123,9 @@ Remote URL form:
 toolplane mcp add linear --url https://mcp.linear.app/mcp --auth oauth
 ```
 
-Output:
+Written config:
 
 ```toml
-# add this to your toolplane.toml:
 [mcp.servers.linear]
 url = "https://mcp.linear.app/mcp"
 auth = "oauth"
@@ -136,18 +137,19 @@ Stdio command form:
 toolplane mcp add linear --command npx --arg -y --arg mcp-remote --arg https://mcp.linear.app/mcp
 ```
 
-Output:
+Written config:
 
 ```toml
-# add this to your toolplane.toml:
 [mcp.servers.linear]
 command = "npx"
 args = ["-y", "mcp-remote", "https://mcp.linear.app/mcp"]
 ```
 
-Name validation for v1 should allow only `[A-Za-z0-9_-]+`. This keeps the
-unquoted TOML table header safe and avoids dotted or quoted keys in the first
-slice.
+If the server name already exists, `mcp add` errors and leaves the file
+unchanged. Replacements require `--force`; silent overwrites are not allowed.
+
+Name validation allows only `[A-Za-z0-9_-]+`. This keeps the unquoted TOML table
+header safe and avoids dotted or quoted server keys.
 
 `--auth` should be explicit. Do not silently infer OAuth from HTTPS in
 Toolplane's direct config path because FastMCP direct config does not persist
@@ -410,24 +412,16 @@ is optional for the spike; most facts are settled by FastMCP source and docs.
 When empirical auth proof is needed, prefer a local throwaway FastMCP auth
 server before depending on a Linear account.
 
-## First Implementation Slice Acceptance
+## `mcp add` Acceptance
 
-For `toolplane mcp add` emit-only v1:
-
-- Prints a header comment: `# add this to your toolplane.toml:`.
-- Emits a valid `[mcp.servers.<name>]` TOML block to stdout.
-- Does not mutate `toolplane.toml`.
-- Rejects invalid server names before printing.
+- Edits `toolplane.toml` by default with `tomlkit`.
+- Preserves existing comments and formatting.
+- Supports `--print` for self-documenting stdout snippets.
+- Rejects invalid server names before writing.
 - Supports remote URL form with optional explicit `--auth oauth`.
 - Supports stdio command form with repeated `--arg`.
-- Tests feed stdout back through `load_toolplane_config`.
+- Errors if the server already exists.
+- Requires `--force` to replace an existing server.
+- Never silently overwrites a user-authored config entry.
+- Tests load the written config through `load_toolplane_config`.
 - Tests feed `config.mcp.to_fastmcp_config()` into `fastmcp.mcp_config.MCPConfig`.
-- Tests cover URL quoting and args list rendering; use structured escaping, not
-  ad hoc string concatenation.
-
-If in-place editing is added later:
-
-- Use `tomlkit` for comment-preserving TOML edits.
-- Error if the server already exists.
-- Require `--force` to replace an existing server.
-- Never silently overwrite a user-authored config entry.

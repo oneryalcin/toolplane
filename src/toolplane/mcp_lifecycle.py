@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import re
-from collections.abc import Mapping, Sequence
+import tempfile
+from collections.abc import Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Literal
+
+import tomlkit
 
 from .config import ToolplaneConfig
 
@@ -62,6 +65,85 @@ def render_mcp_add_snippet(
     auth: str | None = None,
 ) -> str:
     """Render a self-contained Toolplane TOML snippet for one MCP server."""
+    _validate_mcp_add_request(name, url=url, command=command, args=args, auth=auth)
+    document = tomlkit.document()
+    servers = _ensure_table(_ensure_table(document, "mcp"), "servers")
+    servers[name] = _build_mcp_server_table(
+        url=url,
+        command=command,
+        args=args,
+        auth=auth,
+    )
+    snippet = tomlkit.dumps(document)
+    return "# add this to your toolplane.toml:\n" + snippet
+
+
+def write_mcp_add_config(
+    config_path: str | os.PathLike[str],
+    name: str,
+    *,
+    url: str | None = None,
+    command: str | None = None,
+    args: Sequence[str] = (),
+    auth: str | None = None,
+    force: bool = False,
+) -> Path:
+    """Add or replace one MCP server in a Toolplane TOML config file."""
+    _validate_mcp_add_request(name, url=url, command=command, args=args, auth=auth)
+
+    path = Path(config_path).expanduser()
+    if path.exists():
+        try:
+            document = tomlkit.parse(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            raise McpAddError(f"Could not parse {path}: {exc}") from exc
+    else:
+        document = tomlkit.document()
+
+    mcp = _ensure_table(document, "mcp")
+    servers = _ensure_table(mcp, "servers")
+    if name in servers and not force:
+        raise McpAddError(
+            f"MCP server {name!r} already exists; use --force to replace it"
+        )
+
+    servers[name] = _build_mcp_server_table(
+        url=url,
+        command=command,
+        args=args,
+        auth=auth,
+    )
+    _write_text_atomic(path, tomlkit.dumps(document))
+    return path
+
+
+def _write_text_atomic(path: Path, text: str) -> None:
+    fd, tmp_name = tempfile.mkstemp(
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        text=True,
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as file:
+            file.write(text)
+        os.replace(tmp_name, path)
+    except BaseException:
+        try:
+            os.unlink(tmp_name)
+        except FileNotFoundError:
+            pass
+        raise
+
+
+def _validate_mcp_add_request(
+    name: str,
+    *,
+    url: str | None,
+    command: str | None,
+    args: Sequence[str],
+    auth: str | None,
+) -> None:
     if not _SERVER_NAME.fullmatch(name):
         raise McpAddError(
             "MCP server name must contain only letters, numbers, underscores, "
@@ -80,33 +162,46 @@ def render_mcp_add_snippet(
     if command is not None and auth is not None:
         raise McpAddError("--auth is only valid with --url")
 
-    lines = [
-        "# add this to your toolplane.toml:",
-        f"[mcp.servers.{name}]",
-    ]
+
+def _build_mcp_server_table(
+    *,
+    url: str | None,
+    command: str | None,
+    args: Sequence[str],
+    auth: str | None,
+) -> tomlkit.items.Table:
+    server = tomlkit.table()
     if url is not None:
-        lines.append(f"url = {_toml_string(url)}")
+        server["url"] = url
         if auth is not None:
-            lines.append(f"auth = {_toml_string(auth)}")
-            lines.extend(_direct_oauth_warning_comments())
-    else:
-        lines.append(f"command = {_toml_string(command or '')}")
-        if args:
-            rendered_args = ", ".join(_toml_string(arg) for arg in args)
-            lines.append(f"args = [{rendered_args}]")
-        if _is_fastmcp_remote_bridge(command or "", args):
-            lines.extend(
-                [
-                    "# prime this bridge before relying on status or execute:",
-                    f"# {_shell_join(command or '', args)}",
-                ]
-            )
+            server["auth"] = auth
+            for comment in _direct_oauth_warning_comments():
+                server.add(tomlkit.comment(comment))
+        return server
 
-    return "\n".join(lines) + "\n"
+    server["command"] = command or ""
+    if args:
+        server["args"] = list(args)
+    if _is_fastmcp_remote_bridge(command or "", args):
+        server.add(
+            tomlkit.comment("prime this bridge before relying on status or execute:")
+        )
+        server.add(tomlkit.comment(_shell_join(command or "", args)))
+    return server
 
 
-def _toml_string(value: str) -> str:
-    return json.dumps(value, ensure_ascii=False)
+def _ensure_table(
+    parent: MutableMapping[str, Any],
+    key: str,
+) -> MutableMapping[str, Any]:
+    value = parent.get(key)
+    if value is None:
+        table = tomlkit.table()
+        parent[key] = table
+        return table
+    if not isinstance(value, MutableMapping):
+        raise McpAddError(f"Config key {key!r} must be a TOML table")
+    return value
 
 
 def _is_fastmcp_remote_bridge(command: str, args: Sequence[str]) -> bool:
@@ -314,8 +409,8 @@ def _is_direct_oauth_server(server_config: Mapping[str, Any]) -> bool:
 
 def _direct_oauth_warning_comments() -> list[str]:
     return [
-        "# warning: direct OAuth tokens are ephemeral in Toolplane v1.",
-        "# use a fastmcp-remote bridge for persistent login.",
+        "warning: direct OAuth tokens are ephemeral in Toolplane v1.",
+        "use a fastmcp-remote bridge for persistent login.",
     ]
 
 

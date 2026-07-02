@@ -16,6 +16,7 @@ from .mcp_lifecycle import (
     check_mcp_status,
     format_mcp_status,
     render_mcp_add_snippet,
+    write_mcp_add_config,
 )
 from .policy import EffectivePolicy, ensure_safe_facade_policy, format_effective_policy
 
@@ -48,17 +49,29 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     if args.command == "mcp" and args.mcp_command == "add":
         try:
-            snippet = render_mcp_add_snippet(
-                args.name,
-                url=args.url,
-                command=args.command_value,
-                args=tuple(args.args or ()),
-                auth=args.auth,
-            )
-        except McpAddError as exc:
+            if args.print:
+                snippet = render_mcp_add_snippet(
+                    args.name,
+                    url=args.url,
+                    command=args.command_value,
+                    args=tuple(args.args or ()),
+                    auth=args.auth,
+                )
+                print(snippet, end="")
+            else:
+                path = write_mcp_add_config(
+                    args.config,
+                    args.name,
+                    url=args.url,
+                    command=args.command_value,
+                    args=tuple(args.args or ()),
+                    auth=args.auth,
+                    force=args.force,
+                )
+                print(f"Added MCP server {args.name!r} to {path}")
+        except (McpAddError, OSError) as exc:
             print(f"toolplane: {exc}", file=sys.stderr)
             return 2
-        print(snippet, end="")
         return 0
     if args.command == "mcp" and args.mcp_command == "status":
         try:
@@ -114,9 +127,24 @@ def _build_parser() -> argparse.ArgumentParser:
 
     mcp_add = mcp_subcommands.add_parser(
         "add",
-        help="Print a Toolplane TOML snippet for an MCP server",
+        help="Add an MCP server to a Toolplane TOML config",
     )
     mcp_add.add_argument("name", help="MCP server name")
+    mcp_add.add_argument(
+        "--config",
+        default="toolplane.toml",
+        help="Path to a Toolplane TOML config file",
+    )
+    mcp_add.add_argument(
+        "--print",
+        action="store_true",
+        help="Print the TOML snippet instead of editing the config file",
+    )
+    mcp_add.add_argument(
+        "--force",
+        action="store_true",
+        help="Replace an existing MCP server with the same name",
+    )
     source = mcp_add.add_mutually_exclusive_group(required=True)
     source.add_argument("--url", help="Remote MCP endpoint URL")
     source.add_argument(

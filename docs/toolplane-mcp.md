@@ -86,10 +86,10 @@ controlled Python runtime where multiple capability sources become composable.
 ## User Flow
 
 The first stable command-line surface should optimize for explicit setup. This
-section is the target lifecycle. Today, `toolplane mcp add` emits config
-snippets, `toolplane mcp status` checks configured servers, and
-`toolplane serve mcp` serves the configured facade; login, CLI allow, doctor, and
-in-place config writing are still planned.
+section is the target lifecycle. Today, `toolplane mcp add` edits the project
+config with comment-preserving TOML writes, `toolplane mcp status` checks
+configured servers, and `toolplane serve mcp` serves the configured facade;
+login, CLI allow, and doctor are still planned.
 
 ```bash
 toolplane init
@@ -99,14 +99,16 @@ toolplane cli allow git gh rg
 toolplane doctor
 ```
 
-The current `mcp add` command prints a block for the user to add to project
-config:
+The current `mcp add` command writes a server block to project config:
 
 ```toml
-# add this to your toolplane.toml:
 [mcp.servers.linear]
 url = "https://mcp.linear.app/mcp"
 ```
+
+It preserves existing comments and formatting with `tomlkit`, errors if the
+server already exists, and requires `--force` to replace an existing server.
+Use `--print` to emit the TOML snippet to stdout instead of editing the file.
 
 If a direct remote URL is configured with `auth = "oauth"`, Toolplane warns that
 those tokens are ephemeral in v1. Persistent OAuth login should use a
