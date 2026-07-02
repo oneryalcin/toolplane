@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import shutil
 
 import pytest
 
@@ -475,3 +476,70 @@ return "fine"
     # a user's own un-awaited coroutine is their business, not a tool call
     assert result.error is None, result.error
     assert result.value == "fine"
+
+
+# --- catchable bridge errors: the SAME catch pattern on every backend ---
+
+_CATCH_STORE_ERROR = """
+try:
+    await load_result("res_nope")
+except ValueError as exc:
+    return {"caught": "ValueError", "msg": str(exc)}
+"""
+
+_CATCH_POLICY_ERROR = """
+try:
+    await cli_run("curl")
+except PermissionError as exc:
+    return {"caught": "PermissionError", "msg": str(exc)}
+"""
+
+_CATCH_UNKNOWN_CAPABILITY = """
+try:
+    await call_tool("mcp:nope/tool", {})
+except LookupError as exc:
+    return {"caught": "LookupError", "msg": str(exc)}
+"""
+
+
+@pytest.mark.parametrize("backend", ["monty", "local_unsafe"])
+def test_store_errors_catchable_as_valueerror(backend: str) -> None:
+    runtime = Toolplane(ambient_cli=False)
+
+    result = run(runtime.execute(_CATCH_STORE_ERROR, backend=backend))
+
+    assert result.error is None, result.error
+    assert result.value["caught"] == "ValueError"
+    assert "unknown or expired result handle" in result.value["msg"]
+
+
+@pytest.mark.skipif(shutil.which("deno") is None, reason="Deno is not installed")
+def test_store_errors_catchable_as_valueerror_on_pyodide() -> None:
+    runtime = Toolplane(ambient_cli=False)
+
+    result = run(runtime.execute(_CATCH_STORE_ERROR, backend="pyodide-deno"))
+
+    assert result.error is None, result.error
+    assert result.value["caught"] == "ValueError"
+    assert "unknown or expired result handle" in result.value["msg"]
+
+
+def test_cli_policy_errors_catchable_as_permissionerror() -> None:
+    runtime = Toolplane(ambient_cli=True, ambient_cli_allowlist=["git"])
+
+    result = run(runtime.execute(_CATCH_POLICY_ERROR, backend="monty"))
+
+    assert result.error is None, result.error
+    assert result.value["caught"] == "PermissionError"
+    assert "Allowed binaries: git" in result.value["msg"]
+
+
+@pytest.mark.parametrize("backend", ["monty", "local_unsafe"])
+def test_unknown_capability_catchable_as_lookuperror(backend: str) -> None:
+    runtime = Toolplane(ambient_cli=False)
+
+    result = run(runtime.execute(_CATCH_UNKNOWN_CAPABILITY, backend=backend))
+
+    assert result.error is None, result.error
+    assert result.value["caught"] == "LookupError"
+    assert "Unknown capability" in result.value["msg"]

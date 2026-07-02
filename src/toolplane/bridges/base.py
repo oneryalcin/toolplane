@@ -14,6 +14,16 @@ class ToolCallError(BaseModel):
     type: str
     message: str = ""
     traceback: str = ""
+    # nearest builtin exception base, so a sandbox without the host's
+    # exception classes can re-raise a catchable type
+    builtin: str = "Exception"
+
+
+def nearest_builtin_exception(exc: BaseException) -> str:
+    for klass in type(exc).__mro__:
+        if klass.__module__ == "builtins" and issubclass(klass, Exception):
+            return klass.__name__
+    return "Exception"
 
 
 class ToolCallRequest(BaseModel):

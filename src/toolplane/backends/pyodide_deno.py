@@ -332,7 +332,20 @@ async def call_tool(name, params=None):
     if data.get("ok"):
         return data.get("value")
     error = data.get("error") or {{}}
-    raise RuntimeError(f"{{error.get('type', 'ToolError')}}: {{error.get('message', '')}}")
+    # re-raise the nearest builtin named by the host so the same catch
+    # pattern works here as on the monty and local backends
+    import builtins as __toolplane_builtins__
+    __toolplane_exc__ = getattr(
+        __toolplane_builtins__, error.get("builtin") or "", None
+    )
+    if not (
+        isinstance(__toolplane_exc__, type)
+        and issubclass(__toolplane_exc__, Exception)
+    ):
+        __toolplane_exc__ = RuntimeError
+    raise __toolplane_exc__(
+        error.get("message") or error.get("type", "ToolError")
+    )
 
 globals().update(json.loads({inputs_json!r}))
 

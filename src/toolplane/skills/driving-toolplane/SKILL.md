@@ -93,3 +93,15 @@ Every dead end tells you the next move: no-match searches report how many
 capabilities exist and how to list them; unknown names point at canonical
 naming; policy errors name what is allowed. Read the error message before
 retrying — it is written for you, not for a log file.
+
+Toolplane errors are catchable by builtin type, identically on every
+backend: `except ValueError` for result-store failures (expired handle,
+non-JSON value), `except PermissionError` for CLI policy rejections,
+`except LookupError` for unknown capability names.
+
+```python
+try:
+    rows = await load_result(handle)
+except ValueError:
+    rows = await recompute()  # handle expired — re-derive and re-save
+```
