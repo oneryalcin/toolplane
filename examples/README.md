@@ -60,3 +60,11 @@ Context7 access:
 ```bash
 uv run --no-project --with-editable . python examples/mixed_capability_report.py
 ```
+
+The MCP client capability probe is an instrument, not a demo: point real MCP
+clients (Claude Code, Codex) at it to measure their protocol feature support.
+Findings and invocation recipes live in `docs/mcp-client-capability-spike.md`:
+
+```bash
+uv run --no-project --with-editable . python examples/mcp_client_probe.py --self-test
+```
