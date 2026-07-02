@@ -189,18 +189,28 @@ highest-information slice: it proves whether clients can use Toolplane as one
 MCP server that offers progressive discovery and code execution over a curated
 namespace.
 
-The current implementation provides this no-auth skeleton, exposes only the
-three Toolplane meta-tools, and guards the config-backed MCP facade from unsafe
+The current implementation provides this skeleton, exposes only the three
+Toolplane meta-tools, and guards the config-backed MCP facade from unsafe
 defaults. On successful `toolplane serve mcp` startup, it prints the effective
 backend, CLI, MCP-server, and unsafe-override policy to stderr for the operator.
-It does not yet include MCP auth login, durable token storage, or client install
-helpers.
+Remote OAuth is delegated to the `fastmcp-remote` bridge primed by
+`toolplane mcp login`; Toolplane-owned durable token storage and client install
+helpers are not built.
 
-The first slice should deliberately avoid remote auth:
+A fresh config serves safely with no flags, because the defaults are the
+sandboxed `monty` backend and disabled CLI policy:
 
 ```bash
 toolplane serve mcp --config ./toolplane.toml
 ```
+
+On the default `monty` backend, agent code calls capabilities through flat
+aliases or `call_tool` (`await linear_list_issues(...)`,
+`await call_tool("mcp.linear.list_issues", {...})`). The scoped
+`linear.list_issues(...)` sugar shown in the product examples above requires
+the `local_unsafe` or `pyodide-deno` backends — see the
+[backends page](code-mode-backends.md) and the
+[Monty decision record](monty-default-spike.md).
 
 For trusted local development with the `local_unsafe` backend or ambient CLI
 policy, the operator must opt in explicitly:

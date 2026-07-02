@@ -124,6 +124,8 @@ The first implementation can register Python functions, discover them, inspect
 schemas, register explicit `cli-to-py` wrappers, and execute agent-written
 Python through:
 
+- `monty`: the default; sandboxed Monty interpreter with no filesystem or
+  network access, flat capability calls, and host bridge `call_tool` callbacks.
 - `local_unsafe`: development-only in-process execution.
 - `pyodide-deno`: experimental Pyodide-in-Deno sandbox execution with package
   loading and host bridge `call_tool` callbacks.

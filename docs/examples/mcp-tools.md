@@ -9,6 +9,10 @@ context7_get_docs(...)     # flat alias when unambiguous
 context7.get_docs(...)     # scoped namespace
 ```
 
+The default `monty` backend supports the flat aliases and `call_tool(...)`;
+the scoped `context7.get_docs(...)` form needs the `local_unsafe` or
+`pyodide-deno` backends.
+
 ## In-Process FastMCP
 
 === "Host setup"
