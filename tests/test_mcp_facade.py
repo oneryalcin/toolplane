@@ -109,7 +109,9 @@ def test_results_resource_serves_saved_values_and_signposts_misses() -> None:
         app = build_mcp_facade(runtime)
         async with Client(app) as client:
             templates = [
-                t.uriTemplate for t in await client.list_resource_templates()
+                t.uriTemplate
+                for t in await client.list_resource_templates()
+                if t.uriTemplate.startswith("toolplane://results")
             ]
             content = await client.read_resource(f"toolplane://results/{handle}")
             try:
@@ -133,7 +135,11 @@ def test_config_builder_fails_closed_on_multi_client_transport() -> None:
             ToolplaneConfig(), transport="http"
         )
         async with Client(app) as client:
-            return [t.uriTemplate for t in await client.list_resource_templates()]
+            return [
+                t.uriTemplate
+                for t in await client.list_resource_templates()
+                if t.uriTemplate.startswith("toolplane://results")
+            ]
 
     # adversarial review finding: an embedder building from config for a
     # multi-client transport must get the fail-closed store — no results
@@ -150,10 +156,36 @@ def test_results_resource_template_absent_when_store_disabled() -> None:
         )
         app = build_mcp_facade(runtime)
         async with Client(app) as client:
-            return [t.uriTemplate for t in await client.list_resource_templates()]
+            return [
+                t.uriTemplate
+                for t in await client.list_resource_templates()
+                if t.uriTemplate.startswith("toolplane://results")
+            ]
 
     # a template over a disabled store would be a signpost to nowhere
     assert run(exercise()) == []
+
+
+def test_driving_toolplane_skill_is_served_and_manifest_valid() -> None:
+    async def exercise() -> tuple[list[str], str, dict]:
+        app = build_mcp_facade(Toolplane(ambient_cli=False))
+        async with Client(app) as client:
+            uris = [str(r.uri) for r in await client.list_resources()]
+            skill = await client.read_resource("skill://driving-toolplane/SKILL.md")
+            manifest = await client.read_resource(
+                "skill://driving-toolplane/_manifest"
+            )
+        return uris, skill[0].text, json.loads(manifest[0].text)
+
+    uris, skill, manifest = run(exercise())
+    assert "skill://driving-toolplane/SKILL.md" in uris
+    # the conventions the live drive-tests proved agents can't guess
+    assert "await" in skill
+    assert "call_tool" in skill
+    assert "toolplane://namespace" in skill
+    assert "save_result" in skill
+    assert manifest["skill"] == "driving-toolplane"
+    assert [f["path"] for f in manifest["files"]] == ["SKILL.md"]
 
 
 def test_mcp_facade_namespace_resource_reflects_live_runtime() -> None:
@@ -168,7 +200,7 @@ def test_mcp_facade_namespace_resource_reflects_live_runtime() -> None:
         app = build_mcp_facade(runtime)
         async with Client(app) as client:
             resources = await client.list_resources()
-            assert [str(r.uri) for r in resources] == ["toolplane://namespace"]
+            assert "toolplane://namespace" in [str(r.uri) for r in resources]
             content = await client.read_resource("toolplane://namespace")
             return content[0].text
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from .config import ConfigSource, ToolplaneConfig, load_toolplane_config
@@ -25,6 +26,7 @@ def build_mcp_facade(
     """Build the small MCP meta-tool surface for a Toolplane runtime."""
     try:
         from fastmcp import FastMCP
+        from fastmcp.server.providers.skills import SkillsDirectoryProvider
     except ImportError as exc:  # pragma: no cover - dependency is required
         raise ImportError(
             "Toolplane MCP facade requires FastMCP. Install Toolplane with "
@@ -41,9 +43,14 @@ def build_mcp_facade(
             "bindings for allowed binaries and save_result/load_result for "
             "passing JSON-shaped data between runs. Read the "
             "toolplane://namespace resource for the full namespace with "
-            "call shapes."
+            "call shapes, and the skill://driving-toolplane/SKILL.md "
+            "resource for snippet conventions and usage guidance."
         ),
     )
+
+    # read-only usage guidance, versioned with the code it describes;
+    # always on — it is metadata, not a capability surface
+    mcp.add_provider(SkillsDirectoryProvider(Path(__file__).parent / "skills"))
 
     @mcp.resource(
         "toolplane://namespace",
