@@ -54,7 +54,9 @@ backend and rejects what does not round-trip.
 
 - Values are JSON-shaped (the bridge boundary already enforces this on the
   sandboxed backends). Known fidelity limits apply: datetime becomes str,
-  tuple becomes list.
+  tuple becomes list. Non-finite floats (NaN, Infinity) are rejected at save:
+  they are not valid JSON, and MCP response serialization would silently turn
+  them into null on load.
 - No pickle, ever: unpickling agent-influenced bytes is arbitrary code
   execution plus version fragility.
 - No live Python objects: they cannot re-enter monty/pyodide sandboxes, they
@@ -112,19 +114,26 @@ host owns the store, the sandbox only sends requests.
   `handle -> (label, json_bytes, saved_at)` plus cap/TTL enforcement.
   Signature: `save_result(value, label=None) -> handle`;
   `load_result(handle) -> value`. Size accounting uses the serialized JSON
-  byte length (measurable, backend-independent). TTL is checked lazily on
-  access and save.
-- **Exposure as hidden capabilities**, mirroring ambient CLI
-  (`toolplane:cli/run`): `toolplane:results/save` and
-  `toolplane:results/load`, registered hidden, dispatched via
-  `bridge.call_tool`. This makes the store reachable from **every backend
-  with zero backend-specific plumbing** via
+  byte length plus the label's UTF-8 bytes (labels are host memory too, so
+  they cannot smuggle uncounted bytes past the caps). TTL is checked lazily
+  on access and save.
+- **Exposure as hidden capabilities**: `toolplane:results/save` and
+  `toolplane:results/load`, registered hidden. This makes the store reachable
+  from **every backend with zero backend-specific plumbing** via
   `call_tool("toolplane:results/save", {...})`. Note the precise meaning of
   hidden in today's registry: **hidden from discovery** (search, list, and
   namespaces omit it) but **callable by canonical name**, and
   `get_capability_schemas(["toolplane:results/save"])` resolves it. That is
   the intended behavior — the store is infrastructure, not a discoverable
   capability, but nothing about it is secret.
+- **Dispatch authority is the bridge, not the registry.** Each runtime's
+  `InProcessBridge` holds that runtime's store and resolves the two names
+  against it before registry dispatch; the registry entries are
+  discovery-only and refuse direct calls. Registries can be shared across
+  `Toolplane` instances, so binding a store into a registry entry would let
+  the first registration win — leaking handles across runtimes and bypassing
+  a disabled-store policy. This mirrors CLI allowlist enforcement, which is
+  also bridge-owned.
 - **Sugar bindings per backend**, exactly like the CLI surface: monty binds
   `save_result`/`load_result` as external functions; local and pyodide gain
   the same names through their existing namespace injection. Capability and
@@ -146,6 +155,7 @@ host owns the store, the sandbox only sends requests.
 | unknown handle       | fails loudly with the handle                          |
 | expired handle (TTL) | same as unknown; expiry is lazy                       |
 | non-JSON value       | fails at save with the offending type                 |
+| NaN / Infinity       | fails at save; would corrupt to null in MCP responses |
 | store disabled       | `save_result`/`load_result` fail with "results store is disabled" |
 
 ## Out of scope (follow-ups)

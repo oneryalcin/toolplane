@@ -92,7 +92,11 @@ class ResultStore:
                 f"result label must be a string, got {type(label).__name__!r}"
             )
         payload = self._serialize(value)
-        size = len(payload.encode("utf-8"))
+        # labels are host-side memory too; count them so they cannot smuggle
+        # uncounted bytes past the caps
+        size = len(payload.encode("utf-8")) + (
+            len(label.encode("utf-8")) if label else 0
+        )
         self._purge_expired()
         if size > self.max_entry_bytes:
             raise ResultStoreError(
@@ -135,11 +139,12 @@ class ResultStore:
 
     def _serialize(self, value: Any) -> str:
         try:
-            return json.dumps(value)
+            return json.dumps(value, allow_nan=False)
         except (TypeError, ValueError) as exc:
             raise ResultStoreError(
                 f"value of type {type(value).__name__!r} is not "
-                "JSON-serializable; save a JSON-shaped projection instead"
+                f"JSON-serializable ({exc}); save a JSON-shaped projection "
+                "instead"
             ) from exc
 
     def _purge_expired(self) -> None:
@@ -153,11 +158,17 @@ class ResultStore:
             self._total_bytes -= self._entries.pop(handle).size_bytes
 
 
-def register_result_store(
+def register_result_capabilities(
     registry: "CapabilityRegistry",
-    store: ResultStore,
 ) -> tuple[Capability, Capability]:
-    """Register the hidden save/load capabilities, mirroring ambient CLI."""
+    """Register the hidden save/load capabilities for schema discovery.
+
+    These entries are discovery-only: dispatch is owned by each runtime's
+    bridge, which resolves the names against its own store. Binding a store
+    into the registry would leak data across runtimes that share a registry
+    (first registration would win), so the registered callables refuse
+    direct calls instead.
+    """
     try:
         return (
             registry.get(RESULTS_SAVE_CAPABILITY),
@@ -168,7 +179,7 @@ def register_result_store(
 
     save = Capability(
         name=RESULTS_SAVE_CAPABILITY,
-        callable=store.save,
+        callable=_bridge_dispatch_only,
         description=(
             "Save a JSON-shaped value to the host result store; "
             "returns a handle usable in later runs."
@@ -188,7 +199,7 @@ def register_result_store(
     )
     load = Capability(
         name=RESULTS_LOAD_CAPABILITY,
-        callable=store.load,
+        callable=_bridge_dispatch_only,
         description="Load a value saved to the host result store by its handle.",
         parameters={
             "type": "object",
@@ -203,6 +214,13 @@ def register_result_store(
     registry.add(save)
     registry.add(load)
     return save, load
+
+
+def _bridge_dispatch_only(**_params: Any) -> Any:
+    raise ResultStoreError(
+        "result capabilities are dispatched by the runtime bridge, "
+        "not the registry"
+    )
 
 
 def build_result_bindings(

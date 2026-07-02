@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from toolplane import Toolplane
+from toolplane import CapabilityRegistry, Toolplane
 from toolplane.errors import ResultStoreError
 from toolplane.mcp_facade import resolve_serve_config
 from toolplane.config import load_toolplane_config
@@ -53,6 +53,14 @@ def test_non_json_value_fails_at_save_with_type() -> None:
         store.save(object())
 
 
+def test_non_finite_floats_rejected_at_save() -> None:
+    store = ResultStore()
+
+    for bad in (float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(ResultStoreError, match="not JSON-serializable"):
+            store.save({"v": bad})
+
+
 def test_disabled_store_fails_loudly_on_save_and_load() -> None:
     store = ResultStore(enabled=False)
 
@@ -83,6 +91,14 @@ def test_max_total_bytes_cap_counts_across_entries() -> None:
 
     with pytest.raises(ResultStoreError, match="total limit"):
         store.save("y" * 20)
+
+
+def test_labels_count_against_size_caps() -> None:
+    store = ResultStore(max_entry_bytes=16)
+    store.save("x", label="ok")
+
+    with pytest.raises(ResultStoreError, match="per-entry limit"):
+        store.save("x", label="y" * 100)
 
 
 def test_ttl_expires_entries_and_frees_space() -> None:
@@ -205,6 +221,52 @@ def test_handles_are_scoped_to_one_runtime() -> None:
     assert "unknown or expired result handle" in result.error.message
 
 
+def test_shared_registry_does_not_leak_handles_across_runtimes() -> None:
+    registry = CapabilityRegistry()
+    saver = Toolplane(registry=registry, ambient_cli=False)
+    other = Toolplane(registry=registry, ambient_cli=False)
+
+    handle = run(
+        saver.execute("return await save_result({'v': 1})", backend="monty")
+    ).value
+
+    result = run(
+        other.execute(
+            "return await load_result(h)",
+            backend="monty",
+            inputs={"h": handle},
+        )
+    )
+
+    assert result.error is not None
+    assert "unknown or expired result handle" in result.error.message
+
+
+def test_shared_registry_disabled_store_cannot_save_through_other_runtime() -> None:
+    registry = CapabilityRegistry()
+    Toolplane(registry=registry, ambient_cli=False)  # enabled store, same registry
+
+    async def exercise():
+        disabled = await Toolplane.from_config(
+            {"results": {"enabled": False}},
+            registry=registry,
+        )
+        return await disabled.execute(
+            """
+try:
+    await save_result(1)
+except Exception as exc:
+    return str(exc)
+""",
+            backend="monty",
+        )
+
+    result = run(exercise())
+
+    assert result.error is None, result.error
+    assert "results store is disabled" in result.value
+
+
 def test_inputs_shadow_result_sugar_bindings() -> None:
     runtime = Toolplane(ambient_cli=False)
 
@@ -218,6 +280,27 @@ def test_inputs_shadow_result_sugar_bindings() -> None:
 
     assert result.error is None, result.error
     assert result.value == 5
+
+
+def test_pyodide_gives_cli_alias_precedence_over_result_sugar() -> None:
+    from toolplane.backends.pyodide_deno import _build_pyodide_code
+
+    code = _build_pyodide_code(
+        "return 1",
+        inputs={},
+        namespace={},
+        scoped_namespace={},
+        ambient_cli=True,
+        ambient_cli_names=("save_result",),
+        ambient_cli_allowed_binaries=None,
+        callback_url="http://127.0.0.1:1/",
+        callback_token="token",
+    )
+
+    # an allowlisted binary named save_result wins, matching monty/local
+    assert "async def save_result" not in code
+    assert "save_result = cli.save_result" in code
+    assert "async def load_result" in code
 
 
 def test_result_capabilities_hidden_from_discovery_but_schemas_resolve() -> None:

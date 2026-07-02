@@ -9,6 +9,11 @@ from typing import Any
 from ..adapters.ambient_cli import AMBIENT_CLI_CAPABILITY
 from ..errors import CliPolicyError
 from ..registry import CapabilityRegistry
+from ..results import (
+    RESULTS_LOAD_CAPABILITY,
+    RESULTS_SAVE_CAPABILITY,
+    ResultStore,
+)
 from .base import ToolCallError, ToolCallRequest, ToolCallResponse
 
 
@@ -20,6 +25,7 @@ class InProcessBridge:
         registry: CapabilityRegistry,
         *,
         ambient_cli_allowed_binaries: set[str] | frozenset[str] | None = None,
+        result_store: ResultStore | None = None,
     ) -> None:
         self.registry = registry
         self._ambient_cli_allowed_binaries = (
@@ -27,6 +33,9 @@ class InProcessBridge:
             if ambient_cli_allowed_binaries is not None
             else None
         )
+        # The bridge is per-runtime, so it is the authority for result store
+        # dispatch: registries can be shared across runtimes, stores must not.
+        self._result_store = result_store or ResultStore(enabled=False)
 
     async def call_tool(
         self,
@@ -34,6 +43,10 @@ class InProcessBridge:
         params: Mapping[str, Any] | None = None,
     ) -> Any:
         normalized_params = dict(params or {})
+        if name == RESULTS_SAVE_CAPABILITY:
+            return self._result_store.save(**normalized_params)
+        if name == RESULTS_LOAD_CAPABILITY:
+            return self._result_store.load(**normalized_params)
         self._enforce_ambient_cli_policy(name, normalized_params)
         return await self.registry.call(name, normalized_params)
 

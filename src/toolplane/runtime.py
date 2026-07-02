@@ -14,7 +14,7 @@ from .discovery import DetailLevel, render_capabilities
 from .errors import BackendNotFoundError
 from .execution import ExecutionResult
 from .registry import CapabilityRegistry
-from .results import ResultStore, register_result_store
+from .results import ResultStore, register_result_capabilities
 
 if TYPE_CHECKING:
     from .config import ConfigSource
@@ -35,7 +35,7 @@ class Toolplane:
             raise ValueError("ambient_cli_allowlist requires ambient_cli=True")
         self.registry = registry or CapabilityRegistry()
         self.result_store = result_store or ResultStore()
-        register_result_store(self.registry, self.result_store)
+        register_result_capabilities(self.registry)
         self.ambient_cli = ambient_cli
         self._ambient_cli_allowed_binaries = (
             frozenset(ambient_cli_allowlist)
@@ -48,6 +48,7 @@ class Toolplane:
         self.bridge = InProcessBridge(
             self.registry,
             ambient_cli_allowed_binaries=self._ambient_cli_allowed_binaries,
+            result_store=self.result_store,
         )
         configured = list(
             backends
