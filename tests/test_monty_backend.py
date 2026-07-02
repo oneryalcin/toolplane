@@ -218,6 +218,8 @@ def test_monty_cli_calls_blocked_by_host_side_policy() -> None:
 
     assert result.error is not None
     assert "CLI binary is not allowed by Toolplane policy: curl" in result.error.message
+    # the rejection must teach the allowlist, not just say no
+    assert "Allowed binaries: git" in result.error.message
 
 
 def test_monty_does_not_bind_unlisted_cli_names() -> None:

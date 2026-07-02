@@ -76,6 +76,8 @@ class InProcessBridge:
             return
         binary = str(params.get("binary", ""))
         if binary not in self._ambient_cli_allowed_binaries:
+            allowed = ", ".join(sorted(self._ambient_cli_allowed_binaries)) or "none"
             raise CliPolicyError(
-                f"CLI binary is not allowed by Toolplane policy: {binary}"
+                f"CLI binary is not allowed by Toolplane policy: {binary}. "
+                f"Allowed binaries: {allowed}."
             )

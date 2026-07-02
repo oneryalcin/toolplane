@@ -22,7 +22,8 @@ def render_capabilities(
             capability.to_schema() for capability in capabilities
         ]
         if missing:
-            data.append({"not_found": list(missing)})
+            # dead ends signpost on every detail level, JSON included
+            data.append({"not_found": list(missing), "hint": _MISSING_HINT})
         return json.dumps(data, indent=2)
 
     if not capabilities:
@@ -33,8 +34,15 @@ def render_capabilities(
         text = "\n".join(_render_brief(capability) for capability in capabilities)
 
     if missing:
-        text += f"\n\nCapabilities not found: {', '.join(missing)}"
+        text += f"\n\nCapabilities not found: {', '.join(missing)}. {_MISSING_HINT}"
     return text
+
+
+_MISSING_HINT = (
+    "Names must be canonical (as returned by search_capabilities) — search "
+    "with an empty query to list them all, or read the toolplane://namespace "
+    "resource."
+)
 
 
 def _render_brief(capability: Capability) -> str:

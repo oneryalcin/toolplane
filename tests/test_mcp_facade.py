@@ -79,6 +79,56 @@ def test_mcp_facade_exposes_only_toolplane_meta_tools() -> None:
     ]
 
 
+def test_schemas_not_found_signposts_on_every_detail_level() -> None:
+    async def exercise() -> tuple[str, str]:
+        runtime = Toolplane(ambient_cli=False)
+        app = build_mcp_facade(runtime)
+        async with Client(app) as client:
+            detailed = await client.call_tool(
+                "get_capability_schemas", {"names": ["git"]}
+            )
+            full = await client.call_tool(
+                "get_capability_schemas", {"names": ["git"], "detail": "full"}
+            )
+        return detailed.content[0].text, full.content[0].text
+
+    detailed, full = run(exercise())
+    # a driver session hit the full path and got a bare not_found list —
+    # the signpost must ride the JSON render too
+    for text in (detailed, full):
+        assert "toolplane://namespace" in text, text
+        assert "empty query" in text, text
+    payload = json.loads(full)
+    assert payload[-1]["not_found"] == ["git"]
+
+
+def test_mcp_facade_namespace_resource_reflects_live_runtime() -> None:
+    async def exercise() -> str:
+        runtime = Toolplane(ambient_cli=True, ambient_cli_allowlist=["git", "jq"])
+
+        @runtime.tool(name="lookup")
+        def lookup(key: str) -> str:
+            """Fetch a value."""
+            return ""
+
+        app = build_mcp_facade(runtime)
+        async with Client(app) as client:
+            resources = await client.list_resources()
+            assert [str(r.uri) for r in resources] == ["toolplane://namespace"]
+            content = await client.read_resource("toolplane://namespace")
+            return content[0].text
+
+    manifest = run(exercise())
+    # the surfaces the cold-discovery test could not find: CLI allowlist
+    # with both call shapes, result-store sugar, and the call_tool fallback
+    assert "Allowed binaries: git, jq" in manifest
+    assert "await git(" in manifest
+    assert "cli_run" in manifest
+    assert "await save_result(value)" in manifest
+    assert "await lookup(...)" in manifest
+    assert "call_tool" in manifest
+
+
 def test_effective_policy_reports_allowlist_and_server_names() -> None:
     config = ToolplaneConfig.model_validate(
         {
