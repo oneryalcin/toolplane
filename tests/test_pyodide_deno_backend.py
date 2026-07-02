@@ -220,3 +220,46 @@ def test_pyodide_assign_then_print_unawaited_fails() -> None:
     # the driver's original repro: assign, then print to inspect
     assert result.error is not None
     assert result.error.type == "UnawaitedToolCallError"
+
+
+@pytest.mark.skipif(shutil.which("deno") is None, reason="Deno is not installed")
+def test_pyodide_uncaught_error_carries_real_type_and_message() -> None:
+    async def exercise():
+        runtime = Toolplane(ambient_cli=False)
+        return await runtime.execute("return 1/0", backend="pyodide-deno")
+
+    result = run(exercise())
+
+    # the Deno layer reports 'PythonError'/'PythonError'; the real error
+    # must be recovered from the captured traceback
+    assert result.error is not None
+    assert result.error.type == "ZeroDivisionError"
+    assert result.error.message == "division by zero"
+
+
+@pytest.mark.skipif(shutil.which("deno") is None, reason="Deno is not installed")
+def test_pyodide_cli_policy_rejection_is_legible() -> None:
+    async def exercise():
+        runtime = Toolplane(
+            ambient_cli=True, ambient_cli_allowlist=["git"]
+        )
+        return await runtime.execute(
+            "return await cli.curl()", backend="pyodide-deno"
+        )
+
+    result = run(exercise())
+
+    # the policy signpost must survive the Deno error path
+    assert result.error is not None
+    assert result.error.type == "RuntimeError"
+    assert "not allowed by Toolplane policy: curl" in result.error.message
+    assert "Allowed binaries: git" in result.error.message
+
+
+def test_recover_python_error_keeps_opaque_when_no_traceback() -> None:
+    from toolplane.backends.pyodide_deno import _recover_python_error
+
+    # no traceback in stderr -> caller must keep the original error rather
+    # than fabricate one from unrelated stderr noise
+    assert _recover_python_error("") is None
+    assert _recover_python_error("some print to stderr\nmore noise") is None
