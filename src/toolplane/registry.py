@@ -167,6 +167,7 @@ class CapabilityRegistry:
         scored: list[tuple[int, str, Capability]] = []
         for capability in candidates:
             counts = _token_counts(capability.searchable_text)
+            counts.update(_identifier_case_parts(capability.identifier_text))
             score = sum(counts[token] for token in tokens)
             if score:
                 scored.append((score, capability.name, capability))
@@ -239,6 +240,12 @@ _STOPWORDS = frozenset(
 )
 
 
+# case-preserving pass so camelCase boundaries survive until _SUBWORD splits
+# them; _tokenize lowercases first, which would fuse createIssue into one token
+_WORD = re.compile(r"[A-Za-z0-9_]+")
+_SUBWORD = re.compile(r"[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|[0-9]+")
+
+
 def _token_counts(text: str) -> Counter[str]:
     """Token multiset for search scoring, matched token-to-token.
 
@@ -253,6 +260,26 @@ def _token_counts(text: str) -> Counter[str]:
         if "_" in token:
             expanded.extend(part for part in token.split("_") if part)
     return Counter(expanded)
+
+
+def _identifier_case_parts(text: str) -> list[str]:
+    """Case-boundary subwords of identifier-shaped tokens.
+
+    ``createIssue`` → create, issue; ``repoName`` → repo, name. Only applied
+    to Capability.identifier_text, never prose: splitting description words
+    would turn "GitHub" back into a match for the query "git". Tokens whose
+    case split adds nothing beyond the underscore split are skipped —
+    _token_counts already counted those parts.
+    """
+    parts: list[str] = []
+    for token in _WORD.findall(text):
+        chunks = [chunk for chunk in token.split("_") if chunk]
+        subwords = [
+            part.lower() for chunk in chunks for part in _SUBWORD.findall(chunk)
+        ]
+        if len(subwords) > len(chunks):
+            parts.extend(subwords)
+    return parts
 
 
 def _validate_alias(alias: str) -> None:

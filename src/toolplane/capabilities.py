@@ -67,6 +67,25 @@ class Capability:
                     parts.append(str(schema.get("description", "")))
         return " ".join(part for part in parts if part)
 
+    @property
+    def identifier_text(self) -> str:
+        """Identifier-shaped fields only, no prose.
+
+        Search splits these on case boundaries (``createIssue`` → create,
+        issue) — safe for identifiers but wrong for prose, where it would
+        turn "GitHub" back into a match for the query "git".
+        """
+        parts = [
+            self.name,
+            self.namespace or "",
+            self.namespace_member or "",
+            *self.aliases,
+        ]
+        properties = self.parameters.get("properties", {})
+        if isinstance(properties, Mapping):
+            parts.extend(str(name) for name in properties)
+        return " ".join(part for part in parts if part)
+
 
 def capability_from_function(
     fn: Callable[..., Any],

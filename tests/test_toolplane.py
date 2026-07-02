@@ -269,3 +269,21 @@ def test_search_still_matches_words_inside_underscored_names() -> None:
 
     result = run(runtime.search("question"))
     assert "ask_question" in result
+
+
+def test_search_matches_words_inside_camel_case_names() -> None:
+    # MCP servers commonly expose camelCase tool names; substring scoring
+    # covered them by accident, token matching must split case boundaries
+    runtime = Toolplane(ambient_cli=False)
+
+    @runtime.tool(name="createIssue", tags={"tracker"})
+    def create_issue(repoName: str) -> str:
+        """Open a ticket."""
+        return ""
+
+    for query in ("issue", "create", "createIssue", "repo name"):
+        result = run(runtime.search(query))
+        assert "createIssue" in result, (query, result)
+
+    result = run(runtime.search("wiki"))
+    assert result == "No capabilities matched the query."
