@@ -263,3 +263,19 @@ def test_recover_python_error_keeps_opaque_when_no_traceback() -> None:
     # than fabricate one from unrelated stderr noise
     assert _recover_python_error("") is None
     assert _recover_python_error("some print to stderr\nmore noise") is None
+
+
+@pytest.mark.skipif(shutil.which("deno") is None, reason="Deno is not installed")
+def test_pyodide_multiline_exception_message_recovers_real_type() -> None:
+    async def exercise():
+        runtime = Toolplane(ambient_cli=False)
+        return await runtime.execute(
+            'raise ValueError("first\\nretry")', backend="pyodide-deno"
+        )
+
+    result = run(exercise())
+
+    # a bare-identifier continuation line must not be misread as the type
+    assert result.error is not None
+    assert result.error.type == "ValueError"
+    assert result.error.message == "first\nretry"
