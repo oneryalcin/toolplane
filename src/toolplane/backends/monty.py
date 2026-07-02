@@ -19,6 +19,7 @@ from ..adapters.ambient_cli import AMBIENT_CLI_CAPABILITY, is_safe_cli_name
 from ..bridges.base import HostBridge
 from ..errors import BackendCapabilityError, NamespaceCollisionError
 from ..execution import BackendCapabilities, ExecutionError, ExecutionResult
+from ..results import build_result_bindings
 from ._python import wrap_async_main
 
 
@@ -80,6 +81,11 @@ class MontyBackend:
                 reserved=reserved,
             ).items():
                 external_functions.setdefault(name, fn)
+        for name, fn in build_result_bindings(
+            bridge,
+            reserved=set(external_functions) | set(input_namespace),
+        ).items():
+            external_functions.setdefault(name, fn)
         _ensure_no_input_collisions(input_namespace, set(external_functions))
 
         streams = CollectStreams()

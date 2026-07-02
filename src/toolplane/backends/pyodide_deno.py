@@ -18,11 +18,15 @@ from pathlib import Path
 from string import Template
 from typing import Any
 
-from ..adapters.ambient_cli import render_pyodide_cli_namespace
+from ..adapters.ambient_cli import (
+    is_safe_cli_name,
+    render_pyodide_cli_namespace,
+)
 from ..bridges.base import HostBridge
 from ..bridges.rpc import HttpCallbackBridge
 from ..errors import NamespaceCollisionError
 from ..execution import BackendCapabilities, ExecutionError, ExecutionResult
+from ..results import render_pyodide_result_bindings
 from ._python import wrap_async_main
 
 
@@ -203,6 +207,17 @@ def _build_pyodide_code(
         if ambient_cli
         else ""
     )
+    # CLI aliases render before the result bindings, so reserve them too —
+    # monty/local give CLI names precedence and pyodide must match
+    results_reserved = set(reserved_names)
+    if ambient_cli:
+        results_reserved.add("cli")
+        results_reserved.update(
+            name
+            for name in ambient_cli_names
+            if name not in reserved_names and is_safe_cli_name(name)
+        )
+    results_code = render_pyodide_result_bindings(reserved=results_reserved)
     namespace_code = _render_callable_namespace(namespace)
     scoped_namespace_code = _render_scoped_namespace(scoped_namespace)
     return f"""
@@ -235,6 +250,8 @@ async def call_tool(name, params=None):
 globals().update(json.loads({inputs_json!r}))
 
 {cli_namespace_code}
+
+{results_code}
 
 {namespace_code}
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Literal
 
-from .config import ConfigSource, load_toolplane_config
+from .config import ConfigSource, ToolplaneConfig, load_toolplane_config
 from .execution import ExecutionError, ExecutionResult
 from .policy import EffectivePolicy, ensure_safe_facade_policy
 from .runtime import Toolplane
@@ -109,6 +109,23 @@ async def build_mcp_facade_from_config(
     return build_mcp_facade(runtime, policy=policy)
 
 
+def resolve_serve_config(
+    config: ToolplaneConfig,
+    transport: Transport,
+) -> ToolplaneConfig:
+    """Apply transport-dependent policy before building the runtime.
+
+    The result store is session-scoped, and only stdio guarantees one client
+    per process. Multi-client transports fail closed: the store is disabled
+    rather than shared across clients.
+    """
+    if transport == "stdio" or not config.results.enabled:
+        return config
+    updated = config.model_copy(deep=True)
+    updated.results.enabled = False
+    return updated
+
+
 async def serve_mcp_facade(
     config: ConfigSource,
     *,
@@ -117,7 +134,8 @@ async def serve_mcp_facade(
     port: int | None = None,
     allow_unsafe: bool = False,
 ) -> None:
-    app = await build_mcp_facade_from_config(config, allow_unsafe=allow_unsafe)
+    parsed = resolve_serve_config(load_toolplane_config(config), transport)
+    app = await build_mcp_facade_from_config(parsed, allow_unsafe=allow_unsafe)
     kwargs: dict[str, Any] = {}
     if host is not None:
         kwargs["host"] = host

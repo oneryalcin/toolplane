@@ -31,5 +31,9 @@ class CliPolicyError(ToolplaneError):
     """Raised when code tries to use a CLI binary disallowed by policy."""
 
 
+class ResultStoreError(ToolplaneError):
+    """Raised when the result store rejects a save or load."""
+
+
 class UnsafeFacadeConfigError(ToolplaneError):
     """Raised when an MCP facade config exposes unsafe defaults."""

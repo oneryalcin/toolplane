@@ -173,6 +173,24 @@ return version
 """)
 ```
 
+Runs are independent sandboxes, but data can flow between them through the
+host-side result store without transiting the model's context: save a value,
+return a summary plus handle, load the full value in a later run
+([design record](docs/result-store-design.md)):
+
+```python
+first = await runtime.execute("""
+issues = await call_tool("list_issues", {"label": "bug"})
+handle = await save_result(issues, label="issues")
+return {"count": len(issues), "handle": handle}
+""")
+
+second = await runtime.execute(
+    "issues = await load_result(h)\nreturn issues[0]",
+    inputs={"h": first.value["handle"]},
+)
+```
+
 CLI tools can be exposed as capabilities during host setup:
 
 ```python
