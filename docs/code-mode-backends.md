@@ -8,10 +8,11 @@ discover capabilities -> inspect schemas -> execute Python against a curated nam
 
 !!! note "Backend choice follows workload shape"
 
-    Monty is useful for small safe orchestration. Pyodide+Deno is the likely
-    default for pandas/NumPy-style snippets. Docker, Modal, E2B, and Blaxel are
-    for arbitrary CPython packages, subprocesses, native dependencies, GPUs, or
-    stronger remote isolation.
+    Monty is the default backend: safe tool orchestration with no external
+    dependencies (see the [decision record](monty-default-spike.md)).
+    Pyodide+Deno is the opt-in sandbox for pandas/NumPy-style snippets.
+    Docker, Modal, E2B, and Blaxel are for arbitrary CPython packages,
+    subprocesses, native dependencies, GPUs, or stronger remote isolation.
 
 The execution backend should be swappable. Different workloads need different
 tradeoffs between safety, package support, startup latency, local development
@@ -89,7 +90,7 @@ packages.
 The Pyodide+Deno path is especially relevant. Pyodide is CPython compiled to
 WebAssembly, and the official Pyodide distribution supports packages including
 NumPy, pandas, SciPy, Matplotlib, and scikit-learn. That makes it a much better
-default than Monty for data-analysis code that needs common scientific Python
+choice than Monty for data-analysis code that needs common scientific Python
 packages.
 
 The caveat is that Pyodide is not arbitrary Linux CPython. Pure Python wheels
@@ -103,8 +104,8 @@ another backend.
 | Backend | Use | Strengths | Limits |
 | --- | --- | --- | --- |
 | Local unsafe | Development only | Full local Python, imports, files, fastest to debug | Not a sandbox; never production for untrusted code |
-| Monty | Safe small-tool orchestration | Very low latency, resource limits, explicit external functions | Limited Python/runtime surface; not for pandas or arbitrary packages |
-| Pyodide+Deno | Default package-capable sandbox | WebAssembly isolation, pandas/numpy-style package support, good local/edge fit | Not arbitrary Linux CPython; limited native/system/subprocess support |
+| Monty | Default: safe tool orchestration | Pure pip install, very low latency, resource limits, explicit external functions | Limited Python/runtime surface (no classes, flat call names); not for pandas or arbitrary packages |
+| Pyodide+Deno | Package-capable sandbox | WebAssembly isolation, pandas/numpy-style package support, good local/edge fit | Needs Deno on PATH; not arbitrary Linux CPython; limited native/system/subprocess support |
 | Local subprocess/venv | Trusted or semi-trusted local work | Real CPython, third-party packages, easy package resolution | Weak isolation unless wrapped with OS controls |
 | Docker | Default production-ish local backend | Real CPython, third-party packages, filesystem/network controls | Higher startup latency; requires Docker/runtime management |
 | E2B | Hosted code interpreter | Purpose-built remote sandbox, package installation, persistent session patterns | External service, credentials/cost, artifact transfer |
@@ -112,11 +113,13 @@ another backend.
 | Remote sandbox | Hosted isolation | Central policy, scalable isolation, easier production operations | Network latency, credentials, cost, artifact transfer |
 | Modal | Remote Python execution | Strong fit for dependency-rich Python workloads and scalable jobs | Requires Modal account/config; async job lifecycle must be modeled |
 
-Monty remains valuable, but it should not be the only backend. It is a good
-answer for "safe code that calls host-provided functions." It is not the right
-answer for "let the agent import pandas and transform a dataframe."
+Monty is the default because it is the only backend that is both safe by
+construction and guaranteed present (a pure pip wheel, no external binary). It
+is the right answer for "safe code that calls host-provided functions." It is
+not the right answer for "let the agent import pandas and transform a
+dataframe."
 
-Pyodide+Deno is the likely default for package-capable sandboxed snippets.
+Pyodide+Deno is the opt-in choice for package-capable sandboxed snippets.
 Docker and Modal remain necessary when the code needs arbitrary CPython wheels,
 system packages, subprocesses, local CLI binaries, GPUs, or long-running jobs.
 

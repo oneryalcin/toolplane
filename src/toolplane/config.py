@@ -16,7 +16,7 @@ class ToolplaneSettings(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    default_backend: str = "local_unsafe"
+    default_backend: str = "monty"
 
 
 class CliSettings(BaseModel):
@@ -24,7 +24,7 @@ class CliSettings(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    mode: Literal["ambient", "allowlist", "disabled"] = "ambient"
+    mode: Literal["ambient", "allowlist", "disabled"] = "disabled"
     allow: tuple[str, ...] = ()
 
     @field_validator("allow")

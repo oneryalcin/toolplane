@@ -159,8 +159,8 @@ src/toolplane/
     __init__.py
     base.py            # CodeBackend protocol + backend capabilities
     local.py           # development-only unsafe local backend
-    monty.py           # Monty backend
-    pyodide_deno.py    # default package-capable sandbox
+    monty.py           # default safe sandboxed backend
+    pyodide_deno.py    # opt-in package-capable sandbox
     docker.py          # later
     modal.py           # later
 

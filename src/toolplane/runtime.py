@@ -7,7 +7,7 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from .adapters.ambient_cli import discover_cli_names, register_ambient_cli
-from .backends import CodeBackend, LocalUnsafeBackend, PyodideDenoBackend
+from .backends import CodeBackend, LocalUnsafeBackend, MontyBackend, PyodideDenoBackend
 from .bridges.in_process import InProcessBridge
 from .capabilities import Capability, JsonSchema
 from .discovery import DetailLevel, render_capabilities
@@ -45,7 +45,10 @@ class Toolplane:
             self.registry,
             ambient_cli_allowed_binaries=self._ambient_cli_allowed_binaries,
         )
-        configured = list(backends or (LocalUnsafeBackend(), PyodideDenoBackend()))
+        configured = list(
+            backends
+            or (LocalUnsafeBackend(), MontyBackend(), PyodideDenoBackend())
+        )
         self.backends = {backend.name: backend for backend in configured}
         self.default_backend = default_backend
 
