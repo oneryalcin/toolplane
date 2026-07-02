@@ -79,6 +79,29 @@ def test_mcp_facade_exposes_only_toolplane_meta_tools() -> None:
     ]
 
 
+def test_schemas_not_found_signposts_on_every_detail_level() -> None:
+    async def exercise() -> tuple[str, str]:
+        runtime = Toolplane(ambient_cli=False)
+        app = build_mcp_facade(runtime)
+        async with Client(app) as client:
+            detailed = await client.call_tool(
+                "get_capability_schemas", {"names": ["git"]}
+            )
+            full = await client.call_tool(
+                "get_capability_schemas", {"names": ["git"], "detail": "full"}
+            )
+        return detailed.content[0].text, full.content[0].text
+
+    detailed, full = run(exercise())
+    # a driver session hit the full path and got a bare not_found list —
+    # the signpost must ride the JSON render too
+    for text in (detailed, full):
+        assert "toolplane://namespace" in text, text
+        assert "empty query" in text, text
+    payload = json.loads(full)
+    assert payload[-1]["not_found"] == ["git"]
+
+
 def test_mcp_facade_namespace_resource_reflects_live_runtime() -> None:
     async def exercise() -> str:
         runtime = Toolplane(ambient_cli=True, ambient_cli_allowlist=["git", "jq"])
