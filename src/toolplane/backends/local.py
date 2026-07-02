@@ -18,6 +18,7 @@ from ..results import build_result_bindings
 from ._python import (
     UNAWAITED_CALL_ERROR_TYPE,
     UNAWAITED_CALL_MESSAGE,
+    find_unawaited_calls,
     wrap_async_main,
 )
 
@@ -103,7 +104,24 @@ class LocalUnsafeBackend:
             )
             scope.update(_callable_namespace(bridge, capability_namespace))
             scope.update(_scoped_namespace(bridge, scoped_capability_namespace))
+            # async bindings only: cli namespace objects are excluded because
+            # their bare calls have no side effects to lose
+            binding_names = {
+                name
+                for name, bound in scope.items()
+                if inspect.iscoroutinefunction(bound)
+            }
             scope.update(input_namespace)
+            preflight = find_unawaited_calls(code, binding_names - set(input_namespace))
+            if preflight:
+                return ExecutionResult(
+                    duration_ms=_elapsed_ms(started),
+                    backend=self.name,
+                    error=ExecutionError(
+                        type=UNAWAITED_CALL_ERROR_TYPE,
+                        message="; ".join(preflight),
+                    ),
+                )
             exec(wrap_async_main(code), scope, scope)
             with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
                 value = await scope["__toolplane_main__"]()

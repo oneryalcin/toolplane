@@ -403,9 +403,41 @@ def test_pyodide_renders_unawaited_scan_and_call_tool_guidance() -> None:
     )
 
     # nested un-awaited results must fail loudly, not serialize to garbage;
-    # the scan swaps in a sentinel the host maps to UnawaitedToolCallError
+    # the scan sets an out-of-band flag the host maps to UnawaitedToolCallError
+    # (never a marker inside the user result, which would reserve a shape)
     assert "__toolplane_scan_unawaited__" in code
-    assert "__toolplane_unawaited_call__" in code
+    assert "__toolplane_unawaited_flag__" in code
+    assert "__toolplane_unawaited_call__" not in code
     # canonical call_tool path shares the store's admission rule and guidance
     assert code.count("allow_nan=False") >= 2
     assert "save a JSON-shaped projection instead" in code
+
+
+def test_local_unsafe_discarded_unawaited_call_fails_at_preflight() -> None:
+    runtime = Toolplane(ambient_cli=False)
+
+    result = run(
+        runtime.execute(
+            "save_result({'v': 1})\nreturn 1",
+            backend="local_unsafe",
+        )
+    )
+
+    assert result.error is not None
+    assert result.error.type == "UnawaitedToolCallError"
+    assert "save_result" in result.error.message
+
+
+def test_pyodide_discarded_unawaited_call_fails_at_preflight() -> None:
+    # preflight is host-side, so this runs without deno
+    runtime = Toolplane(ambient_cli=False)
+
+    result = run(
+        runtime.execute(
+            "save_result({'v': 1})\nreturn 1",
+            backend="pyodide-deno",
+        )
+    )
+
+    assert result.error is not None
+    assert result.error.type == "UnawaitedToolCallError"

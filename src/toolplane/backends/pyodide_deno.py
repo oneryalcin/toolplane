@@ -30,6 +30,7 @@ from ..results import _NON_JSON_GUIDANCE, render_pyodide_result_bindings
 from ._python import (
     UNAWAITED_CALL_ERROR_TYPE,
     UNAWAITED_CALL_MESSAGE,
+    find_unawaited_calls,
     wrap_async_main,
 )
 
@@ -67,6 +68,23 @@ class PyodideDenoBackend:
         ambient_cli_allowed_binaries: Sequence[str] | None = None,
     ) -> ExecutionResult:
         started = time.perf_counter()
+        preflight = find_unawaited_calls(
+            code,
+            _async_binding_names(
+                inputs=inputs or {},
+                namespace=namespace or {},
+                scoped_namespace=scoped_namespace or {},
+                ambient_cli=ambient_cli,
+                ambient_cli_names=ambient_cli_names,
+            ),
+        )
+        if preflight:
+            return _error_result(
+                backend=self.name,
+                started=started,
+                error_type=UNAWAITED_CALL_ERROR_TYPE,
+                message="; ".join(preflight),
+            )
         if shutil.which(self.deno_path) is None:
             return _error_result(
                 backend=self.name,
@@ -179,6 +197,37 @@ class PyodideDenoBackend:
         )
 
 
+def _async_binding_names(
+    *,
+    inputs: Mapping[str, Any],
+    namespace: Mapping[str, str],
+    scoped_namespace: Mapping[str, Mapping[str, str]],
+    ambient_cli: bool,
+    ambient_cli_names: Sequence[str],
+) -> set[str]:
+    """Names bound to async callables in the rendered sandbox.
+
+    Mirrors the render precedence in _build_pyodide_code closely enough for
+    preflight: inputs shadow everything, so subtracting them can only cause
+    false negatives, never false positives.
+    """
+    names = {"call_tool"}
+    names |= {name for name in namespace if name.isidentifier()}
+    reserved = set(inputs) | set(namespace) | set(scoped_namespace)
+    cli_names: set[str] = set()
+    if ambient_cli:
+        cli_names = {
+            name
+            for name in ambient_cli_names
+            if name not in reserved and is_safe_cli_name(name)
+        }
+        names |= cli_names
+    for result_name in ("save_result", "load_result"):
+        if result_name not in reserved | cli_names:
+            names.add(result_name)
+    return names - set(inputs)
+
+
 def _build_pyodide_code(
     code: str,
     *,
@@ -233,6 +282,7 @@ from pyodide.ffi import to_js
 
 __toolplane_callback_url__ = {callback_url!r}
 __toolplane_callback_token__ = {callback_token!r}
+__toolplane_unawaited_flag__ = False
 
 def __toolplane_scan_unawaited__(value):
     if __toolplane_inspect__.iscoroutine(value):
@@ -293,7 +343,8 @@ globals().update(json.loads({inputs_json!r}))
 
 __toolplane_result__ = await __toolplane_main__()
 if __toolplane_scan_unawaited__(__toolplane_result__):
-    __toolplane_result__ = {{"__toolplane_unawaited_call__": True}}
+    __toolplane_unawaited_flag__ = True
+    __toolplane_result__ = None
 __toolplane_result__
 """
 
@@ -449,11 +500,10 @@ def _response_to_result(
                 traceback=error.get("traceback") or error.get("stack") or "",
             ),
         )
-    value = response.get("result")
-    # sentinel from the rendered runner: raising in-sandbox surfaces as an
-    # opaque PythonError through the Deno layer, so the scan swaps the value
-    # for this marker and the host maps it to a typed error instead
-    if isinstance(value, dict) and value.get("__toolplane_unawaited_call__"):
+    # out-of-band signal from the runner: raising in-sandbox surfaces as an
+    # opaque PythonError through the Deno layer, and a marker inside the
+    # result would reserve a user-visible JSON shape
+    if response.get("unawaited"):
         return ExecutionResult(
             stdout=response.get("stdout") or "",
             stderr=response.get("stderr") or "",
@@ -465,7 +515,7 @@ def _response_to_result(
             ),
         )
     return ExecutionResult(
-        value=value,
+        value=response.get("result"),
         stdout=response.get("stdout") or "",
         stderr=response.get("stderr") or "",
         duration_ms=_elapsed_ms(started),
@@ -556,9 +606,20 @@ sys.stderr = io.StringIO()
     };
   }
 
+  // out-of-band: the unawaited-call signal must never live inside the user
+  // result payload, where it would reserve a JSON shape
+  let unawaited = false;
+  try {
+    unawaited = !!pyodide.runPython(
+      "globals().get('__toolplane_unawaited_flag__', False)",
+    );
+  } catch (_err) {
+    unawaited = false;
+  }
+
   const stdout = pyodide.runPython("sys.stdout.getvalue()");
   const stderr = pyodide.runPython("sys.stderr.getvalue()");
-  return { result, stdout, stderr, error };
+  return { result, stdout, stderr, error, unawaited };
 }
 
 serve(async (request) => {

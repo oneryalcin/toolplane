@@ -24,6 +24,7 @@ from ..results import build_result_bindings
 from ._python import (
     UNAWAITED_CALL_ERROR_TYPE,
     UNAWAITED_CALL_MESSAGE,
+    find_unawaited_calls,
     wrap_async_main,
 )
 
@@ -103,6 +104,16 @@ class MontyBackend:
         _ensure_no_input_collisions(input_namespace, set(external_functions))
 
         streams = CollectStreams()
+        preflight = find_unawaited_calls(code, set(external_functions))
+        if preflight:
+            return self._result(
+                started,
+                streams,
+                error=ExecutionError(
+                    type=UNAWAITED_CALL_ERROR_TYPE,
+                    message="; ".join(preflight),
+                ),
+            )
         try:
             interpreter = await Monty.acreate(
                 wrap_async_main(code) + "\n\nawait __toolplane_main__()",
