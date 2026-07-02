@@ -190,9 +190,17 @@ def build_mcp_facade(
 async def build_mcp_facade_from_config(
     config: ConfigSource,
     *,
+    transport: Transport = "stdio",
     allow_unsafe: bool = False,
 ) -> "FastMCP":
-    parsed = load_toolplane_config(config)
+    """Build the facade from config, applying transport-dependent policy.
+
+    The transport decision lives here, not only in serve_mcp_facade, so an
+    embedder building from config for a multi-client transport gets the
+    fail-closed store (and no results resource template) without having to
+    know about resolve_serve_config.
+    """
+    parsed = resolve_serve_config(load_toolplane_config(config), transport)
     policy = EffectivePolicy.from_config(parsed, allow_unsafe=allow_unsafe)
     ensure_safe_facade_policy(policy)
     runtime = await Toolplane.from_config(parsed)
@@ -224,8 +232,9 @@ async def serve_mcp_facade(
     port: int | None = None,
     allow_unsafe: bool = False,
 ) -> None:
-    parsed = resolve_serve_config(load_toolplane_config(config), transport)
-    app = await build_mcp_facade_from_config(parsed, allow_unsafe=allow_unsafe)
+    app = await build_mcp_facade_from_config(
+        config, transport=transport, allow_unsafe=allow_unsafe
+    )
     kwargs: dict[str, Any] = {}
     if host is not None:
         kwargs["host"] = host

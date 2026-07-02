@@ -126,6 +126,21 @@ def test_results_resource_serves_saved_values_and_signposts_misses() -> None:
     assert "unknown or expired result handle" in missing_error
 
 
+def test_config_builder_fails_closed_on_multi_client_transport() -> None:
+    async def exercise() -> list[str]:
+        # default config: store enabled, no CLI, no MCP servers
+        app = await build_mcp_facade_from_config(
+            ToolplaneConfig(), transport="http"
+        )
+        async with Client(app) as client:
+            return [t.uriTemplate for t in await client.list_resource_templates()]
+
+    # adversarial review finding: an embedder building from config for a
+    # multi-client transport must get the fail-closed store — no results
+    # template — without knowing about resolve_serve_config
+    assert run(exercise()) == []
+
+
 def test_results_resource_template_absent_when_store_disabled() -> None:
     from toolplane.results import ResultStore
 
