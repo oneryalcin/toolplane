@@ -37,8 +37,8 @@ toolplane mcp status --config examples/multi_server.toml
 
 The remote/OAuth/bearer blocks are commented out because they need external
 setup - an OAuth server is added via the `fastmcp-remote` bridge and primed once
-(`uvx fastmcp-remote <url>`); a bearer server keeps its token in an environment
-variable via `--header`. See the comments in the file for each form.
+(`toolplane mcp login <name>`); a bearer server keeps its token in an
+environment variable via `--header`. See the comments in the file for each form.
 
 The Context7 example uses the live remote MCP endpoint, so it is intentionally
 not part of `make examples`:
