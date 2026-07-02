@@ -228,3 +228,62 @@ def test_execute_preserves_legacy_custom_backend_signature() -> None:
 
     assert result.ok
     assert result.value == {"ambient_cli_names": ("git",)}
+
+
+def _deepwiki_like_runtime() -> Toolplane:
+    """Registry shaped like the live session that exposed the search bug."""
+    runtime = Toolplane(ambient_cli=False)
+
+    @runtime.tool(name="read_wiki_structure", tags={"deepwiki"})
+    def read_wiki_structure(repoName: str) -> str:
+        """Get a list of documentation topics for a GitHub repository in
+        the owner/repo format."""
+        return ""
+
+    @runtime.tool(name="ask_question", tags={"deepwiki"})
+    def ask_question(repoName: str, question: str) -> str:
+        """Ask any question about a GitHub repository and get an AI-powered
+        response grounded in the repository context."""
+        return ""
+
+    return runtime
+
+
+def test_search_does_not_match_query_words_as_substrings() -> None:
+    runtime = _deepwiki_like_runtime()
+
+    # 'is' hid inside "list", 'git' inside "GitHub", short words matched
+    # everything — each of these must now return no capabilities
+    for query in ("is", "do", "git", "what is the weather in paris"):
+        result = run(runtime.search(query))
+        assert result == "No capabilities matched the query.", (query, result)
+
+
+def test_search_still_matches_words_inside_underscored_names() -> None:
+    runtime = _deepwiki_like_runtime()
+
+    # subword of a snake_case name, whole name, and description words
+    for query in ("wiki", "structure", "read_wiki_structure", "documentation"):
+        result = run(runtime.search(query))
+        assert "read_wiki_structure" in result, (query, result)
+
+    result = run(runtime.search("question"))
+    assert "ask_question" in result
+
+
+def test_search_matches_words_inside_camel_case_names() -> None:
+    # MCP servers commonly expose camelCase tool names; substring scoring
+    # covered them by accident, token matching must split case boundaries
+    runtime = Toolplane(ambient_cli=False)
+
+    @runtime.tool(name="createIssue", tags={"tracker"})
+    def create_issue(repoName: str) -> str:
+        """Open a ticket."""
+        return ""
+
+    for query in ("issue", "create", "createIssue", "repo name"):
+        result = run(runtime.search(query))
+        assert "createIssue" in result, (query, result)
+
+    result = run(runtime.search("wiki"))
+    assert result == "No capabilities matched the query."
