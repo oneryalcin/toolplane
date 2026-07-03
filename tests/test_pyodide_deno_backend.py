@@ -302,3 +302,26 @@ def test_pyodide_multiline_exception_message_recovers_real_type() -> None:
     assert result.error is not None
     assert result.error.type == "ValueError"
     assert result.error.message == "first\nretry"
+
+
+@pytest.mark.skipif(shutil.which("deno") is None, reason="Deno is not installed")
+def test_pyodide_non_json_save_catchable_as_valueerror() -> None:
+    async def exercise():
+        runtime = Toolplane(ambient_cli=False)
+        return await runtime.execute(
+            """
+try:
+    await save_result({1, 2})
+except ValueError as exc:
+    return {"caught": "ValueError", "msg": str(exc)}
+""",
+            backend="pyodide-deno",
+        )
+
+    result = run(exercise())
+
+    # adversarial finding: the rendered save_result pre-check raised bare
+    # Exception, breaking the documented except-ValueError contract
+    assert result.error is None, result.error
+    assert result.value["caught"] == "ValueError"
+    assert "save a JSON-shaped projection instead" in result.value["msg"]

@@ -312,7 +312,9 @@ async def call_tool(name, params=None):
             {{"name": name, "params": params or {{}}}}, allow_nan=False
         )
     except (TypeError, ValueError) as exc:
-        raise Exception(
+        # ValueError matches the host ResultStoreError mapping, so the
+        # documented catch contract holds on this pre-check path too
+        raise ValueError(
             "arguments for " + repr(name) + " are not JSON-serializable ("
             + str(exc) + "); only JSON-shaped values can cross the sandbox "
             "bridge; " + {non_json_guidance!r}
