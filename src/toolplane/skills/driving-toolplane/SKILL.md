@@ -52,9 +52,9 @@ Only binaries on the server's allowlist are bound (the manifest lists them).
   or `exit_code`, and read `stderr` on failure.
 - A non-allowlisted binary has **no binding**: calling it raises a plain
   `NameError`, which looks like a typo but means policy. The generic runners
-  (`cli_run(binary, subcommand, options)` on monty, the `cli` object on
-  local/pyodide) reject the same binary with an explicit policy error that
-  names the allowed binaries.
+  (`cli_run(binary, subcommand, flag=value, ...)` on monty, the `cli` object
+  on local/pyodide) reject the same binary with an explicit policy error
+  that names the allowed binaries.
 
 ## Result store
 

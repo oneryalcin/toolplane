@@ -285,8 +285,9 @@ class Toolplane:
                     "- Awaiting returns `{'stdout', 'stderr', 'exit_code', 'ok'}`.",
                     "- For a binary whose name is not a valid Python "
                     "identifier, use `await cli_run(binary, subcommand, "
-                    "options_dict)` (monty backend) or the `cli` namespace "
-                    "object (local/pyodide backends).",
+                    "flag=value, ...)` (monty backend; a positional options "
+                    "dict also works) or the `cli` namespace object "
+                    "(local/pyodide backends).",
                     "- Binaries outside the allowlist have no binding — "
                     "calling one raises NameError — and `cli_run` rejects "
                     "them by policy.",

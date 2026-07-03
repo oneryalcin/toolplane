@@ -196,3 +196,76 @@ return "Python" in (version["stdout"] + version["stderr"])
         return bool(result.value)
 
     assert run(exercise()) is True
+
+
+# --- #52: failure paths must teach the call shape, not leak internals ---
+
+
+def test_runner_rejects_non_string_subcommand_with_shape_guidance() -> None:
+    from toolplane.adapters.ambient_cli import AmbientCliRunner
+
+    runner = AmbientCliRunner()
+
+    with pytest.raises(TypeError) as excinfo:
+        run(runner("git", ["log", "--oneline"]))
+
+    message = str(excinfo.value)
+    assert "subcommand must be a string" in message
+    assert "await git('log', oneline=True, max_count=3)" in message
+
+
+def test_runner_rejects_whitespace_subcommand_with_shape_guidance() -> None:
+    from toolplane.adapters.ambient_cli import AmbientCliRunner
+
+    runner = AmbientCliRunner()
+
+    # the whole-string-as-one-token mistake previously reached git and
+    # produced a misdirecting "not a git command" error
+    with pytest.raises(ValueError) as excinfo:
+        run(runner("git", "log --oneline -3"))
+
+    message = str(excinfo.value)
+    assert "contains whitespace" in message
+    assert "await git('log', oneline=True, max_count=3)" in message
+
+
+def test_runner_rejects_non_mapping_options_with_shape_guidance() -> None:
+    from toolplane.adapters.ambient_cli import AmbientCliRunner
+
+    runner = AmbientCliRunner()
+
+    with pytest.raises(TypeError) as excinfo:
+        run(runner("git", "log", ["--oneline"]))
+
+    message = str(excinfo.value)
+    assert "options must be a dict" in message
+    assert "cli_run('git', 'log', {'oneline': True" in message
+
+
+def test_local_flat_binding_rejects_extra_positionals_with_guidance() -> None:
+    from toolplane.adapters.ambient_cli import AmbientCliBinary
+
+    binary = AmbientCliBinary(_RecordingBridge(), "git")
+
+    # the literal shell form — the obvious first guess in the live session
+    with pytest.raises(TypeError) as excinfo:
+        binary("log", "--oneline", "-3")
+
+    message = str(excinfo.value)
+    assert "takes at most one positional argument" in message
+    assert "await git('log', oneline=True, max_count=3)" in message
+    assert "<locals>" not in message
+
+
+class _RecordingBridge:
+    async def call_tool(self, name, params=None):
+        return {"stdout": "", "stderr": "", "exit_code": 0, "ok": True}
+
+
+def test_pyodide_cli_template_carries_shape_guidance() -> None:
+    from toolplane.adapters.ambient_cli import render_pyodide_cli_namespace
+
+    rendered = render_pyodide_cli_namespace(["git"], reserved=set())
+
+    assert "takes at most one positional argument" in rendered
+    assert "await git('log', oneline=True, max_count=3)" in rendered
