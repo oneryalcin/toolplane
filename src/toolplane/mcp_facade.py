@@ -85,6 +85,22 @@ def build_mcp_facade(
             # contract beats the cosmetic read-time mime label
             return runtime.result_store.payload(handle)
 
+    if runtime.artifact_store.enabled:
+
+        @mcp.resource(
+            "toolplane://artifacts/{handle}",
+            name="artifacts",
+            description=(
+                "An artifact saved with save_artifact, served as binary. "
+                "Read toolplane://artifacts/<handle> with the handle from "
+                "save_artifact or the execute_code response's artifacts "
+                "list."
+            ),
+            mime_type="application/octet-stream",
+        )
+        def artifact_resource(handle: str) -> bytes:
+            return runtime.artifact_store.load(handle)
+
     @mcp.tool
     async def search_capabilities(
         query: str,
@@ -220,14 +236,17 @@ def resolve_serve_config(
 ) -> ToolplaneConfig:
     """Apply transport-dependent policy before building the runtime.
 
-    The result store is session-scoped, and only stdio guarantees one client
-    per process. Multi-client transports fail closed: the store is disabled
-    rather than shared across clients.
+    Both stores are session-scoped, and only stdio guarantees one client
+    per process. Multi-client transports fail closed: the stores are
+    disabled rather than shared across clients.
     """
-    if transport == "stdio" or not config.results.enabled:
+    if transport == "stdio" or not (
+        config.results.enabled or config.artifacts.enabled
+    ):
         return config
     updated = config.model_copy(deep=True)
     updated.results.enabled = False
+    updated.artifacts.enabled = False
     return updated
 
 

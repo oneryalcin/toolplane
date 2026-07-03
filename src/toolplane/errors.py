@@ -43,5 +43,9 @@ class ResultStoreError(ToolplaneError, ValueError):
     """Raised when the result store rejects a save or load."""
 
 
+class ArtifactStoreError(ToolplaneError, ValueError):
+    """Raised when the artifact store rejects a save or load."""
+
+
 class UnsafeFacadeConfigError(ToolplaneError):
     """Raised when an MCP facade config exposes unsafe defaults."""

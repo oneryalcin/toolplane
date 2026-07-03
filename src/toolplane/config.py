@@ -74,6 +74,18 @@ class ResultsSettings(BaseModel):
     ttl_seconds: float = Field(default=3600.0, gt=0)
 
 
+class ArtifactsSettings(BaseModel):
+    """Artifact store policy: disk-backed, capped, TTL'd, session-scoped."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    max_entries: int = Field(default=32, gt=0)
+    max_total_bytes: int = Field(default=256 * 1024 * 1024, gt=0)
+    max_entry_bytes: int = Field(default=64 * 1024 * 1024, gt=0)
+    ttl_seconds: float = Field(default=3600.0, gt=0)
+
+
 class McpSettings(BaseModel):
     """MCP adapter settings.
 
@@ -101,6 +113,7 @@ class ToolplaneConfig(BaseModel):
     toolplane: ToolplaneSettings = Field(default_factory=ToolplaneSettings)
     cli: CliSettings = Field(default_factory=CliSettings)
     results: ResultsSettings = Field(default_factory=ResultsSettings)
+    artifacts: ArtifactsSettings = Field(default_factory=ArtifactsSettings)
     mcp: McpSettings = Field(default_factory=McpSettings)
 
 
