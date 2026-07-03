@@ -251,9 +251,32 @@ def test_pyodide_cli_policy_rejection_is_legible() -> None:
 
     # the policy signpost must survive the Deno error path
     assert result.error is not None
-    assert result.error.type == "RuntimeError"
+    assert result.error.type == "PermissionError"
     assert "not allowed by Toolplane policy: curl" in result.error.message
     assert "Allowed binaries: git" in result.error.message
+
+
+@pytest.mark.skipif(shutil.which("deno") is None, reason="Deno is not installed")
+def test_pyodide_flat_cli_policy_catchable_as_permissionerror() -> None:
+    async def exercise():
+        runtime = Toolplane(ambient_cli=True, ambient_cli_allowlist=["git"])
+        return await runtime.execute(
+            """
+try:
+    await cli.curl()
+except PermissionError as exc:
+    return {"caught": "PermissionError", "msg": str(exc)}
+""",
+            backend="pyodide-deno",
+        )
+
+    result = run(exercise())
+
+    # driver-found gap: the in-sandbox cli pre-check raised RuntimeError,
+    # escaping the except PermissionError contract the skill documents
+    assert result.error is None, result.error
+    assert result.value["caught"] == "PermissionError"
+    assert "Allowed binaries: git" in result.value["msg"]
 
 
 def test_recover_python_error_keeps_opaque_when_no_traceback() -> None:
