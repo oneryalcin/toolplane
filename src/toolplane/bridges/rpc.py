@@ -8,7 +8,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from typing import Any
 
-from .base import HostBridge, ToolCallError, ToolCallRequest, ToolCallResponse
+from .base import (
+    HostBridge,
+    ToolCallError,
+    ToolCallRequest,
+    ToolCallResponse,
+    nearest_builtin_exception,
+)
 
 
 class HttpCallbackBridge:
@@ -80,6 +86,7 @@ class HttpCallbackBridge:
                         ToolCallError(
                             type=type(exc).__name__,
                             message=str(exc),
+                            builtin=nearest_builtin_exception(exc),
                         )
                     )
                 self._write_response(response)

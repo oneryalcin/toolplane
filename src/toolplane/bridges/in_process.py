@@ -14,7 +14,12 @@ from ..results import (
     RESULTS_SAVE_CAPABILITY,
     ResultStore,
 )
-from .base import ToolCallError, ToolCallRequest, ToolCallResponse
+from .base import (
+    ToolCallError,
+    ToolCallRequest,
+    ToolCallResponse,
+    nearest_builtin_exception,
+)
 
 
 class InProcessBridge:
@@ -61,6 +66,7 @@ class InProcessBridge:
                     type=type(exc).__name__,
                     message=str(exc),
                     traceback=traceback.format_exc(),
+                    builtin=nearest_builtin_exception(exc),
                 )
             )
 

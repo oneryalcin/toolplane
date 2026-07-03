@@ -364,7 +364,9 @@ def _toolplane_ensure_cli_allowed(binary):
         and binary not in _TOOLPLANE_ALLOWED_CLI_BINARIES
     ):
         allowed = ", ".join(sorted(_TOOLPLANE_ALLOWED_CLI_BINARIES)) or "none"
-        raise RuntimeError(
+        # PermissionError, matching the host-side CliPolicyError mapping, so
+        # the same catch pattern works on the in-sandbox pre-check path too
+        raise PermissionError(
             "CLI binary is not allowed by Toolplane policy: " + binary
             + ". Allowed binaries: " + allowed + "."
         )

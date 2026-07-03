@@ -158,6 +158,26 @@ host owns the store, the sandbox only sends requests.
 | NaN / Infinity       | fails at save; would corrupt to null in MCP responses |
 | store disabled       | `save_result`/`load_result` fail with "results store is disabled" |
 
+## Error-catching contract
+
+Store errors are catchable in-sandbox as **`ValueError`** on every backend —
+`except ValueError` handles "handle expired → re-save and retry" without
+string-matching:
+
+```python
+try:
+    rows = await load_result(handle)
+except ValueError:
+    rows = await recompute()
+```
+
+Mechanism: `ResultStoreError` subclasses `ValueError`; monty maps external
+exceptions to their nearest builtin base, local raises the real instance
+(caught via inheritance), and the pyodide bridge re-raises the builtin named
+in the RPC error (`ToolCallError.builtin`). The toolplane-specific type name
+only exists host-side. The same scheme gives `PermissionError` for CLI
+policy rejections and `LookupError` for unknown capability names.
+
 ## MCP resource lane
 
 Saved values are also readable as MCP resources: `toolplane://results/<handle>`
