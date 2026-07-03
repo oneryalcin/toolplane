@@ -16,7 +16,11 @@ from pydantic_monty import (
     ResourceLimits,
 )
 
-from ..adapters.ambient_cli import AMBIENT_CLI_CAPABILITY, is_safe_cli_name
+from ..adapters.ambient_cli import (
+    AMBIENT_CLI_CAPABILITY,
+    CLI_SHAPE_GUIDANCE,
+    is_safe_cli_name,
+)
 from ..bridges.base import HostBridge
 from ..errors import BackendCapabilityError, NamespaceCollisionError
 from ..execution import BackendCapabilities, ExecutionError, ExecutionResult
@@ -247,13 +251,30 @@ def _make_cli_run(bridge: HostBridge) -> Any:
         binary: str,
         subcommand: str | None = None,
         options: Mapping[str, Any] | None = None,
+        **flags: Any,
     ) -> Any:
+        # flags may come as a positional dict or as keyword arguments —
+        # one convention shared with the flat bindings, not two to guess
+        if options is not None and not isinstance(options, Mapping):
+            raise TypeError(
+                f"cli_run options must be a dict of flags, got "
+                f"{type(options).__name__!r}. {CLI_SHAPE_GUIDANCE}"
+            )
+        merged = dict(options or {})
+        overlap = sorted(set(merged) & set(flags))
+        if overlap:
+            raise TypeError(
+                f"cli_run got flags both in the options dict and as "
+                f"keyword arguments: {', '.join(overlap)}. Pass each flag "
+                f"once. {CLI_SHAPE_GUIDANCE}"
+            )
+        merged.update(flags)
         return await bridge.call_tool(
             AMBIENT_CLI_CAPABILITY,
             {
                 "binary": binary,
                 "subcommand": subcommand,
-                "options": dict(options or {}),
+                "options": merged,
             },
         )
 
@@ -261,7 +282,15 @@ def _make_cli_run(bridge: HostBridge) -> Any:
 
 
 def _make_cli_binary(bridge: HostBridge, binary: str) -> Any:
-    async def run_binary(subcommand: str | None = None, **options: Any) -> Any:
+    async def run_binary(
+        subcommand: str | None = None, *args: Any, **options: Any
+    ) -> Any:
+        if args:
+            raise TypeError(
+                f"{binary}() takes at most one positional argument (the "
+                f"subcommand); flags are keyword arguments. "
+                f"{CLI_SHAPE_GUIDANCE}"
+            )
         return await bridge.call_tool(
             AMBIENT_CLI_CAPABILITY,
             {

@@ -20,6 +20,14 @@ from .cli_to_py import normalize_cli_result
 AMBIENT_CLI_CAPABILITY = "toolplane:cli/run"
 RESERVED_CLI_NAMES = {"call_tool", "cli"}
 
+# one shape lesson for every CLI failure path: a wrong guess must teach the
+# right call, not leak the internals it tripped over
+CLI_SHAPE_GUIDANCE = (
+    "CLI call shape: subcommand as the first positional argument, flags as "
+    "keyword arguments — e.g. await git('log', oneline=True, max_count=3) "
+    "or await cli_run('git', 'log', {'oneline': True, 'max_count': 3})"
+)
+
 
 class AmbientCliRunner:
     """Run CLI commands through cli-to-py, loading each binary lazily."""
@@ -34,8 +42,13 @@ class AmbientCliRunner:
         subcommand: str | None = None,
         options: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        api = await self._api(binary)
+        if options is not None and not isinstance(options, Mapping):
+            raise TypeError(
+                f"CLI options must be a dict of flags, got "
+                f"{type(options).__name__!r}. {CLI_SHAPE_GUIDANCE}"
+            )
         resolved_subcommand = _normalize_subcommand(subcommand)
+        api = await self._api(binary)
         if resolved_subcommand is not None:
             await self._parse_subcommand(api, binary, resolved_subcommand)
         command = (
@@ -70,6 +83,17 @@ class AmbientCliRunner:
 def _normalize_subcommand(subcommand: str | None) -> str | None:
     if subcommand is None:
         return None
+    if not isinstance(subcommand, str):
+        raise TypeError(
+            f"CLI subcommand must be a string, got "
+            f"{type(subcommand).__name__!r}. {CLI_SHAPE_GUIDANCE}"
+        )
+    if any(char.isspace() for char in subcommand):
+        raise ValueError(
+            f"CLI subcommand {subcommand!r} contains whitespace — it is "
+            f"passed as a single argv token, so flags do not belong in it. "
+            f"{CLI_SHAPE_GUIDANCE}"
+        )
     try:
         from cli_to_py.case import snake_to_kebab
     except ImportError:  # pragma: no cover - dependency is required
@@ -207,8 +231,15 @@ class AmbientCliBinary:
         self,
         subcommand: str | None = None,
         /,
+        *args: Any,
         **options: Any,
     ) -> AmbientCliCall:
+        if args:
+            raise TypeError(
+                f"{self._binary}() takes at most one positional argument "
+                f"(the subcommand); flags are keyword arguments. "
+                f"{CLI_SHAPE_GUIDANCE}"
+            )
         return AmbientCliCall(
             self._bridge,
             binary=self._binary,
@@ -287,6 +318,7 @@ def render_pyodide_cli_namespace(
     allowed_json = (
         "None" if allowed_binaries is None else json.dumps(sorted(allowed_binaries))
     )
+    cli_shape_guidance = CLI_SHAPE_GUIDANCE
     top_level = [
         name
         for name in names
@@ -333,7 +365,13 @@ class _ToolplaneCliBinary:
         _toolplane_ensure_cli_allowed(binary)
         self.binary = binary
 
-    def __call__(self, subcommand=None, /, **options):
+    def __call__(self, subcommand=None, /, *args, **options):
+        if args:
+            raise TypeError(
+                self.binary + "() takes at most one positional argument "
+                "(the subcommand); flags are keyword arguments. "
+                + {cli_shape_guidance!r}
+            )
         return _ToolplaneCliCall(self.binary, subcommand, options)
 
     def __getattr__(self, subcommand):

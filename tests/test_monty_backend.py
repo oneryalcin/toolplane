@@ -359,3 +359,72 @@ def test_monty_deferred_await_is_not_a_false_positive() -> None:
 
     assert result.error is None, result.error
     assert result.value.startswith("res_")
+
+
+def test_monty_flat_cli_binding_teaches_shape_on_extra_positionals() -> None:
+    backend = MontyBackend()
+    bridge = _StubBridge()
+
+    result = run(
+        backend.run(
+            "return await git('log', '--oneline', '-3')",
+            bridge=bridge,
+            ambient_cli=True,
+            ambient_cli_names=("git",),
+        )
+    )
+
+    # previously: "TypeError: _make_cli_binary.<locals>.run_binary() takes
+    # from 0 to 1 positional arguments but 3 were given"
+    assert result.error is not None
+    assert "takes at most one positional argument" in result.error.message
+    assert "await git('log', oneline=True, max_count=3)" in result.error.message
+    assert "<locals>" not in result.error.message
+
+
+def test_monty_cli_run_accepts_flag_kwargs() -> None:
+    async def fake_cli(**params: Any) -> dict[str, Any]:
+        return {"stdout": "", "stderr": "", "exit_code": 0, "ok": True}
+
+    backend = MontyBackend()
+    bridge = _StubBridge({"toolplane:cli/run": fake_cli})
+
+    result = run(
+        backend.run(
+            "return await cli_run('git', 'log', oneline=True, max_count=3)",
+            bridge=bridge,
+            ambient_cli=True,
+            ambient_cli_names=("git",),
+        )
+    )
+
+    # one convention with the flat bindings: kwargs are flags
+    assert result.error is None, result.error
+    assert bridge.calls == [
+        (
+            "toolplane:cli/run",
+            {
+                "binary": "git",
+                "subcommand": "log",
+                "options": {"oneline": True, "max_count": 3},
+            },
+        )
+    ]
+
+
+def test_monty_cli_run_rejects_conflicting_flag_sources() -> None:
+    backend = MontyBackend()
+    bridge = _StubBridge()
+
+    result = run(
+        backend.run(
+            "return await cli_run('git', 'log', {'oneline': True}, oneline=False)",
+            bridge=bridge,
+            ambient_cli=True,
+            ambient_cli_names=("git",),
+        )
+    )
+
+    assert result.error is not None
+    assert "both in the options dict and as keyword arguments" in result.error.message
+    assert "oneline" in result.error.message
