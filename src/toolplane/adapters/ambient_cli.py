@@ -57,6 +57,7 @@ class AmbientCliPolicy:
         self.escalation_available = False
         self._session_grants: set[str] = set()
         self._asked: set[str] = set()
+        self._inflight: dict[str, asyncio.Task[bool]] = {}
 
     @property
     def restricted(self) -> bool:
@@ -79,14 +80,42 @@ class AmbientCliPolicy:
             # once per (session, binary): the human's answer is cached
             # either way, so a denied binary never re-prompts
             self._asked.add(binary)
+            # the handler runs as its own task so the run that asked can
+            # abandon it (cancel_pending_escalations): backend timeouts do
+            # not reliably cancel detached dispatch coroutines, and a human
+            # answer that lands after its run died must not mutate policy
+            task = asyncio.ensure_future(handler(binary))
+            self._inflight[binary] = task
+            granted = False
             try:
-                granted = bool(await handler(binary))
+                granted = bool(await task)
+            except asyncio.CancelledError:
+                # abandoned question, not a decision: forget it so a retry
+                # re-prompts the human, whose earlier form is now stale
+                self._asked.discard(binary)
+                if not task.cancelled():
+                    task.cancel()
+                    raise  # our own caller is being cancelled
             except Exception:
                 granted = False
+            finally:
+                self._inflight.pop(binary, None)
             if granted:
                 self._session_grants.add(binary)
                 return
         _ensure_binary_allowed(binary, self.effective_allowlist())
+
+    def cancel_pending_escalations(self) -> tuple[str, ...]:
+        """Abandon escalations whose requesting run has ended.
+
+        Returns the binaries that were still waiting on a human. Their
+        `_asked` marks are cleared by the unwinding tasks, so a later run
+        asks again instead of silently inheriting a stale answer.
+        """
+        pending = tuple(sorted(self._inflight))
+        for task in self._inflight.values():
+            task.cancel()
+        return pending
 
 
 class AmbientCliRunner:

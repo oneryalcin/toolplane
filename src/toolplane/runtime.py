@@ -402,7 +402,30 @@ class Toolplane:
             if self.artifact_store.enabled
             else set()
         )
-        result = await runner.run(code, **run_kwargs)
+        try:
+            result = await runner.run(code, **run_kwargs)
+        finally:
+            # escalations must not outlive the run that asked: a backend
+            # timeout leaves the dispatch coroutine (and its open human
+            # prompt) running detached, and a late answer would mutate
+            # session policy invisibly (found live in #71 certification)
+            interrupted = self.cli_policy.cancel_pending_escalations()
+        if interrupted and result.error is not None:
+            binaries = ", ".join(interrupted)
+            result = result.model_copy(
+                update={
+                    "error": result.error.model_copy(
+                        update={
+                            "message": (
+                                f"{result.error.message} The run was still "
+                                "waiting for a human decision on: "
+                                f"{binaries}. That request was cancelled "
+                                "with the run — execute again to re-prompt."
+                            )
+                        }
+                    )
+                }
+            )
         if self.artifact_store.enabled:
             # agents never enumerate resources unaided — the handle and URI
             # must arrive in the response they are already reading

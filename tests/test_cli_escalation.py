@@ -31,7 +31,7 @@ REFUSAL = (
 )
 
 
-def _runtime_with_fake_cli(allowlist=("git",)):
+def _runtime_with_fake_cli(allowlist=("git",), backends=None):
     """Runtime whose toolplane:cli/run never spawns a real binary."""
     registry = CapabilityRegistry()
     spawned: list[str] = []
@@ -56,6 +56,7 @@ def _runtime_with_fake_cli(allowlist=("git",)):
         registry=registry,
         ambient_cli=True,
         ambient_cli_allowlist=allowlist,
+        backends=backends,
     )
     return runtime, spawned
 
@@ -237,6 +238,91 @@ def test_pyodide_escalation_grant_and_decline() -> None:
     assert result.error is None, result.error
     assert result.value["granted_ok"] is True
     assert "not allowed by Toolplane policy: wget" in result.value["refused"]
+    assert spawned == ["curl"]
+
+
+# --- escalations are run-scoped (driver findings on #71) ---------------------
+
+
+def test_run_timeout_abandons_escalation_and_teaches_retry() -> None:
+    """Driver-found on #71: monty's timeout kills the run but the detached
+    dispatch keeps the human prompt alive, and a late answer silently
+    mutated session policy. Now the run's end cancels pending escalations,
+    the late answer is discarded, and the timeout error says what to do."""
+    from toolplane.backends import MontyBackend
+
+    runtime, spawned = _runtime_with_fake_cli(
+        backends=[MontyBackend(timeout_seconds=0.3)]
+    )
+    gate = asyncio.Event()
+    outcomes: list[str] = []
+
+    async def human_still_reading(binary: str) -> bool:
+        try:
+            await gate.wait()
+        except asyncio.CancelledError:
+            outcomes.append("cancelled")
+            raise
+        outcomes.append("answered")
+        return True
+
+    runtime.cli_policy.escalation_handler = human_still_reading
+
+    async def exercise():
+        result = await runtime.execute(
+            'return await cli_run("curl")', backend="monty"
+        )
+        await asyncio.sleep(0)  # let the abandoned task unwind
+        gate.set()  # the human answers "allow" on the now-stale form
+        await asyncio.sleep(0)
+        return result
+
+    result = run(exercise())
+
+    assert result.error is not None
+    assert result.error.type == "TimeoutError"
+    assert "waiting for a human decision on: curl" in result.error.message
+    assert "execute again to re-prompt" in result.error.message
+    # the stale answer must not have granted anything
+    assert runtime.cli_policy.effective_allowlist() == frozenset({"git"})
+    assert outcomes == ["cancelled"]
+    assert spawned == []
+
+
+def test_retry_after_abandoned_escalation_reprompts() -> None:
+    from toolplane.backends import MontyBackend
+
+    runtime, spawned = _runtime_with_fake_cli(
+        backends=[MontyBackend(timeout_seconds=0.3)]
+    )
+    asked: list[str] = []
+
+    async def too_slow(binary: str) -> bool:
+        asked.append(binary)
+        await asyncio.Event().wait()
+        return True
+
+    async def prompt_answered(binary: str) -> bool:
+        asked.append(binary)
+        return True
+
+    async def exercise():
+        runtime.cli_policy.escalation_handler = too_slow
+        first = await runtime.execute(
+            'return await cli_run("curl")', backend="monty"
+        )
+        # the abandoned question was forgotten, so the retry asks again
+        runtime.cli_policy.escalation_handler = prompt_answered
+        second = await runtime.execute(
+            'return await cli_run("curl")', backend="monty"
+        )
+        return first, second
+
+    first, second = run(exercise())
+
+    assert first.error is not None and first.error.type == "TimeoutError"
+    assert second.error is None, second.error
+    assert asked == ["curl", "curl"]
     assert spawned == ["curl"]
 
 
