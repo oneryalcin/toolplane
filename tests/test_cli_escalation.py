@@ -341,6 +341,77 @@ def test_facade_client_without_elicitation_gets_todays_refusal() -> None:
     assert spawned == []
 
 
+def test_multi_client_transport_never_elicits() -> None:
+    """Adversarial finding on PR #71: grants live on the shared runtime
+    policy, so on a multi-client transport client A's approval would let
+    client B run the binary without ever seeing a prompt. Off stdio the
+    facade must not elicit at all — both clients get the plain refusal."""
+    from fastmcp import Client
+
+    from toolplane.mcp_facade import build_mcp_facade_from_config
+
+    prompts: list[str] = []
+
+    async def allow(message, response_type, params, context):
+        prompts.append(message)
+        return "allow"
+
+    async def exercise():
+        app = await build_mcp_facade_from_config(
+            {"cli": {"mode": "allowlist", "allow": ["git"]}},
+            transport="http",
+        )
+        results = []
+        for _ in range(2):  # two clients sharing one facade
+            async with Client(app, elicitation_handler=allow) as client:
+                result = await client.call_tool(
+                    "execute_code",
+                    {
+                        "code": 'return await cli_run("curl")',
+                        "backend": "monty",
+                    },
+                )
+                results.append(result.data)
+        return results
+
+    first, second = run(exercise())
+
+    for data in (first, second):
+        assert data["error"] is not None
+        assert REFUSAL in data["error"]["message"]
+    assert prompts == []
+
+
+def test_stdio_transport_keeps_escalation() -> None:
+    from fastmcp import Client
+
+    from toolplane.mcp_facade import build_mcp_facade_from_config
+
+    prompts: list[str] = []
+
+    async def deny(message, response_type, params, context):
+        prompts.append(message)
+        return "deny"
+
+    async def exercise():
+        app = await build_mcp_facade_from_config(
+            {"cli": {"mode": "allowlist", "allow": ["git"]}},
+            transport="stdio",
+        )
+        async with Client(app, elicitation_handler=deny) as client:
+            result = await client.call_tool(
+                "execute_code",
+                {"code": 'return await cli_run("curl")', "backend": "monty"},
+            )
+            return result.data
+
+    data = run(exercise())
+
+    assert len(prompts) == 1
+    assert data["error"] is not None
+    assert REFUSAL in data["error"]["message"]
+
+
 def test_facade_advertises_escalation_in_the_manifest() -> None:
     runtime, _ = _runtime_with_fake_cli()
 

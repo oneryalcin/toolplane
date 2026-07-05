@@ -30,6 +30,7 @@ def build_mcp_facade(
     runtime: Toolplane,
     *,
     policy: EffectivePolicy | None = None,
+    cli_escalation: bool = True,
 ) -> "FastMCP":
     """Build the small MCP meta-tool surface for a Toolplane runtime."""
     try:
@@ -46,8 +47,13 @@ def build_mcp_facade(
     # handler itself is installed per-request, because ctx.elicit needs the
     # requesting client's context — on the pyodide path the dispatch runs
     # outside the request's contextvars, so the context must travel by
-    # closure, not lookup.
-    cli_escalation = runtime.ambient_cli and runtime.cli_policy.restricted
+    # closure, not lookup. Grants live on the shared runtime policy, so the
+    # caller must pass cli_escalation=False on multi-client transports —
+    # otherwise one client's approval would let another client run the
+    # binary (build_mcp_facade_from_config does this per transport).
+    cli_escalation = (
+        cli_escalation and runtime.ambient_cli and runtime.cli_policy.restricted
+    )
     if cli_escalation:
         runtime.cli_policy.escalation_available = True
 
@@ -299,7 +305,12 @@ async def build_mcp_facade_from_config(
     policy = EffectivePolicy.from_config(parsed, allow_unsafe=allow_unsafe)
     ensure_safe_facade_policy(policy)
     runtime = await Toolplane.from_config(parsed)
-    return build_mcp_facade(runtime, policy=policy)
+    # escalation grants are session-scoped state like the stores: only stdio
+    # guarantees one client per process, so a human approval cannot leak to
+    # a client that never saw the prompt
+    return build_mcp_facade(
+        runtime, policy=policy, cli_escalation=transport == "stdio"
+    )
 
 
 def resolve_serve_config(
