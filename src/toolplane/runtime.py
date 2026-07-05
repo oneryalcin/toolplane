@@ -6,7 +6,11 @@ import inspect
 from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
-from .adapters.ambient_cli import discover_cli_names, register_ambient_cli
+from .adapters.ambient_cli import (
+    AmbientCliPolicy,
+    discover_cli_names,
+    register_ambient_cli,
+)
 from .artifacts import ArtifactStore, register_artifact_capabilities
 from .backends import CodeBackend, LocalUnsafeBackend, MontyBackend, PyodideDenoBackend
 from .bridges.in_process import InProcessBridge
@@ -41,17 +45,13 @@ class Toolplane:
         register_result_capabilities(self.registry)
         register_artifact_capabilities(self.registry)
         self.ambient_cli = ambient_cli
-        self._ambient_cli_allowed_binaries = (
-            frozenset(ambient_cli_allowlist)
-            if ambient_cli_allowlist is not None
-            else None
-        )
+        self.cli_policy = AmbientCliPolicy(ambient_cli_allowlist)
         self._ambient_cli_names: tuple[str, ...] | None = None
         if ambient_cli:
             register_ambient_cli(self.registry)
         self.bridge = InProcessBridge(
             self.registry,
-            ambient_cli_allowed_binaries=self._ambient_cli_allowed_binaries,
+            cli_policy=self.cli_policy,
             result_store=self.result_store,
             artifact_store=self.artifact_store,
         )
@@ -275,7 +275,7 @@ class Toolplane:
         )
         if self.ambient_cli:
             names = self._get_ambient_cli_names()
-            if self._ambient_cli_allowed_binaries is not None:
+            if self.cli_policy.restricted:
                 lines.append(f"Allowed binaries: {', '.join(names)}")
             else:
                 lines.append(
@@ -299,6 +299,16 @@ class Toolplane:
                     "them by policy.",
                 ]
             )
+            if self.cli_policy.escalation_available and self.cli_policy.restricted:
+                lines.append(
+                    "- If you need a binary outside the allowlist, call it "
+                    "through `cli_run` (or the `cli` object): the server "
+                    "pauses and asks the human operator to allow it for "
+                    "this session, once per binary. If granted, it also "
+                    "gains a flat binding in later runs; if refused, you "
+                    "get the policy error — use an allowed binary instead "
+                    "of retrying."
+                )
         else:
             lines.append("CLI access is disabled in this configuration.")
         lines.extend(["", "## Result store"])
@@ -376,17 +386,49 @@ class Toolplane:
             "ambient_cli_names": self._get_ambient_cli_names(),
         }
         if _backend_accepts_run_kwarg(runner, "ambient_cli_allowed_binaries"):
-            run_kwargs["ambient_cli_allowed_binaries"] = (
-                tuple(sorted(self._ambient_cli_allowed_binaries))
-                if self._ambient_cli_allowed_binaries is not None
-                else None
-            )
+            if self.cli_policy.escalation_handler is not None:
+                # binding-layer pre-checks (local constructors, the pyodide
+                # in-sandbox check) would refuse before the bridge can ask
+                # the human; when escalation is live the bridge is the sole
+                # policy authority
+                run_kwargs["ambient_cli_allowed_binaries"] = None
+            else:
+                effective = self.cli_policy.effective_allowlist()
+                run_kwargs["ambient_cli_allowed_binaries"] = (
+                    tuple(sorted(effective)) if effective is not None else None
+                )
         before = (
             set(self.artifact_store.handles())
             if self.artifact_store.enabled
             else set()
         )
-        result = await runner.run(code, **run_kwargs)
+        try:
+            result = await runner.run(code, **run_kwargs)
+        finally:
+            # escalations must not outlive the run that asked: a backend
+            # timeout leaves the dispatch coroutine (and its open human
+            # prompt) running detached, and a late answer would mutate
+            # session policy invisibly (found live in #71 certification)
+            interrupted = self.cli_policy.cancel_pending_escalations()
+        if interrupted and result.error is not None:
+            binaries = ", ".join(interrupted)
+            base = result.error.message.rstrip()
+            if base and not base.endswith((".", "!", "?")):
+                base += "."
+            result = result.model_copy(
+                update={
+                    "error": result.error.model_copy(
+                        update={
+                            "message": (
+                                f"{base} The run was still waiting for a "
+                                f"human decision on: {binaries}. That "
+                                "request was cancelled with the run — "
+                                "execute again to re-prompt."
+                            )
+                        }
+                    )
+                }
+            )
         if self.artifact_store.enabled:
             # agents never enumerate resources unaided — the handle and URI
             # must arrive in the response they are already reading
@@ -403,8 +445,11 @@ class Toolplane:
     def _get_ambient_cli_names(self) -> tuple[str, ...]:
         if not self.ambient_cli:
             return ()
-        if self._ambient_cli_allowed_binaries is not None:
-            return tuple(sorted(self._ambient_cli_allowed_binaries))
+        effective = self.cli_policy.effective_allowlist()
+        if effective is not None:
+            # includes session escalation grants, so a granted binary gains
+            # a flat binding (and a manifest entry) in later runs
+            return tuple(sorted(effective))
         if self._ambient_cli_names is None:
             self._ambient_cli_names = discover_cli_names()
         return self._ambient_cli_names
