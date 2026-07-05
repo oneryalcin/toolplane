@@ -412,15 +412,18 @@ class Toolplane:
             interrupted = self.cli_policy.cancel_pending_escalations()
         if interrupted and result.error is not None:
             binaries = ", ".join(interrupted)
+            base = result.error.message.rstrip()
+            if base and not base.endswith((".", "!", "?")):
+                base += "."
             result = result.model_copy(
                 update={
                     "error": result.error.model_copy(
                         update={
                             "message": (
-                                f"{result.error.message} The run was still "
-                                "waiting for a human decision on: "
-                                f"{binaries}. That request was cancelled "
-                                "with the run — execute again to re-prompt."
+                                f"{base} The run was still waiting for a "
+                                f"human decision on: {binaries}. That "
+                                "request was cancelled with the run — "
+                                "execute again to re-prompt."
                             )
                         }
                     )
