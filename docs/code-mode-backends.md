@@ -10,9 +10,13 @@ discover capabilities -> inspect schemas -> execute Python against a curated nam
 
     Monty is the default backend: safe tool orchestration with no external
     dependencies (see the [decision record](monty-default-spike.md)).
-    Pyodide+Deno is the opt-in sandbox for pandas/NumPy-style snippets.
-    Docker, Modal, E2B, and Blaxel are for arbitrary CPython packages,
-    subprocesses, native dependencies, GPUs, or stronger remote isolation.
+    Pyodide+Deno is the opt-in sandbox for pandas/NumPy-style snippets —
+    shipped and **feature-frozen** as of 2026-07: supported as-is, but no
+    further investment in its edges; workloads beyond it are served by a
+    container backend when a concrete user needs one. Docker/Modal/E2B-class
+    backends (arbitrary CPython packages, subprocesses, native dependencies,
+    GPUs, remote isolation) stay design-only until then; the material below
+    about them is a design record, not a commitment.
 
 The execution backend should be swappable. Different workloads need different
 tradeoffs between safety, package support, startup latency, local development

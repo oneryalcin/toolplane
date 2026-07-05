@@ -114,9 +114,11 @@ It preserves existing comments and formatting with `tomlkit`, errors if the
 server already exists, and requires `--force` to replace an existing server.
 Use `--print` to emit the TOML snippet to stdout instead of editing the file.
 
-If a direct remote URL is configured with `auth = "oauth"`, Toolplane warns that
-those tokens are ephemeral in v1. Persistent OAuth login should use a
-`fastmcp-remote` stdio bridge, which owns its own token cache.
+If a direct remote URL is configured with `auth = "oauth"`, Toolplane warns
+that those tokens are ephemeral. This is a permanent boundary, not a v1 gap:
+Toolplane does not persist OAuth tokens and will not grow its own credential
+store. Persistent OAuth login uses a `fastmcp-remote` stdio bridge, which
+owns its own token cache — delegation is the final answer.
 
 Toolplane should also accept stdio-style upstream server definitions, including
 bridges used by stdio-only hosts:
@@ -144,8 +146,9 @@ toolplane mcp login linear-bridge --config ./toolplane.toml
 For a `fastmcp-remote` bridge this triggers the bridge's own OAuth flow on
 first connect and persists its tokens in the bridge's cache, so a later
 `mcp status` reports `ok` without opening a browser. Login refuses direct
-`url` + `auth = "oauth"` servers because those tokens are ephemeral in v1;
-logging in would appear to work but not persist.
+`url` + `auth = "oauth"` servers because those tokens are ephemeral by
+design (Toolplane never persists tokens itself); logging in would appear to
+work but not persist.
 
 The current `mcp status` command reads the project config and reports each
 configured MCP server as data:
@@ -162,7 +165,8 @@ diagnostics from the configured server. For stdio probes, Toolplane preserves
 the current process environment plus configured server env, overrides `BROWSER`
 so probes cannot open a browser, and forces one-shot subprocess teardown.
 Status also reports a warning for direct `url` + `auth = "oauth"` configs,
-because that direct FastMCP OAuth shape does not persist tokens in Toolplane v1.
+because that direct FastMCP OAuth shape does not persist tokens in Toolplane
+(and never will — use a `fastmcp-remote` bridge for durable login).
 
 Then a user can connect Toolplane to an MCP client:
 

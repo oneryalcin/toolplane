@@ -6,119 +6,134 @@
 [![Docs](https://github.com/oneryalcin/toolplane/actions/workflows/pages.yml/badge.svg)](https://github.com/oneryalcin/toolplane/actions/workflows/pages.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A controlled Python code-mode runtime where CLIs, MCP tools, and libraries are
-normalized into one programmable tool surface.
+Define your agent's tool surface **once** — MCP servers, CLI binaries, Python
+functions — and get the same curated, sandboxed Python namespace under every
+agent client you use: Claude Code, Codex, opencode, or your own.
 
 Full documentation: https://oneryalcin.github.io/toolplane/
 
-## Why It Exists
+## Why
 
-Agents are strongest when they can use code as the control plane for real work:
-looping, branching, filtering, retrying, aggregating, and combining tools
-without bouncing through one tool call at a time.
-
-Python already has the right orchestration model. What is missing is a clean
-way to expose different tool sources through one curated runtime:
-
-- CLI tools wrapped as Python callables.
-- MCP server tools exposed as async Python functions.
-- Regular Python libraries such as `pandas`, `httpx`, and project SDKs.
-- Host-provided domain helpers with explicit permissions and limits.
-
-`toolplane` is the runtime layer for that surface. The agent writes Python; the
-host decides which capabilities exist, how credentials are handled, and what
-resource or security boundaries apply.
-
-## Relationship To cli-to-py
-
-[`cli-to-py`](https://github.com/oneryalcin/cli-to-py) turns CLI binaries into
-Python APIs. In `toolplane`, that is one adapter in a broader adapter stack.
-
-The goal is that agent-written code should not need to care whether a capability
-came from a CLI, an MCP server, or a normal Python package. It should see typed,
-validated Python functions with predictable return values.
-
-## Prior Art
-
-[FastMCP Code Mode](https://gofastmcp.com/servers/transforms/code-mode) is a
-strong reference point. It replaces a large MCP tool catalog with a smaller set
-of meta-tools for progressive discovery and code execution: search for relevant
-tools, inspect the schemas that matter, then execute Python that orchestrates
-tool calls in a sandbox.
-
-`toolplane` follows the same basic shape:
+Agents are strongest when they use code as the control plane: looping,
+filtering, retrying, and combining tools in one pass instead of bouncing
+through one tool call at a time. Toolplane is the runtime for that:
 
 ```text
 discover capabilities -> inspect schemas -> execute Python against a curated namespace
 ```
 
-The difference is scope. FastMCP Code Mode is centered on MCP server tools.
-`toolplane` aims to generalize that pattern across MCP tools, CLI wrappers, and
-regular Python libraries.
+Instead of registering N MCP servers in every agent client (and paying for
+N × dozens of tool schemas in every context window, in every client, with
+every client's different quirks), you register **one** server that exposes
+three meta-tools. Your agent searches for what it needs, reads the exact
+schemas, and writes a snippet:
 
-[OpenAI Agents SDK sandboxes](https://developers.openai.com/api/docs/guides/agents/sandboxes)
-are another useful reference: they separate the sandbox session/provider from
-the tools exposed to the model. Toolplane follows that boundary too. Backends
-execute code; adapters expose capabilities; bridges let sandboxed code call host
-capabilities when direct local calls are not appropriate.
-
-See [Code Mode Backends](docs/code-mode-backends.md) for the initial backend
-strategy and [Architecture](docs/architecture.md) for the code organization
-approach.
-
-See [ROADMAP.md](ROADMAP.md) for the current sequencing.
-
-## Design Goals
-
-- Make code-mode agents useful for multi-step tool orchestration.
-- Normalize heterogeneous tools into a Python-first API surface.
-- Keep the exposed runtime curated rather than ambiently powerful.
-- Preserve host control over credentials, authorization, filesystems, network
-  access, timeouts, and cancellation.
-- Prefer structured return values and validation errors over raw text where
-  practical.
-- Keep adapters small enough to be understandable and replaceable.
-- Treat JSON as a wire format, not the programming model. Agent-written code
-  should compose normal Python values and callables.
-- Make canonical capability ids qualified, and expose friendly Python aliases
-  only when they are unambiguous.
-
-## Docs
-
-```bash
-make docs
-make docs-serve
+```python
+# one execute_code call replaces a dozen round-trips
+rows = []
+for repo in ["toolplane", "cli-to-py"]:
+    prs = await github.list_pull_requests(repo=repo, state="merged", limit=25)
+    for pr in prs:
+        rows.append({"repo": repo, "title": pr["title"], "days_open": pr["days_open"]})
+handle = await save_result(rows, label="pr-audit")
+return {"count": len(rows), "handle": handle}
 ```
 
-## Development
+What makes toolplane different from other code-mode runtimes:
+
+- **CLI binaries are first-class, policy-gated capabilities.** `git`, `gh`,
+  `jq` become async Python functions behind an allowlist you control — not a
+  raw shell. No other code-mode runtime ships this lane.
+- **Policy escalates to a human instead of dead-ending.** If a snippet needs
+  a binary outside the allowlist, your agent client shows *you* a form:
+  allow it for this session, or refuse. Declines stick; nothing is ever
+  written back to config. (MCP elicitation; degrades to a plain refusal on
+  clients that can't prompt.)
+- **Safe by default, with zero infrastructure.** The default backend
+  ([Monty](https://github.com/pydantic/monty)) is a sandboxed interpreter
+  with no filesystem or network access — a pure `pip install`, no Docker, no
+  Deno, no daemon.
+- **Engineered for how agents actually behave.** Every dead end emits a
+  signpost (no-match searches say how to browse; policy errors name what is
+  allowed), errors are catchable by builtin type on every backend, and the
+  live namespace manifest (`toolplane://namespace`) never lies about the
+  server's configuration. This surface is certified by cold-start agent
+  sessions, not just unit tests.
+
+## Quickstart
+
+Set up a config (safe defaults: sandboxed backend, CLI disabled):
 
 ```bash
-make test
-make examples
-make ci
-make publish-check
+uvx toolplane init
+uvx toolplane cli allow git jq
+uvx toolplane mcp add context7 --url https://mcp.context7.com/mcp
+uvx toolplane doctor
 ```
 
-Publishing uses the same local release surface:
+Prove it runs — put this in `first.py`:
+
+```python
+v = await git("version")
+return {"ok": v["ok"], "git": v["stdout"].strip()}
+```
 
 ```bash
-PYPI_TOKEN=... make publish
+uvx toolplane run first.py
 ```
 
-See the [release checklist](docs/development/release-checklist.md) for the full
-publish flow.
+Then register it with your agent client (use the absolute path to your
+`toolplane.toml`):
 
-## Status
+```bash
+# Claude Code
+claude mcp add toolplane -- uvx toolplane serve mcp --config /path/to/toolplane.toml
 
-Early implementation. Toolplane can register Python functions, explicit
-`cli-to-py` wrappers, and FastMCP-backed MCP tools, then discover them, inspect
-schemas, and execute agent-written Python through:
+# Codex
+codex mcp add toolplane -- uvx toolplane serve mcp --config /path/to/toolplane.toml
+```
 
-- `monty`: the default; sandboxed Monty interpreter with no filesystem or
-  network access, flat capability calls, and host bridge `call_tool` callbacks.
-- `local_unsafe`: development-only in-process execution.
-- `pyodide-deno`: experimental Pyodide-in-Deno sandbox execution with package
-  loading and host bridge `call_tool` callbacks.
+```jsonc
+// opencode (~/.config/opencode/opencode.json)
+{
+  "mcp": {
+    "toolplane": {
+      "type": "local",
+      "command": ["uvx", "toolplane", "serve", "mcp", "--config", "/path/to/toolplane.toml"]
+    }
+  }
+}
+```
+
+Every client now sees the same three tools — `search_capabilities`,
+`get_capability_schemas`, `execute_code` — plus the live manifest resource
+`toolplane://namespace` and a bundled usage skill. Ask your agent to read the
+manifest and go.
+
+## What your agent gets
+
+- **Three meta-tools instead of a tool catalog.** Search is exact-word (an
+  empty query lists everything); schemas come back only for the capabilities
+  the snippet will actually use.
+- **A flat, async Python namespace.** MCP tools as `await context7.get_docs(...)`
+  or `await call_tool("mcp:context7/get_docs", {...})`; allowlisted CLI
+  binaries as `await git("log", oneline=True, max_count=3)` returning
+  `{'stdout', 'stderr', 'exit_code', 'ok'}`.
+- **State between runs, off the context window.** `save_result`/`load_result`
+  for JSON-shaped data, `save_artifact`/`load_artifact` for bytes (CSVs,
+  images, parquet). Both are also readable directly as MCP resources —
+  on Claude Code, a saved artifact materializes as a real local file.
+- **Errors written for agents, not log files.** The real exception type and
+  message on every backend, catchable by builtin type (`except ValueError`
+  for store failures, `except PermissionError` for CLI policy,
+  `except LookupError` for unknown capabilities) — identically on all three
+  backends.
+
+## Use it as a library
+
+The same runtime embeds directly in Python — register your own functions and
+execute agent-written snippets against them, sandboxed, with no server in
+between:
 
 ```python
 from toolplane import Toolplane
@@ -136,140 +151,47 @@ return value
 """)
 ```
 
-The current Pyodide+Deno smoke target works with pandas:
+MCP servers, explicit CLI wrappers, and scoped Python namespaces register the
+same way — see the [library guide](https://oneryalcin.github.io/toolplane/)
+and [examples](examples/README.md) for the full surface, including
+config-driven setup (`Toolplane.from_config`) and the result/artifact stores.
 
-```python
-result = await runtime.execute(
-    """
-import pandas as pd
+## Backends
 
-x = await call_tool("add", {"x": 2, "y": 3})
-df = pd.DataFrame([{"value": x}])
-return int(df["value"].sum())
-""",
-    backend="pyodide-deno",
-    packages=["pandas"],
-)
+| Backend | Use | Status |
+| --- | --- | --- |
+| `monty` | Default. Sandboxed by construction (no filesystem/network), pure pip install. Flat callable namespace — no classes, no third-party imports. | Active |
+| `pyodide-deno` | Opt-in for package-capable snippets (pandas/NumPy-style) via Pyodide in Deno. | Supported, feature-frozen |
+| `local_unsafe` | In-process execution for development only. | Dev only |
+
+A container backend (real CPython, arbitrary packages) lands when a concrete
+use case needs it. See [Code Mode Backends](docs/code-mode-backends.md) for
+the design record.
+
+## Design goals
+
+- Normalize heterogeneous tools into a Python-first API surface; JSON is the
+  wire format, not the programming model.
+- Keep the exposed runtime curated rather than ambiently powerful; the host
+  decides which capabilities exist and what boundaries apply.
+- Durable policy lives in config; session policy (escalation grants) dies
+  with the process.
+- Canonical capability ids are qualified (`mcp:server/tool`); friendly
+  aliases exist only when unambiguous.
+- Every slice earns its place through behavior, tests, or live certification.
+
+## Development
+
+```bash
+make test
+make examples
+make ci
+make publish-check
 ```
 
-CLI tools are also available through ambient lazy proxies in the execution
-namespace. Toolplane does not parse every binary at startup; it resolves a CLI
-through `cli-to-py` only when code first calls it:
+Docs: `make docs` / `make docs-serve`. Publishing:
+`PYPI_TOKEN=... make publish` — see the
+[release checklist](docs/development/release-checklist.md).
 
-```python
-result = await runtime.execute("""
-status = await git.status(short=True).text()
-files = await git.diff(name_only=True, _=["HEAD~1", "HEAD"]).lines()
-return {"status": status, "files": files}
-""")
-```
-
-For binaries that are not valid Python identifiers, use the `cli` root:
-
-```python
-result = await runtime.execute("""
-version = await cli("docker-compose").version().text()
-return version
-""")
-```
-
-Runs are independent sandboxes, but data can flow between them through the
-host-side result store without transiting the model's context: save a value,
-return a summary plus handle, load the full value in a later run
-([design record](docs/result-store-design.md)):
-
-```python
-first = await runtime.execute("""
-issues = await call_tool("list_issues", {"label": "bug"})
-handle = await save_result(issues, label="issues")
-return {"count": len(issues), "handle": handle}
-""")
-
-second = await runtime.execute(
-    "issues = await load_result(h)\nreturn issues[0]",
-    inputs={"h": first.value["handle"]},
-)
-```
-
-CLI tools can be exposed as capabilities during host setup:
-
-```python
-from cli_to_py import convert
-from toolplane import Toolplane
-
-runtime = Toolplane()
-python = await convert("python3", subcommands=False)
-
-runtime.register_cli(
-    "python_version",
-    python,
-    description="Return the Python interpreter version.",
-    tags={"python", "cli"},
-)
-
-result = await runtime.execute("""
-version = await call_tool("python_version", {"version": True})
-return version["stdout"] + version["stderr"]
-""")
-```
-
-MCP servers can be exposed the same way. An in-process FastMCP app:
-
-```python
-from fastmcp import FastMCP
-from toolplane import Toolplane
-
-runtime = Toolplane()
-mcp = FastMCP("Demo")
-
-@mcp.tool
-def add(a: int, b: int) -> int:
-    """Add two numbers."""
-    return a + b
-
-await runtime.register_mcp("demo", mcp)
-
-result = await runtime.execute("""
-value = await demo.add(a=2, b=3)
-return value
-""")
-```
-
-Or a standard `mcpServers` config, including stdio or remote HTTP servers:
-
-```python
-await runtime.register_mcp_config({
-    "mcpServers": {
-        "context7": {
-            "url": "https://mcp.context7.com/mcp",
-        }
-    }
-})
-```
-
-Registered MCP tools get canonical ids such as `mcp:context7/get_docs` and safe
-Python aliases such as `context7_get_docs`. They are also available through a
-scoped namespace, so agent-written code can call `context7.get_docs(...)`
-without caring that the capability came from MCP.
-
-Host Python helpers can be grouped the same way:
-
-```python
-from pathlib import Path
-from toolplane import Toolplane
-
-runtime = Toolplane()
-
-def read_text(path: str) -> str:
-    return Path(path).read_text()
-
-runtime.register_python_namespace("repo", {"read_text": read_text})
-
-result = await runtime.execute("""
-text = await repo.read_text(path="README.md")
-return text.splitlines()[0]
-""")
-```
-
-See [examples](examples/README.md) for executable FastMCP in-process, stdio
-config, and live Context7 remote MCP smokes.
+See [ROADMAP.md](ROADMAP.md) for sequencing and
+[Architecture](docs/architecture.md) for code organization.
