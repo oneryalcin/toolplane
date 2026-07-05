@@ -71,10 +71,31 @@ rows = await load_result(handle)
 - The handle is the only key; labels are debugging metadata.
 - A saved value is also readable directly as the MCP resource
   `toolplane://results/<handle>` — no execute_code run needed.
-- Values must be JSON-shaped. For anything else, save a projection: e.g. a
-  pandas DataFrame as `df.to_dict(orient="records")`, bytes as a summary or
-  a base64 string. Keep projections small — the store has size caps and a
-  TTL.
+- Values must be JSON-shaped. For files and binary data, use the artifact
+  store instead; for anything else, save a projection: e.g. a pandas
+  DataFrame as `df.to_dict(orient="records")`. Keep projections small —
+  the store has size caps and a TTL.
+
+## Artifact store
+
+Persist files and binary blobs (parquet, CSV, images, logs) across runs —
+the bytes sibling of the result store:
+
+```python
+data = df.to_csv(index=False).encode("utf-8")
+handle = await save_artifact(data, filename="metrics.csv")
+# later run:
+data = await load_artifact(handle)
+```
+
+- `save_artifact` takes **bytes** (JSON-shaped values belong in
+  `save_result`); the execute_code response lists each artifact saved
+  during the run with its handle and resource URI.
+- An artifact is also readable directly as the binary MCP resource
+  `toolplane://artifacts/<handle>` — on clients that materialize binary
+  resources (Claude Code), that hands you a real local file.
+- Artifacts live on the host disk for this server session only and are
+  deleted when the session ends.
 
 ## Backends and packages
 

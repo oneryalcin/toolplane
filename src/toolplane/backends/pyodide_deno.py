@@ -27,6 +27,7 @@ from ..bridges.base import HostBridge
 from ..bridges.rpc import HttpCallbackBridge
 from ..errors import NamespaceCollisionError
 from ..execution import BackendCapabilities, ExecutionError, ExecutionResult
+from ..artifacts import render_pyodide_artifact_bindings
 from ..results import _NON_JSON_GUIDANCE, render_pyodide_result_bindings
 from ._python import (
     UNAWAITED_CALL_ERROR_TYPE,
@@ -227,9 +228,14 @@ def _async_binding_names(
             if name not in reserved and is_safe_cli_name(name)
         }
         names |= cli_names
-    for result_name in ("save_result", "load_result"):
-        if result_name not in reserved | cli_names:
-            names.add(result_name)
+    for store_name in (
+        "save_result",
+        "load_result",
+        "save_artifact",
+        "load_artifact",
+    ):
+        if store_name not in reserved | cli_names:
+            names.add(store_name)
     return names - set(inputs)
 
 
@@ -276,6 +282,7 @@ def _build_pyodide_code(
             if name not in reserved_names and is_safe_cli_name(name)
         )
     results_code = render_pyodide_result_bindings(reserved=results_reserved)
+    artifacts_code = render_pyodide_artifact_bindings(reserved=results_reserved)
     namespace_code = _render_callable_namespace(namespace)
     scoped_namespace_code = _render_scoped_namespace(scoped_namespace)
     non_json_guidance = _NON_JSON_GUIDANCE
@@ -354,6 +361,8 @@ globals().update(json.loads({inputs_json!r}))
 {cli_namespace_code}
 
 {results_code}
+
+{artifacts_code}
 
 {namespace_code}
 

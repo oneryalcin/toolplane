@@ -199,13 +199,40 @@ serves the stored canonical JSON verbatim, letting a client (or a human via
   `text/plain` at read time even though the template advertises
   `application/json`; content is canonical JSON either way.
 
+## Artifacts lane (built — the bytes sibling)
+
+`src/toolplane/artifacts.py` is the second lane promised above, now real
+(issue #46; evidence gate fired on a live pandas session). Same contract,
+different substrate:
+
+- **Bytes on disk, not JSON in memory.** `save_artifact(data, filename=...)`
+  takes bytes only and points JSON-shaped values back at `save_result`.
+  Files live in a private tempdir owned by the store; `close()` runs at
+  process exit, so restart is still the clear operation — the privacy
+  boundary is unchanged, just extended to disk for the process lifetime.
+- **Same authority model**: unguessable `art_` handles, labels
+  metadata-only, loud caps (per-artifact, total, entry count), TTL sweep
+  deleting bytes from disk, fail-closed on multi-client transports,
+  bridge-owned dispatch.
+- **Transport is base64 over the bridge on every backend** — the narrowest
+  common shape (pyodide's RPC is JSON-only). Monty/local bindings are
+  host-side closures, so snippets pass real bytes and never see base64. A
+  monty `MountDir` fast path (spiked on #46: rw/overlay/ro mounts,
+  cumulative `write_bytes_limit` per mount object, escape-blocking all
+  verified) is a later optimization, not part of the contract.
+- **Read-back is an MCP resource**: `toolplane://artifacts/{handle}` serves
+  the raw bytes (`application/octet-stream`). Claude Code materializes
+  binary resources to a local file; Codex returns inline base64. Since
+  agents don't enumerate templates, `ExecutionResult.artifacts` carries the
+  handle + URI for every artifact saved during a run — the pointer arrives
+  in the response the agent is already reading.
+- Same error contract: `ArtifactStoreError` subclasses `ValueError`, so
+  `except ValueError` works identically on all backends.
+
 ## Out of scope (follow-ups)
 
-- **Artifacts** are the second lane for files and blobs (parquet, images,
-  logs): `df.to_parquet(...)` in-sandbox against a host-owned scratch dir,
-  handle in the result, `load_artifact` later. Feasible on monty via
-  pydantic-monty's `MountDir` (ro/rw/overlay with `write_bytes_limit`). Own
-  issue when started; `ExecutionResult.artifacts` is the existing hook.
+- Monty `MountDir` scratch-dir fast path for large artifacts (skips base64
+  framing; the cumulative-limit accounting decision lives there).
 - Auto-saving successful return values (convenience only).
 - Per-session stores on HTTP multi-client transports.
 

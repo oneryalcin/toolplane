@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import base64
 import traceback
 from collections.abc import Mapping
 from typing import Any
 
 from ..adapters.ambient_cli import AMBIENT_CLI_CAPABILITY
+from ..artifacts import (
+    ARTIFACTS_LOAD_CAPABILITY,
+    ARTIFACTS_SAVE_CAPABILITY,
+    ArtifactStore,
+    decode_artifact_b64,
+)
 from ..errors import CliPolicyError
 from ..registry import CapabilityRegistry
 from ..results import (
@@ -31,6 +38,7 @@ class InProcessBridge:
         *,
         ambient_cli_allowed_binaries: set[str] | frozenset[str] | None = None,
         result_store: ResultStore | None = None,
+        artifact_store: ArtifactStore | None = None,
     ) -> None:
         self.registry = registry
         self._ambient_cli_allowed_binaries = (
@@ -38,9 +46,10 @@ class InProcessBridge:
             if ambient_cli_allowed_binaries is not None
             else None
         )
-        # The bridge is per-runtime, so it is the authority for result store
+        # The bridge is per-runtime, so it is the authority for store
         # dispatch: registries can be shared across runtimes, stores must not.
         self._result_store = result_store or ResultStore(enabled=False)
+        self._artifact_store = artifact_store or ArtifactStore(enabled=False)
 
     async def call_tool(
         self,
@@ -52,8 +61,25 @@ class InProcessBridge:
             return self._result_store.save(**normalized_params)
         if name == RESULTS_LOAD_CAPABILITY:
             return self._result_store.load(**normalized_params)
+        if name == ARTIFACTS_SAVE_CAPABILITY:
+            return self._artifact_store.save(
+                decode_artifact_b64(normalized_params.get("data_b64")),
+                filename=normalized_params.get("filename"),
+                label=normalized_params.get("label"),
+            )
+        if name == ARTIFACTS_LOAD_CAPABILITY:
+            return self._load_artifact_payload(normalized_params.get("handle"))
         self._enforce_ambient_cli_policy(name, normalized_params)
         return await self.registry.call(name, normalized_params)
+
+    def _load_artifact_payload(self, handle: Any) -> dict[str, Any]:
+        described = self._artifact_store.describe(handle)
+        data = self._artifact_store.load(handle)
+        return {
+            "data_b64": base64.b64encode(data).decode("ascii"),
+            "filename": described["filename"],
+            "size_bytes": described["size_bytes"],
+        }
 
     async def dispatch(self, request: ToolCallRequest) -> ToolCallResponse:
         try:

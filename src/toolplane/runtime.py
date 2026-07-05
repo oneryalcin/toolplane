@@ -7,6 +7,7 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from .adapters.ambient_cli import discover_cli_names, register_ambient_cli
+from .artifacts import ArtifactStore, register_artifact_capabilities
 from .backends import CodeBackend, LocalUnsafeBackend, MontyBackend, PyodideDenoBackend
 from .bridges.in_process import InProcessBridge
 from .capabilities import Capability, JsonSchema
@@ -30,12 +31,15 @@ class Toolplane:
         ambient_cli: bool = True,
         ambient_cli_allowlist: Sequence[str] | None = None,
         result_store: ResultStore | None = None,
+        artifact_store: ArtifactStore | None = None,
     ) -> None:
         if not ambient_cli and ambient_cli_allowlist is not None:
             raise ValueError("ambient_cli_allowlist requires ambient_cli=True")
         self.registry = registry or CapabilityRegistry()
         self.result_store = result_store or ResultStore()
+        self.artifact_store = artifact_store or ArtifactStore()
         register_result_capabilities(self.registry)
+        register_artifact_capabilities(self.registry)
         self.ambient_cli = ambient_cli
         self._ambient_cli_allowed_binaries = (
             frozenset(ambient_cli_allowlist)
@@ -49,6 +53,7 @@ class Toolplane:
             self.registry,
             ambient_cli_allowed_binaries=self._ambient_cli_allowed_binaries,
             result_store=self.result_store,
+            artifact_store=self.artifact_store,
         )
         configured = list(
             backends
@@ -84,6 +89,7 @@ class Toolplane:
                 else None
             ),
             result_store=ResultStore.from_settings(parsed.results),
+            artifact_store=ArtifactStore.from_settings(parsed.artifacts),
         )
         if parsed.mcp.servers:
             await runtime.register_mcp_config(parsed.mcp.to_fastmcp_config())
@@ -312,6 +318,28 @@ class Toolplane:
             )
         else:
             lines.append("The result store is disabled in this configuration.")
+        lines.extend(["", "## Artifact store"])
+        if self.artifact_store.enabled:
+            lines.extend(
+                [
+                    "- `handle = await save_artifact(data, "
+                    'filename="report.parquet")` — bytes only (files, '
+                    "images, parquet); JSON-shaped values belong in the "
+                    "result store",
+                    "- `data = await load_artifact(handle)`",
+                    "- A saved artifact is also readable directly as the "
+                    "binary MCP resource `toolplane://artifacts/<handle>`; "
+                    "the execute_code response lists each artifact saved "
+                    "during the run with its URI.",
+                    "",
+                    "Artifacts live on host disk for this server session "
+                    "only and are deleted when the session ends.",
+                ]
+            )
+        else:
+            lines.append(
+                "The artifact store is disabled in this configuration."
+            )
         return "\n".join(lines)
 
     async def get_schema(
@@ -353,7 +381,24 @@ class Toolplane:
                 if self._ambient_cli_allowed_binaries is not None
                 else None
             )
-        return await runner.run(code, **run_kwargs)
+        before = (
+            set(self.artifact_store.handles())
+            if self.artifact_store.enabled
+            else set()
+        )
+        result = await runner.run(code, **run_kwargs)
+        if self.artifact_store.enabled:
+            # agents never enumerate resources unaided — the handle and URI
+            # must arrive in the response they are already reading
+            saved = [
+                self.artifact_store.describe(handle)
+                | {"uri": f"toolplane://artifacts/{handle}"}
+                for handle in self.artifact_store.handles()
+                if handle not in before
+            ]
+            if saved:
+                result = result.model_copy(update={"artifacts": tuple(saved)})
+        return result
 
     def _get_ambient_cli_names(self) -> tuple[str, ...]:
         if not self.ambient_cli:

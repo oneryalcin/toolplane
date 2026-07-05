@@ -15,6 +15,7 @@ from ..adapters.ambient_cli import build_local_cli_namespace
 from ..bridges.base import HostBridge
 from ..errors import BackendCapabilityError, NamespaceCollisionError
 from ..execution import BackendCapabilities, ExecutionError, ExecutionResult
+from ..artifacts import build_artifact_bindings
 from ..results import build_result_bindings
 from ._python import (
     UNAWAITED_CALL_ERROR_TYPE,
@@ -97,6 +98,15 @@ class LocalUnsafeBackend:
                 )
             scope.update(
                 build_result_bindings(
+                    bridge,
+                    reserved=set(scope)
+                    | set(capability_namespace)
+                    | set(scoped_capability_namespace)
+                    | set(input_namespace),
+                )
+            )
+            scope.update(
+                build_artifact_bindings(
                     bridge,
                     reserved=set(scope)
                     | set(capability_namespace)

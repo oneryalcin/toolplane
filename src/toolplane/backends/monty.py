@@ -24,6 +24,7 @@ from ..adapters.ambient_cli import (
 from ..bridges.base import HostBridge
 from ..errors import BackendCapabilityError, NamespaceCollisionError
 from ..execution import BackendCapabilities, ExecutionError, ExecutionResult
+from ..artifacts import build_artifact_bindings
 from ..results import build_result_bindings
 from ._python import (
     UNAWAITED_CALL_ERROR_TYPE,
@@ -101,6 +102,11 @@ class MontyBackend:
             ).items():
                 external_functions.setdefault(name, fn)
         for name, fn in build_result_bindings(
+            bridge,
+            reserved=set(external_functions) | set(input_namespace),
+        ).items():
+            external_functions.setdefault(name, fn)
+        for name, fn in build_artifact_bindings(
             bridge,
             reserved=set(external_functions) | set(input_namespace),
         ).items():

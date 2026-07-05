@@ -33,7 +33,10 @@ _DISABLED_MESSAGE = "results store is disabled"
 # admission rule, but on pyodide the value must serialize in-sandbox just to
 # cross the callback RPC, so the rendered bindings pre-check with the same
 # message — otherwise a bare json.dumps TypeError preempts this guidance.
-_NON_JSON_GUIDANCE = "save a JSON-shaped projection instead"
+_NON_JSON_GUIDANCE = (
+    "save a JSON-shaped projection instead, or serialize to bytes and "
+    "use save_artifact for files and binary data"
+)
 
 
 @dataclass(frozen=True)
