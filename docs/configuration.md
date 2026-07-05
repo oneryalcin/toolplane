@@ -146,11 +146,12 @@ url = "https://mcp.linear.app/mcp"
 auth = "oauth"
 ```
 
-!!! warning "Direct OAuth is ephemeral in Toolplane v1"
+!!! warning "Direct OAuth is ephemeral"
 
-    FastMCP's direct `auth = "oauth"` config stores tokens in memory unless
-    Toolplane supplies a token store. Toolplane v1 does not own that token store,
-    so use a `fastmcp-remote` stdio bridge for persistent OAuth login.
+    FastMCP's direct `auth = "oauth"` config stores tokens in memory, and
+    Toolplane never persists tokens itself — that boundary is permanent, not
+    a version gap. Use a `fastmcp-remote` stdio bridge for persistent OAuth
+    login; the bridge owns its own token cache.
 
 Local stdio server:
 

@@ -114,9 +114,11 @@ It preserves existing comments and formatting with `tomlkit`, errors if the
 server already exists, and requires `--force` to replace an existing server.
 Use `--print` to emit the TOML snippet to stdout instead of editing the file.
 
-If a direct remote URL is configured with `auth = "oauth"`, Toolplane warns that
-those tokens are ephemeral in v1. Persistent OAuth login should use a
-`fastmcp-remote` stdio bridge, which owns its own token cache.
+If a direct remote URL is configured with `auth = "oauth"`, Toolplane warns
+that those tokens are ephemeral. This is a permanent boundary, not a v1 gap:
+Toolplane does not persist OAuth tokens and will not grow its own credential
+store. Persistent OAuth login uses a `fastmcp-remote` stdio bridge, which
+owns its own token cache — delegation is the final answer.
 
 Toolplane should also accept stdio-style upstream server definitions, including
 bridges used by stdio-only hosts:
@@ -144,8 +146,9 @@ toolplane mcp login linear-bridge --config ./toolplane.toml
 For a `fastmcp-remote` bridge this triggers the bridge's own OAuth flow on
 first connect and persists its tokens in the bridge's cache, so a later
 `mcp status` reports `ok` without opening a browser. Login refuses direct
-`url` + `auth = "oauth"` servers because those tokens are ephemeral in v1;
-logging in would appear to work but not persist.
+`url` + `auth = "oauth"` servers because those tokens are ephemeral by
+design (Toolplane never persists tokens itself); logging in would appear to
+work but not persist.
 
 The current `mcp status` command reads the project config and reports each
 configured MCP server as data:
@@ -162,7 +165,8 @@ diagnostics from the configured server. For stdio probes, Toolplane preserves
 the current process environment plus configured server env, overrides `BROWSER`
 so probes cannot open a browser, and forces one-shot subprocess teardown.
 Status also reports a warning for direct `url` + `auth = "oauth"` configs,
-because that direct FastMCP OAuth shape does not persist tokens in Toolplane v1.
+because that direct FastMCP OAuth shape does not persist tokens in Toolplane
+(and never will — use a `fastmcp-remote` bridge for durable login).
 
 Then a user can connect Toolplane to an MCP client:
 
@@ -197,8 +201,9 @@ Toolplane meta-tools, and guards the config-backed MCP facade from unsafe
 defaults. On successful `toolplane serve mcp` startup, it prints the effective
 backend, CLI, MCP-server, and unsafe-override policy to stderr for the operator.
 Remote OAuth is delegated to the `fastmcp-remote` bridge primed by
-`toolplane mcp login`; Toolplane-owned durable token storage and client install
-helpers are not built.
+`toolplane mcp login`; the bridge owns durable token storage by design
+(Toolplane never grows its own credential store). Client install helpers are
+not built.
 
 A fresh config serves safely with no flags, because the defaults are the
 sandboxed `monty` backend and disabled CLI policy:
@@ -237,9 +242,10 @@ MCP client and run:
 search_capabilities -> get_capability_schemas -> execute_code
 ```
 
-This skeleton is not the production-ready completion state for this issue. It is
-the early risk-reduction step before implementing OAuth lifecycle and durable
-token storage.
+This skeleton was the early risk-reduction step before the OAuth lifecycle
+work. That work resolved as bridge delegation (`toolplane mcp login` priming
+a `fastmcp-remote` bridge that owns its own token cache), not as
+Toolplane-owned storage.
 
 ## Auth Boundary
 
@@ -258,20 +264,12 @@ For a remote server:
 url = "https://mcp.linear.app/mcp"
 ```
 
-Toolplane should delegate the actual MCP OAuth flow to FastMCP's client layer,
-while owning the durable token storage and lifecycle around that lower-level
-machinery:
-
-- first verify the current FastMCP client behavior for remote MCP OAuth,
-  including whether `Client(..., auth="oauth")` can authenticate to real servers
-  and which token storage hooks are available.
-- browser-based authorization code flow with PKCE.
-- dynamic client registration when the server supports it.
-- token refresh handled by the MCP client implementation.
-- persistent token storage owned by Toolplane and injected into FastMCP's OAuth
-  provider.
-
-Toolplane should provide host commands around that lower-level machinery:
+Toolplane delegates both the MCP OAuth flow and its token persistence to the
+FastMCP client layer: a `fastmcp-remote` stdio bridge performs the
+browser-based authorization code flow with PKCE, handles dynamic client
+registration and token refresh, and owns its own token cache. Toolplane's job
+is the host command surface around that machinery — it never holds tokens
+itself:
 
 ```bash
 toolplane mcp login linear
@@ -298,11 +296,12 @@ Rules:
   sessions.
 - Headless execution requires pre-login or explicit environment-backed bearer
   credentials.
-- Token storage must be encrypted or delegated to the operating system keychain
-  before it is marketed as a production feature.
-- The first public MCP facade should not rely on FastMCP's default in-memory
-  OAuth token storage, because that requires users to reauthenticate after every
-  Toolplane process restart.
+- Token persistence is delegated: the bridge process owns its cache; Toolplane
+  never writes tokens to disk or holds them beyond the FastMCP client's own
+  lifecycle.
+- Direct `url` + `auth = "oauth"` configs rely on FastMCP's in-memory token
+  storage and reauthenticate on every restart — that is why `mcp status` warns
+  on them and `mcp login` refuses them; use a `fastmcp-remote` bridge instead.
 - `toolplane.toml` should describe upstream MCP servers and policy, not contain
   long-lived secrets.
 
@@ -395,7 +394,7 @@ config-driven runtime setup
   -> MCP server config loading
   -> minimal toolplane serve mcp walking skeleton without remote auth
   -> FastMCP OAuth/token-storage behavior verification
-  -> MCP auth command surface and durable token storage
+  -> MCP auth command surface (durable tokens delegated to the bridge)
   -> client install helpers
   -> Claude plugin packaging
 ```

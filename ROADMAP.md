@@ -12,7 +12,7 @@ local_unsafe slice
   -> MCP adapter
   -> config-driven runtime setup
   -> Toolplane MCP facade
-  -> Docker/Modal remote backends
+  -> container backend (when a named user needs arbitrary CPython packages)
 ```
 
 The goal is to test the core architecture before building a broad framework
@@ -22,10 +22,12 @@ around it.
 
 ### Execution Backends
 
-- Pyodide+Deno backend for package-capable sandboxed snippets.
-- Docker backend for real CPython, local CLI binaries, and system dependencies.
-- Modal backend for remote package-heavy or longer-running jobs.
-- E2B and Blaxel once the callback bridge and session model are stable.
+- Pyodide+Deno backend for package-capable sandboxed snippets — shipped and
+  feature-frozen: supported as-is, no further edge investment; its use case
+  is served by a container backend when a real user needs it.
+- One container backend (real CPython, arbitrary packages) when a named user
+  asks. Modal/E2B/Blaxel-style remote backends only after that contract is
+  proven — not before.
 
 ### Capability Adapters
 
