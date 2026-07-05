@@ -154,10 +154,22 @@ return value
 """)
 ```
 
+And if you already have an agent framework, `as_tool()` packages the whole
+runtime as one `run_code` tool — a plain async function with a generated,
+cap-safe description that pydantic-ai, the OpenAI Agents SDK, and
+LangChain/LangGraph all accept directly:
+
+```python
+from pydantic_ai import Agent
+
+agent = Agent("anthropic:claude-sonnet-5", tools=[runtime.as_tool()])
+```
+
 MCP servers, explicit CLI wrappers, and scoped Python namespaces register the
 same way — see the [library guide](https://oneryalcin.github.io/toolplane/)
 and [examples](examples/README.md) for the full surface, including
-config-driven setup (`Toolplane.from_config`) and the result/artifact stores.
+config-driven setup (`Toolplane.from_config`), the result/artifact stores,
+and runnable `as_tool` examples for all three frameworks.
 
 ## Backends
 

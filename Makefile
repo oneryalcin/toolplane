@@ -27,6 +27,9 @@ examples:
 	$(UV) run --no-project --with-editable . python examples/mcp_stdio_config.py
 	$(UV) run --no-project --with-editable . python examples/multi_server.py
 	$(UV) run --no-project --with-editable . python examples/from_config.py
+	env -u ANTHROPIC_API_KEY -u OPENAI_API_KEY $(UV) run --no-project --with-editable . --with pydantic-ai python examples/as_tool_pydantic_ai.py
+	env -u ANTHROPIC_API_KEY -u OPENAI_API_KEY $(UV) run --no-project --with-editable . --with openai-agents python examples/as_tool_openai_agents.py
+	env -u ANTHROPIC_API_KEY -u OPENAI_API_KEY $(UV) run --no-project --with-editable . --with langchain-core python examples/as_tool_langgraph.py
 
 docs:
 	$(UV) run --no-project --with-editable ".[docs]" mkdocs build --strict --site-dir $(SITE_DIR)

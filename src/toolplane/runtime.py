@@ -352,6 +352,86 @@ class Toolplane:
             )
         return "\n".join(lines)
 
+    def as_tool(
+        self,
+        *,
+        name: str = "run_code",
+        description: str | None = None,
+        backend: str | None = None,
+        packages: Sequence[str] = (),
+    ) -> Callable[[str], Any]:
+        """Return a single async ``run_code`` tool for embedding in agent frameworks.
+
+        The returned object is a plain async function with a docstring, which
+        is the shape pydantic-ai (``Agent(tools=[...])``), the OpenAI Agents
+        SDK (``function_tool(...)``), and LangChain/LangGraph (``tool(...)``)
+        all accept directly. Call this AFTER registering capabilities: the
+        docstring is the agent's only discovery channel in embedded mode, and
+        it is generated from the namespace at call time.
+
+        The generated description is deliberately compact — OpenAI's API
+        rejects tool descriptions over ~1024 characters, and the full
+        manifest does not fit. Pass ``description=`` to override it (e.g.
+        with ``describe_namespace()`` for clients without that limit).
+        """
+        doc = description or self._compact_tool_description()
+        fixed_packages = tuple(packages)
+
+        async def run_code(code: str) -> dict[str, Any]:
+            result = await self.execute(
+                code, backend=backend, packages=fixed_packages
+            )
+            return result.model_dump(mode="json")
+
+        run_code.__name__ = name
+        run_code.__qualname__ = name
+        run_code.__doc__ = doc
+        return run_code
+
+    def _compact_tool_description(self, *, limit: int = 1000) -> str:
+        """Namespace summary that fits inside strict tool-description caps."""
+        lines = [
+            "Execute Python against a curated tool namespace. The snippet "
+            "body runs inside an async function: await every namespace "
+            "call, `return` a JSON-shaped value. Returns "
+            "{value, stdout, stderr, error, artifacts}.",
+        ]
+        flat = sorted(self.registry.callable_namespace())
+        if flat:
+            shown = ", ".join(flat[:12])
+            more = f", ... ({len(flat)} total)" if len(flat) > 12 else ""
+            lines.append(f"Capabilities: await {flat[0]}(...) etc — {shown}{more}.")
+        lines.append(
+            'Any capability: await call_tool("canonical:name", {...params}).'
+        )
+        if self.ambient_cli:
+            names = self._get_ambient_cli_names()
+            shown = ", ".join(names[:8]) + (
+                f", ... ({len(names)} total)" if len(names) > 8 else ""
+            )
+            lines.append(
+                "CLI: await git('log', oneline=True) -> "
+                "{stdout, stderr, exit_code, ok}. Allowed: " + (shown or "none") + "."
+            )
+        if self.result_store.enabled:
+            lines.append(
+                "State between runs: handle = await save_result(value); "
+                "await load_result(handle)."
+            )
+        if self.artifact_store.enabled:
+            lines.append(
+                "Bytes between runs: await save_artifact(data, "
+                'filename="x.csv"); await load_artifact(handle).'
+            )
+        lines.append(
+            "Errors are real Python exceptions (except ValueError / "
+            "PermissionError / LookupError work)."
+        )
+        text = "\n".join(lines)
+        if len(text) > limit:
+            text = text[: limit - 3] + "..."
+        return text
+
     async def get_schema(
         self,
         tools: Sequence[str],
