@@ -55,7 +55,7 @@ def test_mcp_add_url_writes_config_and_preserves_existing_comments(
         "[mcp.servers.linear]\n"
         'url = "https://mcp.linear.app/mcp"\n'
         'auth = "oauth"\n'
-        "# warning: direct OAuth tokens are ephemeral in Toolplane v1.\n"
+        "# warning: direct OAuth tokens are ephemeral; Toolplane never persists tokens itself.\n"
         "# use a fastmcp-remote bridge for persistent login.\n"
     )
     config = load_toolplane_config(config_path)
@@ -93,7 +93,7 @@ def test_mcp_add_print_url_emits_round_trippable_toml(
         "[mcp.servers.linear]\n"
         'url = "https://mcp.linear.app/mcp"\n'
         'auth = "oauth"\n'
-        "# warning: direct OAuth tokens are ephemeral in Toolplane v1.\n"
+        "# warning: direct OAuth tokens are ephemeral; Toolplane never persists tokens itself.\n"
         "# use a fastmcp-remote bridge for persistent login.\n"
     )
     assert existing_config.read_text(encoding="utf-8") == "# existing config\n"
@@ -492,7 +492,7 @@ def test_mcp_status_uses_no_auth_probe(
     assert captured.out == (
         "MCP servers:\n"
         "- linear: ok transport=url auth=oauth tools=2 "
-        "warning=direct OAuth tokens are ephemeral in Toolplane v1; "
+        "warning=direct OAuth tokens are ephemeral (Toolplane never persists tokens itself); "
         "use a fastmcp-remote bridge for persistent login\n"
     )
     assert captured_probe["name"] == "linear"
@@ -671,7 +671,7 @@ def test_mcp_status_warns_for_direct_oauth_when_auth_required(
     assert captured.out == (
         "MCP servers:\n"
         "- linear: auth_required transport=url auth=oauth detail=401 Unauthorized "
-        "warning=direct OAuth tokens are ephemeral in Toolplane v1; "
+        "warning=direct OAuth tokens are ephemeral (Toolplane never persists tokens itself); "
         "use a fastmcp-remote bridge for persistent login\n"
     )
 

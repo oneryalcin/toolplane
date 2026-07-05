@@ -32,7 +32,7 @@ schemas, and writes a snippet:
 # one execute_code call replaces a dozen round-trips
 rows = []
 for repo in ["toolplane", "cli-to-py"]:
-    prs = await github.list_pull_requests(repo=repo, state="merged", limit=25)
+    prs = await github_list_pull_requests(repo=repo, state="merged", limit=25)
     for pr in prs:
         rows.append({"repo": repo, "title": pr["title"], "days_open": pr["days_open"]})
 handle = await save_result(rows, label="pr-audit")
@@ -66,7 +66,7 @@ Set up a config (safe defaults: sandboxed backend, CLI disabled):
 
 ```bash
 uvx toolplane init
-uvx toolplane cli allow git jq
+uvx toolplane cli allow git
 uvx toolplane mcp add context7 --url https://mcp.context7.com/mcp
 uvx toolplane doctor
 ```
@@ -115,10 +115,13 @@ manifest and go.
 - **Three meta-tools instead of a tool catalog.** Search is exact-word (an
   empty query lists everything); schemas come back only for the capabilities
   the snippet will actually use.
-- **A flat, async Python namespace.** MCP tools as `await context7.get_docs(...)`
-  or `await call_tool("mcp:context7/get_docs", {...})`; allowlisted CLI
+- **A flat, async Python namespace.** MCP tools as flat functions —
+  `await context7_get_docs(...)` — or canonically as
+  `await call_tool("mcp:context7/get_docs", {...})`; allowlisted CLI
   binaries as `await git("log", oneline=True, max_count=3)` returning
-  `{'stdout', 'stderr', 'exit_code', 'ok'}`.
+  `{'stdout', 'stderr', 'exit_code', 'ok'}`. (Scoped sugar like
+  `context7.get_docs(...)` exists on the non-default backends; the monty
+  default is flat-only — the manifest always shows the shapes that work.)
 - **State between runs, off the context window.** `save_result`/`load_result`
   for JSON-shaped data, `save_artifact`/`load_artifact` for bytes (CSVs,
   images, parquet). Both are also readable directly as MCP resources —

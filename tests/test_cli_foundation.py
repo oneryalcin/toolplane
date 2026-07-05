@@ -218,7 +218,7 @@ def test_cli_mcp_list_prints_remote_and_stdio_servers(
     assert captured.out == (
         "MCP servers:\n"
         "- linear: transport=url url=https://mcp.linear.app/mcp auth=oauth "
-        "warning=direct OAuth tokens are ephemeral in Toolplane v1; "
+        "warning=direct OAuth tokens are ephemeral (Toolplane never persists tokens itself); "
         "use a fastmcp-remote bridge for persistent login\n"
         "- math: transport=stdio command=uvx args=2 auth=none\n"
     )

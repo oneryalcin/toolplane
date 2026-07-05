@@ -60,8 +60,8 @@ _AUTH_REQUIRED_MARKERS = (
     "authorization",
 )
 _DIRECT_OAUTH_WARNING = (
-    "direct OAuth tokens are ephemeral in Toolplane v1; use a fastmcp-remote "
-    "bridge for persistent login"
+    "direct OAuth tokens are ephemeral (Toolplane never persists tokens "
+    "itself); use a fastmcp-remote bridge for persistent login"
 )
 
 
@@ -284,7 +284,8 @@ async def login_mcp_server(
     if _is_direct_oauth_server(server_config):
         raise McpLoginError(
             f"MCP server {name!r} uses direct OAuth; its tokens are ephemeral "
-            "in Toolplane v1, so login would not persist. Re-add it as a "
+            "(Toolplane never persists tokens itself), so login would not "
+            "persist. Re-add it as a "
             "fastmcp-remote bridge (mcp add --command uvx --arg fastmcp-remote "
             "--arg <url>), then login."
         )
@@ -472,7 +473,7 @@ def _is_direct_oauth_server(server_config: Mapping[str, Any]) -> bool:
 
 def _direct_oauth_warning_comments() -> list[str]:
     return [
-        "warning: direct OAuth tokens are ephemeral in Toolplane v1.",
+        "warning: direct OAuth tokens are ephemeral; Toolplane never persists tokens itself.",
         "use a fastmcp-remote bridge for persistent login.",
     ]
 
