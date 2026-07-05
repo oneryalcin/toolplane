@@ -55,6 +55,11 @@ Only binaries on the server's allowlist are bound (the manifest lists them).
   (`cli_run(binary, subcommand, flag=value, ...)` on monty, the `cli` object
   on local/pyodide) reject the same binary with an explicit policy error
   that names the allowed binaries.
+- On servers with a human operator, calling a non-allowlisted binary
+  through `cli_run` or `cli` may pause and ask the operator to allow it
+  for the session (once per binary). Granted binaries gain flat bindings
+  in later runs; a refusal is final for the session — switch to an
+  allowed binary instead of retrying.
 
 ## Result store
 

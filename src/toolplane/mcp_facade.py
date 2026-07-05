@@ -5,6 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
+# module-level because pydantic must resolve the deferred `ctx: Context`
+# annotation on execute_code; the friendly ImportError for missing fastmcp
+# still fires in build_mcp_facade before anything is used
+try:
+    from fastmcp import Context
+except ImportError:  # pragma: no cover - dependency is required
+    Context = None  # type: ignore[assignment, misc]
+
 from .config import ConfigSource, ToolplaneConfig, load_toolplane_config
 from .errors import BackendNotFoundError
 from .execution import ExecutionError, ExecutionResult
@@ -32,6 +40,16 @@ def build_mcp_facade(
             "Toolplane MCP facade requires FastMCP. Install Toolplane with "
             "its dependencies or add `fastmcp` to the environment."
         ) from exc
+
+    # Escalation is only meaningful when there is a policy to escalate past;
+    # the flag is durable (the manifest advertises the affordance) while the
+    # handler itself is installed per-request, because ctx.elicit needs the
+    # requesting client's context — on the pyodide path the dispatch runs
+    # outside the request's contextvars, so the context must travel by
+    # closure, not lookup.
+    cli_escalation = runtime.ambient_cli and runtime.cli_policy.restricted
+    if cli_escalation:
+        runtime.cli_policy.escalation_available = True
 
     mcp = FastMCP(
         "Toolplane",
@@ -143,6 +161,7 @@ def build_mcp_facade(
         backend: str | None = None,
         inputs: dict[str, Any] | None = None,
         packages: list[str] | None = None,
+        ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Execute Python against the configured Toolplane namespace.
 
@@ -183,6 +202,32 @@ def build_mcp_facade(
                 backend=backend or "",
                 error=error,
             ).model_dump(mode="json")
+        if cli_escalation and ctx is not None:
+            request_context = ctx
+
+            # ctx.elicit resolves its session through the MCP SDK's
+            # request_ctx contextvar, not through the ctx object — and the
+            # pyodide RPC path dispatches from a callback thread whose
+            # coroutine context has that var unset. Capture the value here,
+            # inside the request, so the handler can re-seat it (empirically
+            # required: without this, pyodide escalation fails closed).
+            from mcp.server.lowlevel.server import request_ctx
+
+            captured_request_ctx = request_ctx.get()
+
+            async def elicit_cli_grant(binary: str) -> bool:
+                token = request_ctx.set(captured_request_ctx)
+                try:
+                    return await _elicit_cli_grant(
+                        request_context, runtime.cli_policy, binary
+                    )
+                finally:
+                    request_ctx.reset(token)
+
+            # shared attribute: concurrent execute_code calls can clear each
+            # other's handler, which degrades to the plain refusal —
+            # fail-closed, and stdio serves one client anyway
+            runtime.cli_policy.escalation_handler = elicit_cli_grant
         try:
             result = await runtime.execute(
                 code,
@@ -205,9 +250,36 @@ def build_mcp_facade(
                     ),
                 ),
             ).model_dump(mode="json")
+        finally:
+            if cli_escalation:
+                runtime.cli_policy.escalation_handler = None
         return result.model_dump(mode="json")
 
     return mcp
+
+
+async def _elicit_cli_grant(ctx: Any, policy: Any, binary: str) -> bool:
+    """Ask the human, via MCP elicitation, to allow a blocked CLI binary.
+
+    Returns True only on an explicit accept-with-"allow". Decline, cancel,
+    unsupported clients (ctx.elicit raises), and malformed answers all
+    return False, which the policy turns into the standard refusal — the
+    caller (AmbientCliPolicy.ensure_allowed) also catches exceptions, so
+    this can never introduce a failure mode that did not exist before.
+    The schema is a flat string enum: the most conservative shape the
+    2026-07 client probes found renderable.
+    """
+    allowed = ", ".join(sorted(policy.effective_allowlist() or ())) or "none"
+    result = await ctx.elicit(
+        f"The running snippet wants to execute the CLI binary '{binary}', "
+        f"which is outside the Toolplane allowlist (currently: {allowed}). "
+        "Allow it for the rest of this server session?",
+        response_type=["allow", "deny"],
+    )
+    return (
+        result.action == "accept"
+        and getattr(result, "data", None) == "allow"
+    )
 
 
 async def build_mcp_facade_from_config(

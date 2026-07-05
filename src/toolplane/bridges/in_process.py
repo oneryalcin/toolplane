@@ -7,14 +7,13 @@ import traceback
 from collections.abc import Mapping
 from typing import Any
 
-from ..adapters.ambient_cli import AMBIENT_CLI_CAPABILITY
+from ..adapters.ambient_cli import AMBIENT_CLI_CAPABILITY, AmbientCliPolicy
 from ..artifacts import (
     ARTIFACTS_LOAD_CAPABILITY,
     ARTIFACTS_SAVE_CAPABILITY,
     ArtifactStore,
     decode_artifact_b64,
 )
-from ..errors import CliPolicyError
 from ..registry import CapabilityRegistry
 from ..results import (
     RESULTS_LOAD_CAPABILITY,
@@ -37,14 +36,15 @@ class InProcessBridge:
         registry: CapabilityRegistry,
         *,
         ambient_cli_allowed_binaries: set[str] | frozenset[str] | None = None,
+        cli_policy: AmbientCliPolicy | None = None,
         result_store: ResultStore | None = None,
         artifact_store: ArtifactStore | None = None,
     ) -> None:
         self.registry = registry
-        self._ambient_cli_allowed_binaries = (
-            frozenset(ambient_cli_allowed_binaries)
-            if ambient_cli_allowed_binaries is not None
-            else None
+        # the policy object is shared with the runtime so escalation grants
+        # made mid-dispatch are visible to later runs and to the manifest
+        self._cli_policy = cli_policy or AmbientCliPolicy(
+            ambient_cli_allowed_binaries
         )
         # The bridge is per-runtime, so it is the authority for store
         # dispatch: registries can be shared across runtimes, stores must not.
@@ -69,7 +69,12 @@ class InProcessBridge:
             )
         if name == ARTIFACTS_LOAD_CAPABILITY:
             return self._load_artifact_payload(normalized_params.get("handle"))
-        self._enforce_ambient_cli_policy(name, normalized_params)
+        if name == AMBIENT_CLI_CAPABILITY:
+            # async: an installed escalation handler may pause here to ask
+            # the human before the policy refuses
+            await self._cli_policy.ensure_allowed(
+                str(normalized_params.get("binary", ""))
+            )
         return await self.registry.call(name, normalized_params)
 
     def _load_artifact_payload(self, handle: Any) -> dict[str, Any]:
@@ -96,20 +101,3 @@ class InProcessBridge:
                 )
             )
 
-    def _enforce_ambient_cli_policy(
-        self,
-        name: str,
-        params: Mapping[str, Any],
-    ) -> None:
-        if (
-            name != AMBIENT_CLI_CAPABILITY
-            or self._ambient_cli_allowed_binaries is None
-        ):
-            return
-        binary = str(params.get("binary", ""))
-        if binary not in self._ambient_cli_allowed_binaries:
-            allowed = ", ".join(sorted(self._ambient_cli_allowed_binaries)) or "none"
-            raise CliPolicyError(
-                f"CLI binary is not allowed by Toolplane policy: {binary}. "
-                f"Allowed binaries: {allowed}."
-            )

@@ -7,7 +7,7 @@ import builtins
 import json
 import keyword
 import os
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any
 
 from ..bridges.base import HostBridge
@@ -27,6 +27,66 @@ CLI_SHAPE_GUIDANCE = (
     "keyword arguments — e.g. await git('log', oneline=True, max_count=3) "
     "or await cli_run('git', 'log', {'oneline': True, 'max_count': 3})"
 )
+
+
+class AmbientCliPolicy:
+    """Session-scoped CLI allowlist with optional human escalation.
+
+    The configured allowlist stays the durable policy (toolplane.toml);
+    grants made through the escalation handler live only on this object,
+    so they die with the process. Escalation is an enhancement, never a
+    new failure mode: any handler outcome other than an explicit grant —
+    decline, cancel, unsupported client, handler crash — produces exactly
+    the refusal that having no handler produces.
+    """
+
+    def __init__(
+        self,
+        allowed_binaries: Sequence[str] | set[str] | frozenset[str] | None = None,
+    ) -> None:
+        self.configured = (
+            frozenset(allowed_binaries) if allowed_binaries is not None else None
+        )
+        # async (binary: str) -> bool; installed per-request by the MCP
+        # facade because the elicitation needs that request's client context
+        self.escalation_handler: (
+            Callable[[str], Awaitable[bool]] | None
+        ) = None
+        # set once by surfaces that can escalate, read by the namespace
+        # manifest — the live handler is transient, this flag is not
+        self.escalation_available = False
+        self._session_grants: set[str] = set()
+        self._asked: set[str] = set()
+
+    @property
+    def restricted(self) -> bool:
+        return self.configured is not None
+
+    def effective_allowlist(self) -> frozenset[str] | None:
+        if self.configured is None:
+            return None
+        return frozenset(self.configured | self._session_grants)
+
+    def is_allowed(self, binary: str) -> bool:
+        effective = self.effective_allowlist()
+        return effective is None or binary in effective
+
+    async def ensure_allowed(self, binary: str) -> None:
+        if self.is_allowed(binary):
+            return
+        handler = self.escalation_handler
+        if handler is not None and binary not in self._asked:
+            # once per (session, binary): the human's answer is cached
+            # either way, so a denied binary never re-prompts
+            self._asked.add(binary)
+            try:
+                granted = bool(await handler(binary))
+            except Exception:
+                granted = False
+            if granted:
+                self._session_grants.add(binary)
+                return
+        _ensure_binary_allowed(binary, self.effective_allowlist())
 
 
 class AmbientCliRunner:
