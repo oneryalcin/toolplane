@@ -32,7 +32,16 @@ def build_mcp_facade(
     policy: EffectivePolicy | None = None,
     cli_escalation: bool = True,
 ) -> "FastMCP":
-    """Build the small MCP meta-tool surface for a Toolplane runtime."""
+    """Build the small MCP meta-tool surface for a Toolplane runtime.
+
+    Multi-client caution: monty sessions, the result/artifact stores, and
+    CLI escalation grants are all per-process state. Only the config-driven
+    path (``build_mcp_facade_from_config`` / ``serve mcp``) disables them
+    per transport; callers building the facade directly for http/sse must
+    construct ``Toolplane(sessions=False)`` (and disabled stores) and pass
+    ``cli_escalation=False``, or one client's variables, handles, and
+    grants become every client's.
+    """
     try:
         from fastmcp import FastMCP
         from fastmcp.server.providers.skills import SkillsDirectoryProvider
@@ -319,17 +328,22 @@ def resolve_serve_config(
 ) -> ToolplaneConfig:
     """Apply transport-dependent policy before building the runtime.
 
-    Both stores are session-scoped, and only stdio guarantees one client
-    per process. Multi-client transports fail closed: the stores are
-    disabled rather than shared across clients.
+    The stores and the monty session are all session-scoped state, and only
+    stdio guarantees one client per process. Multi-client transports fail
+    closed: they are disabled rather than shared across clients (a shared
+    session would additionally serialize every client's runs behind one
+    interpreter lock).
     """
     if transport == "stdio" or not (
-        config.results.enabled or config.artifacts.enabled
+        config.results.enabled
+        or config.artifacts.enabled
+        or config.session.enabled
     ):
         return config
     updated = config.model_copy(deep=True)
     updated.results.enabled = False
     updated.artifacts.enabled = False
+    updated.session.enabled = False
     return updated
 
 

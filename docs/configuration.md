@@ -106,7 +106,53 @@ Only safe Python identifiers become top-level aliases.
     Do not expose ambient CLI mode through a client-facing MCP facade unless the
     project has explicitly chosen that risk.
 
+## Session
+
+On the monty backend, variables persist across `execute_code` runs within
+one served session: assignments and function definitions from one run are
+available in the next, like notebook cells. On by default:
+
+```toml
+[session]
+enabled = true
+max_memory_mb = 512 # cap on the accumulated interpreter heap
+```
+
+The contract, chosen from the [#77 spike](monty-session-spike.md):
+
+- A failed run keeps the session; a **timed-out** run is rolled back to
+  its pre-run namespace (a cancelled monty run can otherwise leave partial
+  state or poison the interpreter — pydantic/monty#533). Rollback covers
+  VM state only: capability calls, CLI commands, and saves the run made
+  before timing out stand, and the timeout error says so.
+- `await reset_session()` clears the namespace after the current run;
+  results and artifacts are unaffected.
+- The memory cap is enforced cumulatively; hitting it is a catchable
+  `MemoryError` and the session survives — reassign large variables to
+  `None` (monty has no `del`) or reset.
+- Snippets that assign to a Toolplane binding name (`save_result = ...`)
+  are rejected up front: in a session the assignment would persist and
+  mask the binding — including `reset_session` itself — until reset.
+- Per-run `inputs` are rejected in session mode: everything fed to a
+  session persists, so accepting them would silently turn one-shot host
+  data (including secrets) into durable state. Seed state inside a
+  snippet instead, or disable sessions for input-driven runs.
+
+Like the stores, sessions are per-process state: multi-client transports
+(`serve mcp --transport http`) disable them automatically rather than share
+one namespace (and one interpreter lock) across clients. That automatic
+gate lives in the config-driven path (`serve mcp`,
+`build_mcp_facade_from_config`); if you construct `Toolplane()` yourself
+and serve it on a multi-client transport via `build_mcp_facade`, pass
+`Toolplane(sessions=False)` — sessions default on for the default backend
+set. Passing `backends=[...]` explicitly means you own session mode:
+construct `MontyBackend(session=True)` yourself if you want it.
+
 ## Result Store
+
+With sessions enabled, plain variables already persist between runs; the
+store remains the seam for values that must survive a session reset, cross
+a backend override, or be read directly as an MCP resource.
 
 Snippets can pass data between runs without routing it through the model's
 context: `save_result(value, label=None)` returns a `res_` handle, and

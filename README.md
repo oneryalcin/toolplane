@@ -125,10 +125,13 @@ manifest and go.
   `{'stdout', 'stderr', 'exit_code', 'ok'}`. (Scoped sugar like
   `context7.get_docs(...)` exists on the non-default backends; the monty
   default is flat-only — the manifest always shows the shapes that work.)
-- **State between runs, off the context window.** `save_result`/`load_result`
-  for JSON-shaped data, `save_artifact`/`load_artifact` for bytes (CSVs,
-  images, parquet). Both are also readable directly as MCP resources —
-  on Claude Code, a saved artifact materializes as a real local file.
+- **State between runs, off the context window.** Variables persist across
+  runs like notebook cells (a timed-out run rolls back cleanly;
+  `await reset_session()` starts fresh). For values that must survive a
+  reset or be read as MCP resources: `save_result`/`load_result` for
+  JSON-shaped data, `save_artifact`/`load_artifact` for bytes (CSVs,
+  images, parquet) — on Claude Code, a saved artifact materializes as a
+  real local file.
 - **Errors written for agents, not log files.** The real exception type and
   message on every backend, catchable by builtin type (`except ValueError`
   for store failures, `except PermissionError` for CLI policy,

@@ -118,7 +118,8 @@ def test_ttl_expires_entries_and_frees_space() -> None:
 
 
 def test_two_run_save_load_on_monty_summary_plus_handle() -> None:
-    runtime = Toolplane(ambient_cli=False)
+    # handle-via-inputs is the input-driven pattern: sessions off by design
+    runtime = Toolplane(ambient_cli=False, sessions=False)
 
     first = run(
         runtime.execute(
@@ -204,7 +205,7 @@ except Exception as exc:
 
 def test_handles_are_scoped_to_one_runtime() -> None:
     saver = Toolplane(ambient_cli=False)
-    other = Toolplane(ambient_cli=False)
+    other = Toolplane(ambient_cli=False, sessions=False)  # input-driven run
 
     handle = run(
         saver.execute("return await save_result({'v': 1})", backend="monty")
@@ -225,7 +226,9 @@ def test_handles_are_scoped_to_one_runtime() -> None:
 def test_shared_registry_does_not_leak_handles_across_runtimes() -> None:
     registry = CapabilityRegistry()
     saver = Toolplane(registry=registry, ambient_cli=False)
-    other = Toolplane(registry=registry, ambient_cli=False)
+    other = Toolplane(  # input-driven run: sessions off by design
+        registry=registry, ambient_cli=False, sessions=False
+    )
 
     handle = run(
         saver.execute("return await save_result({'v': 1})", backend="monty")
@@ -269,7 +272,8 @@ except Exception as exc:
 
 
 def test_inputs_shadow_result_sugar_bindings() -> None:
-    runtime = Toolplane(ambient_cli=False)
+    # a one-shot contract: session mode rejects inputs outright instead
+    runtime = Toolplane(ambient_cli=False, sessions=False)
 
     result = run(
         runtime.execute(

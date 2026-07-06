@@ -22,7 +22,10 @@ Name the real boundaries early so the code does not collapse into glue:
 - `Schema`: how the agent learns to call something.
 - `Backend`: where code runs.
 - `Bridge`: how sandboxed code calls host capabilities.
-- `Session`: execution state across snippets.
+- `Session`: execution state across snippets. Realized inside the monty
+  backend (persistent namespace, on by default — see the
+  [session spike](monty-session-spike.md) and `[session]` config) rather
+  than as a separate layer: the interpreter that holds the state owns it.
 
 The main rule:
 
@@ -181,7 +184,8 @@ src/toolplane/
     render.py          # brief/detailed/full schema rendering
     json_schema.py     # introspection helpers
 
-  sessions.py          # execution sessions and state
+  # (no sessions.py: session state lives in backends/monty.py — the
+  #  interpreter that holds the namespace owns it)
   errors.py
 ```
 

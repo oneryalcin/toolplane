@@ -86,6 +86,20 @@ class ArtifactsSettings(BaseModel):
     ttl_seconds: float = Field(default=3600.0, gt=0)
 
 
+class SessionSettings(BaseModel):
+    """Persistent-namespace policy for the monty backend.
+
+    When enabled, variables persist across execute_code runs within one
+    served session (stdio only — multi-client transports fail closed, like
+    the stores). The memory cap bounds the accumulated interpreter heap.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    max_memory_mb: int = Field(default=512, gt=0)
+
+
 class AuditSettings(BaseModel):
     """Audit log policy: opt-in JSONL event stream, metadata only.
 
@@ -127,6 +141,7 @@ class ToolplaneConfig(BaseModel):
     cli: CliSettings = Field(default_factory=CliSettings)
     results: ResultsSettings = Field(default_factory=ResultsSettings)
     artifacts: ArtifactsSettings = Field(default_factory=ArtifactsSettings)
+    session: SessionSettings = Field(default_factory=SessionSettings)
     audit: AuditSettings = Field(default_factory=AuditSettings)
     mcp: McpSettings = Field(default_factory=McpSettings)
 

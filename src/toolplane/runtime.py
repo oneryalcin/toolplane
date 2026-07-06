@@ -39,6 +39,8 @@ class Toolplane:
         result_store: ResultStore | None = None,
         artifact_store: ArtifactStore | None = None,
         audit_log: AuditLog | None = None,
+        sessions: bool = True,
+        session_max_memory_bytes: int | None = 512 * 1024 * 1024,
     ) -> None:
         if not ambient_cli and ambient_cli_allowlist is not None:
             raise ValueError("ambient_cli_allowlist requires ambient_cli=True")
@@ -61,9 +63,18 @@ class Toolplane:
             result_store=self.result_store,
             artifact_store=self.artifact_store,
         )
+        # sessions only apply to the default backend set: a caller passing
+        # explicit backends owns their construction (including session mode)
         configured = list(
             backends
-            or (LocalUnsafeBackend(), MontyBackend(), PyodideDenoBackend())
+            or (
+                LocalUnsafeBackend(),
+                MontyBackend(
+                    session=sessions,
+                    session_max_memory_bytes=session_max_memory_bytes,
+                ),
+                PyodideDenoBackend(),
+            )
         )
         self.backends = {backend.name: backend for backend in configured}
         self.default_backend = default_backend
@@ -97,6 +108,8 @@ class Toolplane:
             result_store=ResultStore.from_settings(parsed.results),
             artifact_store=ArtifactStore.from_settings(parsed.artifacts),
             audit_log=AuditLog.from_settings(parsed.audit),
+            sessions=parsed.session.enabled,
+            session_max_memory_bytes=parsed.session.max_memory_mb * 1024 * 1024,
         )
         if parsed.mcp.servers:
             await runtime.register_mcp_config(parsed.mcp.to_fastmcp_config())
@@ -318,8 +331,41 @@ class Toolplane:
                 )
         else:
             lines.append("CLI access is disabled in this configuration.")
+        if self._session_default():
+            lines.extend(
+                [
+                    "",
+                    "## Session",
+                    "Variables persist across execute_code runs on the "
+                    "default backend: assignments and function definitions "
+                    "from one run are simply available in the next — no "
+                    "save/load step needed.",
+                    "",
+                    "- A failed run keeps the session: prior variables (and "
+                    "statements completed before the error) persist.",
+                    "- A timed-out run is rolled back: the namespace returns "
+                    "to its pre-run state, but capability calls, CLI "
+                    "commands, and saves the run already made stand.",
+                    "- `await reset_session()` clears all session variables "
+                    "after the current run (saved results and artifacts are "
+                    "unaffected).",
+                    "- The session has a memory cap; if a run fails with "
+                    "MemoryError, reassign large variables (`big = None` — "
+                    "monty has no `del`) or reset.",
+                    "- Assigning a variable named after a Toolplane binding "
+                    "(e.g. `save_result = ...`) is rejected: in a session "
+                    "the assignment would mask the binding until reset.",
+                ]
+            )
         lines.extend(["", "## Result store"])
         if self.result_store.enabled:
+            if self._session_default():
+                lines.append(
+                    "Session variables already persist between runs; use "
+                    "the store when a value must survive a session reset, "
+                    "cross a backend override, or be read directly as an "
+                    "MCP resource."
+                )
             lines.extend(
                 [
                     "- `handle = await save_result(value)` — JSON-shaped "
@@ -401,7 +447,9 @@ class Toolplane:
                 f"backend '{resolved_backend}' cannot install packages; "
                 "use pyodide-deno for package workflows"
             )
-        doc = description or self._compact_tool_description()
+        doc = description or self._compact_tool_description(
+            session=bool(getattr(runner, "session", False))
+        )
 
         async def run_code(code: str) -> dict[str, Any]:
             result = await self.execute(
@@ -414,8 +462,12 @@ class Toolplane:
         run_code.__doc__ = doc
         return run_code
 
-    def _compact_tool_description(self, *, limit: int = 1000) -> str:
+    def _compact_tool_description(
+        self, *, limit: int = 1000, session: bool | None = None
+    ) -> str:
         """Namespace summary that fits inside strict tool-description caps."""
+        if session is None:
+            session = self._session_default()
         lines = [
             "Execute Python against a curated tool namespace. The snippet "
             "body runs inside an async function: await every namespace "
@@ -454,7 +506,13 @@ class Toolplane:
                 )
             else:
                 lines.append("CLI: no binaries are allowed.")
-        if self.result_store.enabled:
+        if session:
+            lines.append(
+                "Variables persist across calls (session); await "
+                "reset_session() clears them. A timed-out run rolls the "
+                "namespace back."
+            )
+        if self.result_store.enabled and not session:
             lines.append(
                 "State between runs: handle = await save_result(value); "
                 "await load_result(handle)."
@@ -610,6 +668,15 @@ class Toolplane:
             escalations_cancelled=list(interrupted),
         )
         return result
+
+    def _session_default(self) -> bool:
+        """True when default execute_code runs land in a persistent session.
+
+        Read from the live backend instance, not construction args, so the
+        manifest cannot lie when a caller supplied their own backends.
+        """
+        backend = self.backends.get(self.default_backend)
+        return bool(getattr(backend, "session", False))
 
     def _get_ambient_cli_names(self) -> tuple[str, ...]:
         if not self.ambient_cli:

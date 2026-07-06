@@ -54,9 +54,15 @@ more custom code around it.
   capability envelope.
 - Pyodide+Deno is the opt-in sandbox for package-capable snippets, especially
   pandas/NumPy-style workflows.
+- Monty sessions (`docs/monty-session-spike.md`) persist the live namespace
+  across runs by default (stdio/embedded only): a timed-out run rolls the
+  namespace back via a pre-run snapshot — never remove that snapshot, it is
+  what keeps a cancelled run from poisoning the interpreter
+  (pydantic/monty#533) — and host-side effects are never rolled back.
 - The result store (`save_result`/`load_result`, `docs/result-store-design.md`)
   persists JSON-shaped data across runs within one process; it never persists
-  interpreters, live objects, or anything to disk.
+  interpreters or anything to disk. With sessions on, its remaining jobs are
+  surviving a session reset, crossing backends, and MCP-resource reads.
 - Docker, Modal, E2B, and Blaxel are needed for arbitrary CPython packages,
   native system dependencies, subprocesses, GPUs, remote isolation, or
   long-running jobs.
