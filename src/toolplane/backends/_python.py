@@ -76,6 +76,16 @@ def find_reserved_rebindings(code: str, reserved: Iterable[str]) -> list[str]:
             if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Store):
                 if child.id in names:
                     found.setdefault(child.id)
+            if isinstance(child, (ast.Import, ast.ImportFrom)):
+                # imports bind names too: `import math as reset_session` /
+                # `from math import sqrt as save_result` (Codex finding
+                # on #86); `import a.b` binds the root `a`
+                for alias in child.names:
+                    if alias.name == "*":
+                        continue
+                    bound = alias.asname or alias.name.split(".")[0]
+                    if bound in names:
+                        found.setdefault(bound)
             visit(child)
 
     visit(main)

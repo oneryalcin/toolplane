@@ -304,6 +304,28 @@ def test_assigning_a_binding_name_is_rejected_before_it_sticks() -> None:
     _run(case())
 
 
+def test_import_aliases_cannot_shadow_bindings_either() -> None:
+    # imports bind names like assignments do: `import math as
+    # reset_session` walked straight past the Name-store guard (both
+    # Codex reviews on #86)
+    async def case() -> None:
+        runtime = _session_runtime()
+
+        for code, name in [
+            ("import math as reset_session", "reset_session"),
+            ("from math import sqrt as save_result", "save_result"),
+        ]:
+            rejected = await runtime.execute(code)
+            assert rejected.error is not None, code
+            assert rejected.error.type == "NamespaceCollisionError", code
+            assert name in rejected.error.message
+
+        still_works = await runtime.execute("return await reset_session()")
+        assert still_works.error is None
+
+    _run(case())
+
+
 def test_reset_session_binding_beats_a_capability_of_the_same_name() -> None:
     async def case() -> None:
         runtime = _session_runtime()
