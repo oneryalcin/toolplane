@@ -86,6 +86,19 @@ class ArtifactsSettings(BaseModel):
     ttl_seconds: float = Field(default=3600.0, gt=0)
 
 
+class AuditSettings(BaseModel):
+    """Audit log policy: opt-in JSONL event stream, metadata only.
+
+    Events carry capability names, durations, and outcomes — never call
+    arguments or results, which can contain secrets.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    path: str | None = None  # default: ~/.toolplane/audit.jsonl
+
+
 class McpSettings(BaseModel):
     """MCP adapter settings.
 
@@ -114,6 +127,7 @@ class ToolplaneConfig(BaseModel):
     cli: CliSettings = Field(default_factory=CliSettings)
     results: ResultsSettings = Field(default_factory=ResultsSettings)
     artifacts: ArtifactsSettings = Field(default_factory=ArtifactsSettings)
+    audit: AuditSettings = Field(default_factory=AuditSettings)
     mcp: McpSettings = Field(default_factory=McpSettings)
 
 

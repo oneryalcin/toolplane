@@ -132,6 +132,48 @@ across `execute_code` calls inside one `serve mcp` or embedded runtime.
 On multi-client transports (`serve mcp --transport http`) the store is
 disabled automatically rather than shared across clients.
 
+## Audit Log
+
+An opt-in JSONL event stream recording what actually ran: every run
+(snippet hash, backend, duration, outcome), every dispatch through the
+bridge (capability or CLI binary, duration, error type), and every
+escalation decision (granted / declined / abandoned / error). Everything
+flows through one choke point, so the log is structurally complete.
+
+```toml
+[audit]
+enabled = true
+# path = "~/.toolplane/audit.jsonl"  # the default when enabled
+```
+
+**Events are metadata only.** Call arguments and results are never
+written — payloads can carry secrets. What a human approved, when, and
+what the snippet touched is on the record; the data that moved is not.
+
+Run and dispatch events carry a `run_id`; escalation events do not —
+they can resolve after their run has ended (an abandoned prompt's
+cancellation lands on a later event-loop tick), so instead of a
+possibly-wrong id they carry none: correlate them through the run's
+`run_end.escalations_cancelled` list and timestamps.
+
+The intended consumer is you and a terminal:
+
+```bash
+tail -f ~/.toolplane/audit.jsonl | jq .
+
+# every CLI invocation with its outcome
+jq 'select(.event == "dispatch" and .binary)' ~/.toolplane/audit.jsonl
+
+# who approved what, this session
+jq 'select(.event == "escalation")' ~/.toolplane/audit.jsonl
+
+# slow runs
+jq 'select(.event == "run_end" and .duration_ms > 5000)' ~/.toolplane/audit.jsonl
+```
+
+A write failure (unwritable path, full disk) disables the log with one
+stderr warning; it never breaks a run.
+
 ## MCP Servers
 
 MCP server tables are preserved and passed through to FastMCP. Toolplane
