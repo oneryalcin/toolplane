@@ -48,6 +48,9 @@ Only binaries on the server's allowlist are bound (the manifest lists them).
 
 - Flat shape: `await git('log', oneline=True, max_count=3)` — subcommand as
   the first positional argument, flags as keyword arguments.
+- Flags that must precede the subcommand (`git -C <path>`,
+  `kubectl --context`) go in the `_global` dict:
+  `await git('log', _global={'C': '/path/to/repo'}, max_count=3)`.
 - Awaiting returns `{'stdout', 'stderr', 'exit_code', 'ok'}` — check `ok`
   or `exit_code`, and read `stderr` on failure.
 - A non-allowlisted binary has **no binding**: calling it raises a plain

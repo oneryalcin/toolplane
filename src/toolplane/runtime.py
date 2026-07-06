@@ -308,6 +308,9 @@ class Toolplane:
                     "subcommand as the first positional argument, flags as "
                     "keyword arguments — e.g. "
                     "`await git('log', oneline=True, max_count=3)`.",
+                    "- Flags that must precede the subcommand (`git -C`, "
+                    "`kubectl --context`) go in `_global`: "
+                    "`await git('log', _global={'C': '/path/to/repo'})`.",
                     "- Awaiting returns `{'stdout', 'stderr', 'exit_code', 'ok'}`.",
                     "- For a binary whose name is not a valid Python "
                     "identifier, use `await cli_run(binary, subcommand, "
