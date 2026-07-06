@@ -25,7 +25,26 @@ async def register_mcp_server(
     `server` is passed to `fastmcp.Client`, so this supports in-process
     `FastMCP` apps, URLs, script paths, transport objects, and single-server
     config dictionaries.
+
+    Dict-shaped servers are credential-prepared exactly like config-file
+    entries: without this, ``auth = "oauth"`` through the public
+    ``runtime.register_mcp()`` silently fell back to fastmcp's in-memory
+    token storage — the failure the credential layer exists to prevent
+    (reviewer finding on #95). Preparation is idempotent, so entries that
+    came through ``register_mcp_config`` are unaffected.
     """
+    if isinstance(server, Mapping):
+        from ..credentials import prepare_server_config
+
+        raw = dict(server)
+        if "mcpServers" in raw and isinstance(raw["mcpServers"], Mapping):
+            raw["mcpServers"] = {
+                entry_name: prepare_server_config(dict(entry))
+                for entry_name, entry in raw["mcpServers"].items()
+            }
+            server = raw
+        elif "url" in raw or "command" in raw:
+            server = prepare_server_config(raw)
     client = _client(server)
     capabilities: list[Capability] = []
     async with client:

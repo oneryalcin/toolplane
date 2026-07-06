@@ -1011,3 +1011,78 @@ def assert_emitted_config_loads(tmp_path: Path, output: str) -> ToolplaneConfig:
     config = load_toolplane_config(config_path)
     MCPConfig.from_dict(config.mcp.to_fastmcp_config())
     return config
+
+
+def test_probes_resolve_secret_references_like_serve_does(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # status/login previously sent the literal "env://TOKEN" string
+    # upstream — split-brain vs the serve path (Codex finding on #95)
+    import fastmcp
+
+    captured: dict[str, object] = {}
+
+    class FakeClient:
+        def __init__(self, config, **kwargs):
+            captured["config"] = config
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def list_tools(self):
+            return [object()]
+
+    monkeypatch.setattr(fastmcp, "Client", FakeClient)
+    monkeypatch.setenv("PROBE_TOKEN", "resolved-token-value")
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text(
+        textwrap.dedent(
+            """
+            [mcp.servers.docs]
+            url = "https://docs.example.com/mcp"
+
+            [mcp.servers.docs.headers]
+            Authorization = "env://PROBE_TOKEN"
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    code = main(["mcp", "status", "docs", "--config", str(config_path)])
+
+    assert code == 0
+    server = captured["config"].mcpServers["docs"]
+    assert server.headers["Authorization"] == "resolved-token-value"
+
+
+def test_probe_missing_secret_becomes_status_detail(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text(
+        textwrap.dedent(
+            """
+            [mcp.servers.docs]
+            url = "https://docs.example.com/mcp"
+
+            [mcp.servers.docs.headers]
+            Authorization = "env://DEFINITELY_MISSING_TOKEN_XYZ"
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    code = main(["mcp", "status", "docs", "--config", str(config_path)])
+
+    captured = capsys.readouterr()
+    assert code == 0
+    assert "DEFINITELY_MISSING_TOKEN_XYZ" in captured.out
+    assert "error" in captured.out

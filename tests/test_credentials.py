@@ -158,3 +158,104 @@ def test_prepare_leaves_non_oauth_servers_untouched() -> None:
 
     bearer = {"url": "https://x.example/mcp", "headers": {"X-Plain": "v"}}
     assert prepare_server_config(bearer) == bearer
+
+
+def test_secret_names_reject_control_characters(fake_keyring) -> None:
+    # "foo\nevil" passed the old guard and split into two phantom index
+    # entries, leaving the real secret unmanageable (Opus finding on #95)
+    for bad in ["foo\nevil", "foo bar", "foo/bar", "", "foo\tbar"]:
+        with pytest.raises(CredentialStorageError, match="letters"):
+            secret_set(bad, "v")
+    assert secret_list() == []
+
+
+def test_keyring_backend_failure_teaches_instead_of_traceback(monkeypatch) -> None:
+    import keyring
+
+    def locked(*_args):
+        raise RuntimeError("keychain locked")
+
+    monkeypatch.setattr(keyring, "get_password", locked)
+    with pytest.raises(CredentialStorageError, match="env://"):
+        resolve_secret_reference("keyring://linear-api-key")
+
+
+def test_probe_never_mints_a_keyring_key(monkeypatch, fake_keyring) -> None:
+    # a read-only status probe must not provision a persistent OS secret
+    # (Sonnet finding on #95)
+    monkeypatch.delenv("TOOLPLANE_STORAGE_KEY")
+
+    primed = asyncio.run(
+        __import__("toolplane.credentials", fromlist=["has_stored_oauth_tokens"])
+        .has_stored_oauth_tokens("https://x.example/mcp")
+    )
+
+    assert primed is False
+    assert fake_keyring.values == {}
+
+
+def test_invalid_storage_key_surfaces_instead_of_not_primed(monkeypatch) -> None:
+    # a typo'd key must not masquerade as "run mcp login again"
+    monkeypatch.setenv("TOOLPLANE_STORAGE_KEY", "not-a-fernet-key")
+    token_dir = Path(credentials.DEFAULT_TOKEN_DIR).expanduser()
+    token_dir.mkdir(parents=True, exist_ok=True)
+
+    with pytest.raises(CredentialStorageError, match="Fernet"):
+        asyncio.run(
+            credentials.has_stored_oauth_tokens("https://x.example/mcp")
+        )
+
+
+def test_register_mcp_server_prepares_dict_shapes(monkeypatch) -> None:
+    # the public library path silently fell back to fastmcp's in-memory
+    # OAuth, the exact failure this layer prevents (Sonnet finding on #95)
+    from fastmcp.client.auth import OAuth
+
+    from toolplane.adapters import mcp as mcp_adapter
+
+    captured: dict[str, object] = {}
+
+    class FakeClient:
+        def __init__(self, server):
+            captured["server"] = server
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def list_tools(self):
+            return []
+
+    monkeypatch.setattr(mcp_adapter, "_client", FakeClient)
+    from toolplane import CapabilityRegistry
+
+    asyncio.run(
+        mcp_adapter.register_mcp_server(
+            CapabilityRegistry(),
+            "linear",
+            {"url": "https://mcp.linear.app/mcp", "auth": "oauth"},
+        )
+    )
+
+    assert isinstance(captured["server"]["auth"], OAuth)
+
+
+def test_cli_secret_set_strips_crlf_from_piped_input(
+    monkeypatch, fake_keyring, capsys
+) -> None:
+    # CRLF pipes stored 'token\r' — a silently corrupt credential headed
+    # for an HTTP header (Opus finding on #95)
+    import io
+
+    from toolplane.cli import main
+
+    fake_stdin = io.StringIO("token123\r\n")
+    fake_stdin.isatty = lambda: False  # type: ignore[method-assign]
+    monkeypatch.setattr("sys.stdin", fake_stdin)
+
+    code = main(["secret", "set", "api-token"])
+
+    assert code == 0
+    assert fake_keyring.values[("toolplane", "api-token")] == "token123"

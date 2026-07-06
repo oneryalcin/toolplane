@@ -313,6 +313,23 @@ async def build_mcp_facade_from_config(
     parsed = resolve_serve_config(load_toolplane_config(config), transport)
     policy = EffectivePolicy.from_config(parsed, allow_unsafe=allow_unsafe)
     ensure_safe_facade_policy(policy)
+    # a served process has no human at a browser: an unprimed direct-OAuth
+    # server would block startup for the whole OAuth callback timeout
+    # (~5 min) and then crash (reviewer finding on #95) — fail fast with
+    # the command that fixes it instead
+    from .credentials import CredentialStorageError, has_stored_oauth_tokens
+
+    for server_name, server_config in parsed.mcp.servers.items():
+        if (
+            server_config.get("url")
+            and server_config.get("auth") == "oauth"
+            and not await has_stored_oauth_tokens(str(server_config["url"]))
+        ):
+            raise CredentialStorageError(
+                f"MCP server {server_name!r} requires OAuth login before "
+                f"serving (a server process cannot open a browser) — run: "
+                f"toolplane mcp login {server_name}"
+            )
     runtime = await Toolplane.from_config(parsed)
     # escalation grants are session-scoped state like the stores: only stdio
     # guarantees one client per process, so a human approval cannot leak to

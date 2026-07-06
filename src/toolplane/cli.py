@@ -11,6 +11,7 @@ from pathlib import Path
 
 from .config import ToolplaneConfig, load_toolplane_config
 from .config_edit import ConfigEditError, write_cli_allow_config
+from .credentials import CredentialStorageError
 from .doctor import doctor_exit_code, format_doctor_checks, run_doctor_checks
 from .errors import ToolplaneError, UnsafeFacadeConfigError
 from .execution import ExecutionResult
@@ -125,6 +126,9 @@ def _cmd_serve_mcp(args: argparse.Namespace) -> int:
             )
         )
     except UnsafeFacadeConfigError as exc:
+        print(f"toolplane: {exc}", file=sys.stderr)
+        return 2
+    except CredentialStorageError as exc:
         print(f"toolplane: {exc}", file=sys.stderr)
         return 2
     return 0
@@ -281,8 +285,11 @@ def _cmd_secret_set(args: argparse.Namespace) -> int:
 
         value = getpass.getpass(f"Value for secret {args.name!r}: ")
     else:
-        value = sys.stdin.read().rstrip("\n")
-    if not value:
+        # strip surrounding whitespace: CRLF pipes left a trailing \r that
+        # silently corrupted the credential (reviewer finding on #95);
+        # internal newlines survive for multi-line secrets like PEM keys
+        value = sys.stdin.read().strip()
+    if not value.strip():
         print("toolplane: refusing to store an empty secret", file=sys.stderr)
         return 2
     try:

@@ -14,6 +14,7 @@ secret material.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -95,21 +96,71 @@ def build_oauth(url: str) -> Any:
     )
 
 
+def _peek_storage_key() -> str | None:
+    """Read-only key lookup for probe paths: never generates, never writes.
+
+    A diagnostic command must not mint a persistent OS-level secret as a
+    side effect (reviewer finding on #95) — get-or-create is reserved for
+    paths that are about to store something.
+    """
+    env_key = os.environ.get(STORAGE_KEY_ENV)
+    if env_key:
+        return env_key
+    try:
+        import keyring
+
+        return keyring.get_password(KEYRING_SERVICE, OAUTH_KEY_NAME)
+    except Exception:
+        return None
+
+
 async def has_stored_oauth_tokens(url: str) -> bool:
     """Whether a prior login left tokens for this server.
 
+    Read-only in every sense: no key is created, no directory is written.
     Read through fastmcp's own TokenStorageAdapter (same naming, same
-    store) so this can never drift from where fastmcp actually keeps
-    them. No key material or unreadable storage just means "not primed".
+    store) so this can never drift from where fastmcp actually keeps them.
+    A missing key/dir just means "not primed"; an INVALID key raises so
+    callers can surface the real problem instead of re-teaching login.
     """
-    try:
-        from fastmcp.client.auth.oauth import TokenStorageAdapter
+    token_dir = Path(DEFAULT_TOKEN_DIR).expanduser()
+    key = _peek_storage_key()
+    if key is None or not token_dir.is_dir():
+        return False
+    from cryptography.fernet import Fernet
+    from fastmcp.client.auth.oauth import TokenStorageAdapter
+    from key_value.aio.stores.filetree import (
+        FileTreeStore,
+        FileTreeV1CollectionSanitizationStrategy,
+        FileTreeV1KeySanitizationStrategy,
+    )
+    from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 
-        adapter = TokenStorageAdapter(
-            async_key_value=oauth_token_storage(), server_url=url
-        )
+    try:
+        fernet = Fernet(key)
+    except (ValueError, TypeError) as exc:
+        raise CredentialStorageError(
+            f"the configured token-encryption key is not a valid Fernet "
+            f"key ({exc}); check {STORAGE_KEY_ENV} or the OS keyring entry"
+        ) from exc
+    storage = FernetEncryptionWrapper(
+        key_value=FileTreeStore(
+            data_directory=token_dir,
+            key_sanitization_strategy=FileTreeV1KeySanitizationStrategy(
+                token_dir
+            ),
+            collection_sanitization_strategy=(
+                FileTreeV1CollectionSanitizationStrategy(token_dir)
+            ),
+        ),
+        fernet=fernet,
+    )
+    try:
+        adapter = TokenStorageAdapter(async_key_value=storage, server_url=url)
         return await adapter.get_tokens() is not None
     except Exception:
+        # unreadable/corrupt records mean "not primed"; the next login
+        # overwrites them
         return False
 
 
@@ -134,7 +185,16 @@ def resolve_secret_reference(value: Any) -> Any:
         name = value[len("keyring://") :]
         import keyring
 
-        resolved = keyring.get_password(KEYRING_SERVICE, name)
+        try:
+            resolved = keyring.get_password(KEYRING_SERVICE, name)
+        except Exception as exc:
+            # backend unavailable/locked must be an actionable Toolplane
+            # error, not a dependency traceback (Codex finding on #95)
+            raise CredentialStorageError(
+                f"config references keyring://{name} but the OS keyring "
+                f"backend failed ({exc.__class__.__name__}); configure a "
+                "keyring backend or switch the reference to env://"
+            ) from exc
         if resolved is None:
             raise CredentialStorageError(
                 f"config references keyring://{name} but no such secret is "
@@ -144,13 +204,15 @@ def resolve_secret_reference(value: Any) -> Any:
     return value
 
 
-def prepare_server_config(server_config: dict[str, Any]) -> dict[str, Any]:
-    """Make one mcpServers entry runnable: secrets resolved, OAuth wired.
+def resolve_config_secret_references(
+    server_config: dict[str, Any],
+) -> dict[str, Any]:
+    """Resolve secret references in headers/env without touching auth.
 
-    - ``url`` + ``auth = "oauth"`` gets a live fastmcp OAuth object backed
-      by the encrypted token store (fastmcp's MCPConfig accepts httpx.Auth
-      instances in the auth slot).
-    - ``headers`` and stdio ``env`` values may be secret references.
+    Split out of :func:`prepare_server_config` so browser-free lifecycle
+    probes (mcp status) can resolve secrets identically to serve/execute
+    without constructing OAuth (Codex finding on #95: probes previously
+    sent literal ``env://`` strings upstream).
     """
     prepared = dict(server_config)
     headers = prepared.get("headers")
@@ -163,6 +225,20 @@ def prepare_server_config(server_config: dict[str, Any]) -> dict[str, Any]:
         prepared["env"] = {
             key: resolve_secret_reference(item) for key, item in env.items()
         }
+    return prepared
+
+
+def prepare_server_config(server_config: dict[str, Any]) -> dict[str, Any]:
+    """Make one mcpServers entry runnable: secrets resolved, OAuth wired.
+
+    - ``url`` + ``auth = "oauth"`` gets a live fastmcp OAuth object backed
+      by the encrypted token store (fastmcp's MCPConfig accepts httpx.Auth
+      instances in the auth slot).
+    - ``headers`` and stdio ``env`` values may be secret references.
+
+    Idempotent: an already-prepared config passes through unchanged.
+    """
+    prepared = resolve_config_secret_references(server_config)
     if prepared.get("url") and prepared.get("auth") == "oauth":
         prepared["auth"] = build_oauth(str(prepared["url"]))
     return prepared
@@ -183,39 +259,58 @@ def _read_names() -> list[str]:
 
 
 def _write_names(names: list[str]) -> None:
+    from .config_edit import write_text_atomic
+
     path = _names_index_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("".join(f"{name}\n" for name in sorted(set(names))))
+    write_text_atomic(path, "".join(f"{name}\n" for name in sorted(set(names))))
+
+
+# same conservative charset as MCP server names: a name that survives the
+# newline-delimited index, keyring backends, and keyring:// references
+_SECRET_NAME = re.compile(r"^[A-Za-z0-9_.-]+$")
+
+
+def _validate_secret_name(name: str) -> None:
+    if not _SECRET_NAME.fullmatch(name):
+        raise CredentialStorageError(
+            "secret names must contain only letters, numbers, dots, "
+            "underscores, and hyphens"
+        )
+    if name == OAUTH_KEY_NAME:
+        raise CredentialStorageError(
+            f"{OAUTH_KEY_NAME!r} is reserved — it is the OAuth token "
+            "encryption key; changing it would orphan every stored token"
+        )
 
 
 def secret_set(name: str, value: str) -> None:
     import keyring
 
-    if not name or "/" in name or name.isspace():
+    _validate_secret_name(name)
+    try:
+        keyring.set_password(KEYRING_SERVICE, name, value)
+    except Exception as exc:
         raise CredentialStorageError(
-            "secret names must be non-empty and must not contain '/'"
-        )
-    if name == OAUTH_KEY_NAME:
-        raise CredentialStorageError(
-            f"{OAUTH_KEY_NAME!r} is reserved — it is the OAuth token "
-            "encryption key; overwriting it would orphan every stored token"
-        )
-    keyring.set_password(KEYRING_SERVICE, name, value)
+            f"the OS keyring backend refused the write "
+            f"({exc.__class__.__name__}); configure a keyring backend "
+            "before storing secrets"
+        ) from exc
     _write_names([*_read_names(), name])
 
 
 def secret_delete(name: str) -> None:
     import keyring
 
-    if name == OAUTH_KEY_NAME:
-        raise CredentialStorageError(
-            f"{OAUTH_KEY_NAME!r} is reserved — deleting it orphans every "
-            "stored OAuth token (they become unreadable and re-prompt)"
-        )
+    _validate_secret_name(name)
     try:
         keyring.delete_password(KEYRING_SERVICE, name)
     except keyring.errors.PasswordDeleteError as exc:
         raise CredentialStorageError(f"no such secret: {name}") from exc
+    except Exception as exc:
+        raise CredentialStorageError(
+            f"the OS keyring backend failed ({exc.__class__.__name__})"
+        ) from exc
     _write_names([entry for entry in _read_names() if entry != name])
 
 

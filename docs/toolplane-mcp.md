@@ -305,16 +305,16 @@ Rules:
 - Agent code never receives raw OAuth tokens, refresh tokens, or API keys.
 - Toolplane does not silently borrow Claude Code or Codex's private MCP auth
   sessions.
-- Headless execution requires pre-login or explicit environment-backed bearer
-  credentials.
-- Token persistence is delegated: the bridge process owns its cache; Toolplane
-  never writes tokens to disk or holds them beyond the FastMCP client's own
-  lifecycle.
-- Direct `url` + `auth = "oauth"` configs rely on FastMCP's in-memory token
-  storage and reauthenticate on every restart — that is why `mcp status` warns
-  on them and `mcp login` refuses them; use a `fastmcp-remote` bridge instead.
-- `toolplane.toml` should describe upstream MCP servers and policy, not contain
-  long-lived secrets.
+- Headless execution requires pre-login (`toolplane mcp login <name>`) or
+  explicit secret-referenced bearer credentials.
+- Token persistence is delegated to FastMCP: direct `url` + `auth = "oauth"`
+  servers use FastMCP's OAuth helper with a Fernet-encrypted store that
+  Toolplane configures (`~/.toolplane/oauth`, key in the OS keyring), and
+  `fastmcp-remote` bridges own their own cache. Toolplane itself contains
+  no token-handling code and rolls no crypto.
+- `toolplane.toml` should describe upstream MCP servers and policy, not
+  contain long-lived secrets — reference them as `keyring://<name>` or
+  `env://<VAR>` instead.
 
 ## What Toolplane-MCP Should Expose
 

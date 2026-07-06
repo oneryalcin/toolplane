@@ -355,15 +355,22 @@ async def _probe_mcp_server(
             # browser-free), so a 401 is expected even after login — the
             # hint must distinguish "not primed yet" from "primed; the
             # probe just doesn't attach credentials"
-            from .credentials import has_stored_oauth_tokens
+            from .credentials import CredentialStorageError, has_stored_oauth_tokens
 
-            if await has_stored_oauth_tokens(str(server_config["url"])):
+            try:
+                primed = await has_stored_oauth_tokens(str(server_config["url"]))
+            except CredentialStorageError as storage_exc:
+                # an invalid encryption key must not masquerade as "not
+                # primed" — re-teaching login would hide the real problem
+                primed = None
+                detail = f"{detail} — {storage_exc}"
+            if primed is True:
                 detail = (
                     f"{detail} — tokens are stored; status probes never "
                     "attach credentials, but serve and execute use the "
                     "saved login"
                 )
-            else:
+            elif primed is False:
                 detail = (
                     f"{detail} — {_DIRECT_OAUTH_LOGIN_HINT.format(name=name)}"
                 )
@@ -401,7 +408,16 @@ async def _list_mcp_tools(
             "its dependencies or add `fastmcp` to the environment."
         ) from exc
 
-    config = MCPConfig.from_dict({"mcpServers": {name: dict(server_config)}})
+    from .credentials import resolve_config_secret_references
+
+    # probes must send the same resolved credentials serve/execute sends —
+    # a literal "env://TOKEN" header made login/status fail for configs
+    # that work in production (Codex finding on #95). Resolution happens
+    # here, inside the probe's try, so a missing secret becomes a status
+    # detail instead of a crash. OAuth handling stays with the callers:
+    # status strips it, login injects the encrypted-store instance.
+    resolved = resolve_config_secret_references(dict(server_config))
+    config = MCPConfig.from_dict({"mcpServers": {name: resolved}})
     async with Client(
         config,
         timeout=timeout_seconds,

@@ -578,3 +578,31 @@ def test_mcp_facade_unsafe_policy_unknown_backend_returns_structured_error() -> 
 
     assert result["error"]["type"] == "BackendNotFoundError"
     assert "Unknown backend 'bogus'" in result["error"]["message"]
+
+
+def test_serve_refuses_unprimed_direct_oauth_with_login_hint() -> None:
+    # a served process can't open a browser: startup previously blocked
+    # for the whole OAuth callback timeout, then crashed raw (Sonnet
+    # finding on #95)
+    import asyncio
+
+    import pytest
+
+    from toolplane.credentials import CredentialStorageError
+    from toolplane.mcp_facade import build_mcp_facade_from_config
+
+    with pytest.raises(CredentialStorageError, match="toolplane mcp login linear"):
+        asyncio.run(
+            build_mcp_facade_from_config(
+                {
+                    "mcp": {
+                        "servers": {
+                            "linear": {
+                                "url": "https://mcp.linear.app/mcp",
+                                "auth": "oauth",
+                            }
+                        }
+                    }
+                }
+            )
+        )
