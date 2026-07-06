@@ -43,10 +43,13 @@ class AmbientCliPolicy:
     def __init__(
         self,
         allowed_binaries: Sequence[str] | set[str] | frozenset[str] | None = None,
+        *,
+        audit_log: Any | None = None,
     ) -> None:
         self.configured = (
             frozenset(allowed_binaries) if allowed_binaries is not None else None
         )
+        self._audit_log = audit_log
         # async (binary: str) -> bool; installed per-request by the MCP
         # facade because the elicitation needs that request's client context
         self.escalation_handler: (
@@ -93,17 +96,27 @@ class AmbientCliPolicy:
                 # abandoned question, not a decision: forget it so a retry
                 # re-prompts the human, whose earlier form is now stale
                 self._asked.discard(binary)
+                self._emit_escalation(binary, "abandoned")
                 if not task.cancelled():
                     task.cancel()
                     raise  # our own caller is being cancelled
             except Exception:
                 granted = False
+                self._emit_escalation(binary, "error")
+            else:
+                self._emit_escalation(
+                    binary, "granted" if granted else "declined"
+                )
             finally:
                 self._inflight.pop(binary, None)
             if granted:
                 self._session_grants.add(binary)
                 return
         _ensure_binary_allowed(binary, self.effective_allowlist())
+
+    def _emit_escalation(self, binary: str, outcome: str) -> None:
+        if self._audit_log is not None:
+            self._audit_log.emit("escalation", binary=binary, outcome=outcome)
 
     def cancel_pending_escalations(self) -> tuple[str, ...]:
         """Abandon escalations whose requesting run has ended.

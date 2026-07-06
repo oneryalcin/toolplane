@@ -12,6 +12,7 @@ from ..adapters.ambient_cli import (
     CLI_SHAPE_GUIDANCE,
     AmbientCliPolicy,
 )
+from ..audit import AuditLog
 from ..errors import CapabilityNotFoundError
 from ..artifacts import (
     ARTIFACTS_LOAD_CAPABILITY,
@@ -44,6 +45,7 @@ class InProcessBridge:
         cli_policy: AmbientCliPolicy | None = None,
         result_store: ResultStore | None = None,
         artifact_store: ArtifactStore | None = None,
+        audit_log: AuditLog | None = None,
     ) -> None:
         self.registry = registry
         # the policy object is shared with the runtime so escalation grants
@@ -51,6 +53,7 @@ class InProcessBridge:
         self._cli_policy = cli_policy or AmbientCliPolicy(
             ambient_cli_allowed_binaries
         )
+        self._audit_log = audit_log or AuditLog()
         # The bridge is per-runtime, so it is the authority for store
         # dispatch: registries can be shared across runtimes, stores must not.
         self._result_store = result_store or ResultStore(enabled=False)
@@ -62,6 +65,38 @@ class InProcessBridge:
         params: Mapping[str, Any] | None = None,
     ) -> Any:
         normalized_params = dict(params or {})
+        if not self._audit_log.enabled:
+            return await self._dispatch_tool(name, normalized_params)
+        started = self._audit_log.timer()
+        # metadata only: the binary name is policy-relevant, the args and
+        # results are not logged — payloads can carry secrets
+        fields: dict[str, Any] = {"capability": name}
+        if name == AMBIENT_CLI_CAPABILITY:
+            fields["binary"] = str(normalized_params.get("binary", ""))
+        try:
+            value = await self._dispatch_tool(name, normalized_params)
+        except BaseException as exc:
+            self._audit_log.emit(
+                "dispatch",
+                duration_ms=self._audit_log.elapsed_ms(started),
+                ok=False,
+                error_type=type(exc).__name__,
+                **fields,
+            )
+            raise
+        self._audit_log.emit(
+            "dispatch",
+            duration_ms=self._audit_log.elapsed_ms(started),
+            ok=True,
+            **fields,
+        )
+        return value
+
+    async def _dispatch_tool(
+        self,
+        name: str,
+        normalized_params: dict[str, Any],
+    ) -> Any:
         if name == RESULTS_SAVE_CAPABILITY:
             return self._result_store.save(**normalized_params)
         if name == RESULTS_LOAD_CAPABILITY:
