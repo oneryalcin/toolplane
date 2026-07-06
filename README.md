@@ -53,6 +53,13 @@ What makes toolplane different from other code-mode runtimes:
   ([Monty](https://github.com/pydantic/monty)) is a sandboxed interpreter
   with no filesystem or network access — a pure `pip install`, no Docker, no
   Deno, no daemon.
+- **Credentials handled like they matter.** OAuth servers: log in once in a
+  browser, tokens persist Fernet-encrypted with the key in your OS keyring —
+  every later session connects silently. API keys: reference them as
+  `keyring://<name>` so `toolplane.toml` stays committable with zero secret
+  material. Toolplane contains no token-handling code of its own — the
+  flows, refresh, and encryption are FastMCP's; toolplane only configures
+  where they happen.
 - **Engineered for how agents actually behave.** Every dead end emits a
   signpost (no-match searches say how to browse; policy errors name what is
   allowed), errors are catchable by builtin type on every backend, and the
@@ -112,6 +119,35 @@ Every client now sees the same three tools — `search_capabilities`,
 `get_capability_schemas`, `execute_code` — plus the live manifest resource
 `toolplane://namespace` and a bundled usage skill. Ask your agent to read the
 manifest and go.
+
+### Private servers and credentials
+
+For an OAuth-protected MCP server (Linear, Notion, ...), log in once —
+tokens persist encrypted (key in your OS keyring), and every later agent
+session connects silently:
+
+```bash
+uvx toolplane mcp add linear --url https://mcp.linear.app/mcp --auth oauth
+uvx toolplane mcp login linear   # one browser consent, ever
+```
+
+For API-key servers, store the key in the OS keyring and reference it —
+your `toolplane.toml` stays committable with no secret material in it:
+
+```bash
+uvx toolplane secret set docs-api-token   # value via prompt or stdin
+```
+
+```toml
+[mcp.servers.internal_docs]
+url = "https://docs.example.com/mcp"
+
+[mcp.servers.internal_docs.headers]
+Authorization = "keyring://docs-api-token"   # or "env://DOCS_TOKEN" for CI
+```
+
+See [configuration](https://oneryalcin.github.io/toolplane/configuration/)
+for the full credential story.
 
 ## What your agent gets
 
