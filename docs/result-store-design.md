@@ -63,7 +63,11 @@ backend and rejects what does not round-trip.
   alias mutably across runs, and their memory cannot be measured for caps.
 - No persistent interpreter. Monty's `MontyRepl` remains the documented
   upgrade path if real usage proves agents need live state; this design does
-  not foreclose it.
+  not foreclose it. *(Status 2026-07: that path was taken — monty sessions
+  now persist the live namespace by default; see the
+  [session spike](monty-session-spike.md) and the `[session]` config
+  section. The store keeps the jobs sessions cannot do: surviving a
+  session reset, crossing backends, and direct MCP-resource reads.)*
 - The name is **result store**, never "variables" or "session state". The
   mental model taught to agents is "save what you want to keep".
 

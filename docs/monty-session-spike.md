@@ -5,6 +5,12 @@ Spike record for #77. All findings verified empirically against
 written. Verdict up front: **feasible** — monty ships a stateful REPL with
 snapshot support, and every spike question resolved in its favor.
 
+*Status: implemented (#84, PR #86, 2026-07-06) — sessions are on by
+default on the monty backend; see the `[session]` section in
+[configuration](configuration.md). Live driver certification passed all
+five scenarios, including the timeout-atomicity and shadow-guard edges
+this record predicted.*
+
 ## Problem
 
 Every `execute_code` run today gets a fresh interpreter. Variables,
