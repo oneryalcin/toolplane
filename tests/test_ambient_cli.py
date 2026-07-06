@@ -272,3 +272,44 @@ def test_global_flags_wrong_shape_teaches_the_dict_form() -> None:
     assert result.error.type == "TypeError"
     assert "_global" in result.error.message
     assert "await git('log', _global=" in result.error.message
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+def test_global_in_both_dict_and_kwarg_errors_once_semantics(tmp_path) -> None:
+    repo = _make_probe_repo(tmp_path)
+    runtime = Toolplane(
+        default_backend="monty", ambient_cli=True, ambient_cli_allowlist=["git"]
+    )
+
+    result = run(
+        runtime.execute(
+            f"res = await cli_run('git', 'log', {{'_global': {{'C': '{repo}'}}}}, "
+            f"_global={{'C': '{repo}'}})\nreturn res"
+        )
+    )
+
+    assert result.error is not None
+    assert result.error.type == "TypeError"
+    assert "_global" in result.error.message
+    assert "once" in result.error.message
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+def test_global_multi_char_keys_render_kebab(tmp_path) -> None:
+    # multi-char snake keys must convert identically to regular kwargs:
+    # git_dir -> --git-dir (a divergence would make the docs a teaching lie)
+    repo = _make_probe_repo(tmp_path)
+    runtime = Toolplane(
+        default_backend="monty", ambient_cli=True, ambient_cli_allowlist=["git"]
+    )
+
+    result = run(
+        runtime.execute(
+            f"res = await git('log', _global={{'git_dir': '{repo}/.git'}}, "
+            "oneline=True)\nreturn res"
+        )
+    )
+
+    assert result.error is None, result.error
+    assert result.value["ok"] is True
+    assert "global-flag-probe" in result.value["stdout"]
