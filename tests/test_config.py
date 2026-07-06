@@ -138,7 +138,7 @@ return await cli.curl.version()
     assert via_top_level.error.type == "NameError"
 
 
-def test_from_config_preserves_remote_mcp_auth_shape_without_connecting(
+def test_from_config_wires_direct_oauth_to_encrypted_storage(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, object] = {}
@@ -177,18 +177,14 @@ def test_from_config_preserves_remote_mcp_auth_shape_without_connecting(
     single_server_config = captured["linear"]
 
     assert isinstance(single_server_config, MCPConfig)
-    assert single_server_config.model_dump(
-        mode="json",
-        exclude_none=True,
-        exclude_defaults=True,
-    ) == {
-        "mcpServers": {
-            "linear": {
-                "url": "https://mcp.linear.app/mcp",
-                "auth": "oauth",
-            }
-        }
-    }
+    server = single_server_config.mcpServers["linear"]
+    assert server.url == "https://mcp.linear.app/mcp"
+    # auth = "oauth" becomes a live fastmcp OAuth object backed by the
+    # encrypted token store — persistence without toolplane touching tokens
+    from fastmcp.client.auth import OAuth
+
+    assert isinstance(server.auth, OAuth)
+    assert server.auth.context.storage is not None
 
 
 def test_from_config_registers_mcp_server_from_stdio_config(tmp_path: Path) -> None:

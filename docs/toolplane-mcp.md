@@ -114,26 +114,34 @@ It preserves existing comments and formatting with `tomlkit`, errors if the
 server already exists, and requires `--force` to replace an existing server.
 Use `--print` to emit the TOML snippet to stdout instead of editing the file.
 
-If a direct remote URL is configured with `auth = "oauth"`, Toolplane warns
-that those tokens are ephemeral. This is a permanent boundary, not a v1 gap:
-Toolplane does not persist OAuth tokens and will not grow its own credential
-store. Persistent OAuth login uses a `fastmcp-remote` stdio bridge, which
-owns its own token cache — delegation is the final answer.
+A direct remote URL with `auth = "oauth"` gets persistent login: Toolplane
+wires FastMCP's own OAuth helper to an encrypted token store
+(`~/.toolplane/oauth`, Fernet at rest via FastMCP's storage wrappers) whose
+key lives in the OS keyring (`TOOLPLANE_STORAGE_KEY` overrides it on
+headless hosts). The boundary this preserves: Toolplane writes no
+token-handling code and rolls no crypto — the flow, refresh, persistence,
+and encryption are all FastMCP's; Toolplane only configures where they
+happen and holds the key material in the platform keyring. Losing the key
+is self-healing: encrypted tokens read as missing and the next login
+re-prompts once.
 
-Toolplane should also accept stdio-style upstream server definitions, including
+Toolplane also accepts stdio-style upstream server definitions, including
 bridges used by stdio-only hosts:
 
 ```bash
-toolplane mcp add linear --command npx --arg -y --arg mcp-remote --arg https://mcp.linear.app/mcp
+toolplane mcp add linear --command uvx --arg fastmcp-remote --arg https://mcp.linear.app/mcp
 ```
 
 which maps to:
 
 ```toml
 [mcp.servers.linear]
-command = "npx"
-args = ["-y", "mcp-remote", "https://mcp.linear.app/mcp"]
+command = "uvx"
+args = ["fastmcp-remote", "https://mcp.linear.app/mcp"]
 ```
+
+(`fastmcp-remote` is FastMCP's own bridge and keeps its token cache under
+`~/.fastmcp/remote`; the npm `mcp-remote` shape works identically.)
 
 The current `mcp login` command primes one configured server interactively by
 connecting with the exact configured command, args, and env, with the browser
@@ -144,11 +152,13 @@ toolplane mcp login linear-bridge --config ./toolplane.toml
 ```
 
 For a `fastmcp-remote` bridge this triggers the bridge's own OAuth flow on
-first connect and persists its tokens in the bridge's cache, so a later
-`mcp status` reports `ok` without opening a browser. Login refuses direct
-`url` + `auth = "oauth"` servers because those tokens are ephemeral by
-design (Toolplane never persists tokens itself); logging in would appear to
-work but not persist.
+first connect and persists its tokens in the bridge's cache. For a direct
+`url` + `auth = "oauth"` server, login runs FastMCP's OAuth flow against
+Toolplane's encrypted token store — one browser consent, and every later
+`serve mcp` and `execute_code` call reuses (and silently refreshes) the
+stored tokens without a browser. (`mcp status` stays credential-free by
+design; on a primed server it reports `auth_required` with a note that
+the saved login exists and serve/execute will use it.)
 
 The current `mcp status` command reads the project config and reports each
 configured MCP server as data:
@@ -159,14 +169,14 @@ toolplane mcp status --config ./toolplane.toml
 
 Status probes do not construct FastMCP OAuth providers, so they do not open a
 browser or write OAuth tokens. A protected remote server is reported as
-`auth_required` or `error` instead. Stdio servers are checked by executing the
-configured command and listing tools, so status can surface child-process
-diagnostics from the configured server. For stdio probes, Toolplane preserves
-the current process environment plus configured server env, overrides `BROWSER`
-so probes cannot open a browser, and forces one-shot subprocess teardown.
-Status also reports a warning for direct `url` + `auth = "oauth"` configs,
-because that direct FastMCP OAuth shape does not persist tokens in Toolplane
-(and never will — use a `fastmcp-remote` bridge for durable login).
+`auth_required` or `error` instead — for a direct `url` + `auth = "oauth"`
+server the `auth_required` detail names the fix
+(`prime it once with: toolplane mcp login <name>`). Stdio servers are
+checked by executing the configured command and listing tools, so status
+can surface child-process diagnostics from the configured server. For stdio
+probes, Toolplane preserves the current process environment plus configured
+server env, overrides `BROWSER` so probes cannot open a browser, and forces
+one-shot subprocess teardown.
 
 Then a user can connect Toolplane to an MCP client:
 
@@ -200,10 +210,11 @@ The current implementation provides this skeleton, exposes only the three
 Toolplane meta-tools, and guards the config-backed MCP facade from unsafe
 defaults. On successful `toolplane serve mcp` startup, it prints the effective
 backend, CLI, MCP-server, and unsafe-override policy to stderr for the operator.
-Remote OAuth is delegated to the `fastmcp-remote` bridge primed by
-`toolplane mcp login`; the bridge owns durable token storage by design
-(Toolplane never grows its own credential store). Client install helpers are
-not built.
+Remote OAuth is delegated to FastMCP: direct `auth = "oauth"` servers use
+FastMCP's OAuth helper with Toolplane-configured encrypted storage, and
+`fastmcp-remote` bridges own their own cache — either way Toolplane never
+grows its own credential store or token-handling code. Client install
+helpers are not built.
 
 A fresh config serves safely with no flags, because the defaults are the
 sandboxed `monty` backend and disabled CLI policy:
@@ -294,16 +305,16 @@ Rules:
 - Agent code never receives raw OAuth tokens, refresh tokens, or API keys.
 - Toolplane does not silently borrow Claude Code or Codex's private MCP auth
   sessions.
-- Headless execution requires pre-login or explicit environment-backed bearer
-  credentials.
-- Token persistence is delegated: the bridge process owns its cache; Toolplane
-  never writes tokens to disk or holds them beyond the FastMCP client's own
-  lifecycle.
-- Direct `url` + `auth = "oauth"` configs rely on FastMCP's in-memory token
-  storage and reauthenticate on every restart — that is why `mcp status` warns
-  on them and `mcp login` refuses them; use a `fastmcp-remote` bridge instead.
-- `toolplane.toml` should describe upstream MCP servers and policy, not contain
-  long-lived secrets.
+- Headless execution requires pre-login (`toolplane mcp login <name>`) or
+  explicit secret-referenced bearer credentials.
+- Token persistence is delegated to FastMCP: direct `url` + `auth = "oauth"`
+  servers use FastMCP's OAuth helper with a Fernet-encrypted store that
+  Toolplane configures (`~/.toolplane/oauth`, key in the OS keyring), and
+  `fastmcp-remote` bridges own their own cache. Toolplane itself contains
+  no token-handling code and rolls no crypto.
+- `toolplane.toml` should describe upstream MCP servers and policy, not
+  contain long-lived secrets — reference them as `keyring://<name>` or
+  `env://<VAR>` instead.
 
 ## What Toolplane-MCP Should Expose
 

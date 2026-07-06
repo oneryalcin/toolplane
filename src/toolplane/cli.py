@@ -11,6 +11,7 @@ from pathlib import Path
 
 from .config import ToolplaneConfig, load_toolplane_config
 from .config_edit import ConfigEditError, write_cli_allow_config
+from .credentials import CredentialStorageError
 from .doctor import doctor_exit_code, format_doctor_checks, run_doctor_checks
 from .errors import ToolplaneError, UnsafeFacadeConfigError
 from .execution import ExecutionResult
@@ -73,13 +74,25 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_mcp_login(args)
         case ("mcp", "status"):
             return _cmd_mcp_status(args)
+        case ("secret", "set"):
+            return _cmd_secret_set(args)
+        case ("secret", "rm"):
+            return _cmd_secret_rm(args)
+        case ("secret", "list"):
+            return _cmd_secret_list(args)
         case _:
             parser.print_help()
             return 2
 
 
 def _subcommand(args: argparse.Namespace) -> str | None:
-    for attribute in ("serve_command", "config_command", "cli_command", "mcp_command"):
+    for attribute in (
+        "serve_command",
+        "config_command",
+        "cli_command",
+        "mcp_command",
+        "secret_command",
+    ):
         value = getattr(args, attribute, None)
         if value is not None:
             return value
@@ -113,6 +126,9 @@ def _cmd_serve_mcp(args: argparse.Namespace) -> int:
             )
         )
     except UnsafeFacadeConfigError as exc:
+        print(f"toolplane: {exc}", file=sys.stderr)
+        return 2
+    except CredentialStorageError as exc:
         print(f"toolplane: {exc}", file=sys.stderr)
         return 2
     return 0
@@ -249,7 +265,13 @@ def _cmd_mcp_login(args: argparse.Namespace) -> int:
                 timeout_seconds=args.timeout,
             )
         )
-    except (McpLoginError, McpStatusError, OSError, ValueError) as exc:
+    except (
+        McpLoginError,
+        McpStatusError,
+        CredentialStorageError,
+        OSError,
+        ValueError,
+    ) as exc:
         print(f"toolplane: {exc}", file=sys.stderr)
         return 2
     message = format_mcp_login(status, timeout_seconds=args.timeout)
@@ -258,6 +280,58 @@ def _cmd_mcp_login(args: argparse.Namespace) -> int:
         return 0
     print(f"toolplane: {message}", end="", file=sys.stderr)
     return 2
+
+
+def _cmd_secret_set(args: argparse.Namespace) -> int:
+    from .credentials import CredentialStorageError, secret_set
+
+    # never on argv: process lists leak; stdin pipe or hidden prompt only
+    if sys.stdin.isatty():
+        import getpass
+
+        value = getpass.getpass(f"Value for secret {args.name!r}: ")
+    else:
+        # strip surrounding whitespace: CRLF pipes left a trailing \r that
+        # silently corrupted the credential (reviewer finding on #95);
+        # internal newlines survive for multi-line secrets like PEM keys
+        value = sys.stdin.read().strip()
+    if not value.strip():
+        print("toolplane: refusing to store an empty secret", file=sys.stderr)
+        return 2
+    try:
+        secret_set(args.name, value)
+    except CredentialStorageError as exc:
+        print(f"toolplane: {exc}", file=sys.stderr)
+        return 2
+    print(
+        f"Stored secret {args.name!r} in the OS keyring; reference it in "
+        f"toolplane.toml as keyring://{args.name}"
+    )
+    return 0
+
+
+def _cmd_secret_rm(args: argparse.Namespace) -> int:
+    from .credentials import CredentialStorageError, secret_delete
+
+    try:
+        secret_delete(args.name)
+    except CredentialStorageError as exc:
+        print(f"toolplane: {exc}", file=sys.stderr)
+        return 2
+    print(f"Deleted secret {args.name!r}")
+    return 0
+
+
+def _cmd_secret_list(args: argparse.Namespace) -> int:
+    from .credentials import secret_list
+
+    names = secret_list()
+    if not names:
+        print("No secrets stored. Add one with: toolplane secret set <name>")
+        return 0
+    for name in names:
+        print(name)
+    return 0
 
 
 def _cmd_mcp_status(args: argparse.Namespace) -> int:
@@ -476,6 +550,24 @@ def _build_parser() -> argparse.ArgumentParser:
         type=float,
         default=5.0,
         help="Per-server status timeout in seconds",
+    )
+
+    secret_root = subcommands.add_parser(
+        "secret",
+        help="Manage secrets in the OS keyring (referenced as keyring://<name>)",
+    )
+    secret_subcommands = secret_root.add_subparsers(dest="secret_command")
+    secret_set = secret_subcommands.add_parser(
+        "set",
+        help="Store a secret (value read from stdin or an interactive prompt)",
+    )
+    secret_set.add_argument("name", help="Secret name")
+    secret_rm = secret_subcommands.add_parser(
+        "rm", help="Delete a stored secret"
+    )
+    secret_rm.add_argument("name", help="Secret name")
+    secret_subcommands.add_parser(
+        "list", help="List stored secret names (never values)"
     )
 
     return parser

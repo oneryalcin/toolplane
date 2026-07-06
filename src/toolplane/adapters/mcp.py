@@ -25,7 +25,26 @@ async def register_mcp_server(
     `server` is passed to `fastmcp.Client`, so this supports in-process
     `FastMCP` apps, URLs, script paths, transport objects, and single-server
     config dictionaries.
+
+    Dict-shaped servers are credential-prepared exactly like config-file
+    entries: without this, ``auth = "oauth"`` through the public
+    ``runtime.register_mcp()`` silently fell back to fastmcp's in-memory
+    token storage — the failure the credential layer exists to prevent
+    (reviewer finding on #95). Preparation is idempotent, so entries that
+    came through ``register_mcp_config`` are unaffected.
     """
+    if isinstance(server, Mapping):
+        from ..credentials import prepare_server_config
+
+        raw = dict(server)
+        if "mcpServers" in raw and isinstance(raw["mcpServers"], Mapping):
+            raw["mcpServers"] = {
+                entry_name: prepare_server_config(dict(entry))
+                for entry_name, entry in raw["mcpServers"].items()
+            }
+            server = raw
+        elif "url" in raw or "command" in raw:
+            server = prepare_server_config(raw)
     client = _client(server)
     capabilities: list[Capability] = []
     async with client:
@@ -49,15 +68,29 @@ async def register_mcp_config(
     tags: set[str] | frozenset[str] | None = None,
     source: str = "mcp",
 ) -> list[Capability]:
-    """Register all tools from a standard `mcpServers` config dictionary."""
+    """Register all tools from a standard `mcpServers` config dictionary.
+
+    Each entry is credential-prepared first: ``env://`` / ``keyring://``
+    references in headers and env resolve to real values, and
+    ``auth = "oauth"`` on url servers becomes a live fastmcp OAuth object
+    backed by Toolplane's encrypted token store — so tokens persist across
+    restarts without ever touching the config file or process output.
+    """
+    from ..credentials import prepare_server_config
+
     parsed = _mcp_config(config)
     capabilities: list[Capability] = []
     for server_name, server_config in parsed.mcpServers.items():
+        raw = (
+            server_config.model_dump(exclude_none=True)
+            if isinstance(server_config, BaseModel)
+            else dict(server_config)
+        )
         capabilities.extend(
             await register_mcp_server(
                 registry,
                 server_name,
-                _single_server_config(server_name, server_config),
+                _single_server_config(server_name, prepare_server_config(raw)),
                 tags=tags,
                 source=source,
             )
