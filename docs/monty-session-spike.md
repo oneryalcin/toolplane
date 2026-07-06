@@ -79,7 +79,14 @@ So: sessions retire pedagogy, not machinery.
   a typical small session is ~200 bytes in ~0.01 ms.
 - Footgun (upstream): `ResourceLimits` is a TypedDict and **silently
   ignores unknown keys** — a misspelled `max_memory` disables the cap
-  with no error. Toolplane must validate limit keys itself.
+  with no error (`extract_limits` in `crates/monty-python/src/limits.rs`
+  never checks for unrecognized keys; filed as
+  [pydantic/monty#534](https://github.com/pydantic/monty/issues/534)).
+  Toolplane must validate limit keys itself until that lands.
+- Related upstream: [pydantic/monty#483](https://github.com/pydantic/monty/issues/483)
+  — REPL `max_duration_secs` counts from construction, not per feed, so
+  duration caps on a long-lived session are effectively unusable;
+  per-run timeouts must stay host-side (`asyncio.wait_for`).
 
 ## The sharp edge: cancellation
 
@@ -90,29 +97,47 @@ Toolplane enforces a per-run timeout with `asyncio.wait_for`. Cancelling a
    stay in the heap (`n = 99` before the blocking await survives the
    timeout). Without mitigation, a timed-out run leaves half-applied
    state — the same class of lie as the #71 abandoned-escalation bug.
-2. **Rare poison race.** Once in ~25 trials, the cancel raced monty's
-   tokio worker into a Rust panic (`intern.rs:916 index out of bounds`)
-   and every subsequent `feed_run_async` raised
-   `RuntimeError: Async REPL transition was cancelled before completion`.
-   Not reproducible on demand (20/20 clean in a stress loop); confirmed
-   real, timing-dependent.
+2. **Deterministic session poison.** If the cancelled run stored a *new
+   string literal of 2+ characters* into surviving state, the session is
+   permanently bricked: the next feed panics on monty's tokio worker
+   (`intern.rs:916 index out of bounds`) and raises
+   `RuntimeError: Async REPL transition was cancelled before completion`,
+   as does every feed after it. 25/25 reproductions; 1-char strings and
+   ints (inline values, not interned) recover — which is why a naive
+   stress loop using `append('x')` reported 20/20 clean and initially
+   misread this as a rare race. Filed upstream as
+   [pydantic/monty#533](https://github.com/pydantic/monty/issues/533);
+   apparent mechanism: cancellation rolls back the intern table but heap
+   objects mutated before the cancel still reference the new entry.
 
-**Mitigation, verified:** snapshot-per-run. `dump()` before each run;
-on timeout, discard the (possibly poisoned) instance and
-`MontyRepl.load(snapshot)` a fresh one:
+**Mitigation, verified (including under the panic scenario):**
+snapshot-per-run. `dump()` before each run; on timeout, discard the
+poisoned instance and `MontyRepl.load(snapshot)` a fresh one:
 
 ```python
 snap = repl.dump()
 try:
     await asyncio.wait_for(repl.feed_run_async(code, ...), timeout)
 except TimeoutError:
-    repl = MontyRepl.load(snap)   # run leaves zero trace
+    repl = MontyRepl.load(snap)   # VM state as if the run never happened
 ```
 
-This turns every run **atomic** — it either completes or never happened —
-which is the semantics agents should get anyway, and it makes the poison
-race moot because the cancelled instance is dropped. At 14 ms per 8.8 MB
-of state, the checkpoint is affordable on every run.
+This makes every run atomic **with respect to VM state** — the namespace
+either reflects a completed run or the run never happened — and the
+poison is moot because the cancelled instance is dropped. At 14 ms per
+8.8 MB of state, the checkpoint is affordable on every run.
+
+**What rollback cannot undo: host-side effects.** Toolplane runs expose
+host bridge functions (capabilities, CLI, `save_result`/`save_artifact`,
+escalation grants). A snippet can commit any of those and *then* time
+out; reloading the VM snapshot does not unsave a result, delete an
+artifact, or revoke a grant. So the implementation must not advertise
+whole-run transactionality: rollback scope is the namespace, and the
+timeout signpost has to say so (state rolled back; tool calls and saves
+made before the timeout stand). Escalations already have run-scoped
+cancellation from #71; result/artifact handles created by a timed-out
+run are visible in the audit log (`run_end.ok=false` + the run's
+`dispatch` events) rather than silently orphaned.
 
 ## Other constraints found
 
@@ -125,10 +150,12 @@ of state, the checkpoint is affordable on every run.
 
 ## Decision
 
-Build sessions on `MontyRepl` with snapshot-per-run atomicity. Follow-up
-implementation issue covers: session lifetime keyed to the served MCP
-session (stdio first, mirroring escalation), explicit `reset` affordance,
-limit-key validation, and which signposts/SKILL.md passages retire.
+Build sessions on `MontyRepl` with snapshot-per-run rollback, scoped
+honestly: VM-state atomicity, host-side effects explicitly excluded and
+signposted. Follow-up implementation issue covers: session lifetime keyed
+to the served MCP session (stdio first, mirroring escalation), explicit
+`reset` affordance, limit-key validation, timeout signpost wording, and
+which signposts/SKILL.md passages retire.
 
 Not in scope for the follow-up: pyodide sessions (backend is
 feature-frozen per #78) and cross-process persistence (`dump()` makes it
