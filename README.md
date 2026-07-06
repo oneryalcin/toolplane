@@ -58,7 +58,10 @@ What makes toolplane different from other code-mode runtimes:
   allowed), errors are catchable by builtin type on every backend, and the
   live namespace manifest (`toolplane://namespace`) never lies about the
   server's configuration. This surface is certified by cold-start agent
-  sessions, not just unit tests.
+  sessions, not just unit tests — the design lessons are published in
+  [Agents Don't Find Resources](https://oneryalcin.github.io/toolplane/agents-dont-find-resources/)
+  and the firsthand
+  [MCP Client Capability Matrix](https://oneryalcin.github.io/toolplane/mcp-client-capability-matrix/).
 
 ## Quickstart
 
