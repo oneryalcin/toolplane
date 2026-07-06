@@ -138,10 +138,28 @@ class CapabilityRegistry:
         try:
             return self._capabilities[canonical_name]
         except KeyError as exc:
+            # the signpost must be self-contained: in embedded (as_tool)
+            # mode there is no search tool and no namespace resource, so a
+            # pointer-only message strands the agent (seen live on #80 — a
+            # model invented "canonical:git", was told to search, invented
+            # "canonical:search", and gave up)
+            visible = sorted(
+                cap.name
+                for cap in self._capabilities.values()
+                if not cap.hidden
+            )
+            shown = ", ".join(visible[:12]) + (
+                f", ... ({len(visible)} total)" if len(visible) > 12 else ""
+            )
+            registered = (
+                f" Registered capability names: {shown}."
+                if visible
+                else " No capabilities are registered."
+            )
             raise CapabilityNotFoundError(
-                f"Unknown capability: {name}. Search capabilities with an "
-                "empty query to list all canonical names, or read the "
-                "toolplane://namespace resource."
+                f"Unknown capability: {name}.{registered} Search "
+                "capabilities with an empty query to list all canonical "
+                "names, or read the toolplane://namespace resource."
             ) from exc
 
     def search(

@@ -383,9 +383,16 @@ def _render_callable_namespace(namespace: Mapping[str, str]) -> str:
     for callable_name, capability_name in namespace.items():
         if not callable_name.isidentifier():
             continue
+        kwargs_only_message = (
+            "capability functions take keyword arguments only — e.g. "
+            f"await {callable_name}(param=value), or "
+            f"await call_tool({capability_name!r}, {{...params}})"
+        )
         lines.extend(
             [
-                f"async def {callable_name}(**params):",
+                f"async def {callable_name}(*args, **params):",
+                "    if args:",
+                f"        raise TypeError({kwargs_only_message!r})",
                 f"    return await call_tool({capability_name!r}, params)",
                 "",
             ]

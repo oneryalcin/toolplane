@@ -19,6 +19,19 @@ uv run --no-project --with-editable . python examples/multi_server.py
 uv run --no-project --with-editable . python examples/from_config.py
 ```
 
+## Embed toolplane in an agent framework (`as_tool`)
+
+`runtime.as_tool()` packages the runtime as a single `run_code` tool. Each
+example proves the wiring keyless (framework schema extraction + a direct
+invocation through the real monty backend), and runs a real agent loop when
+a model API key is present (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`):
+
+```bash
+uv run --no-project --with-editable . --with pydantic-ai python examples/as_tool_pydantic_ai.py
+uv run --no-project --with-editable . --with openai-agents python examples/as_tool_openai_agents.py
+uv run --no-project --with-editable . --with langchain-core python examples/as_tool_langgraph.py
+```
+
 ## Multiple servers, mixed transports and auth
 
 `multi_server.py` registers two local stdio MCP servers under one runtime and
