@@ -150,6 +150,12 @@ enabled = true
 written — payloads can carry secrets. What a human approved, when, and
 what the snippet touched is on the record; the data that moved is not.
 
+Run and dispatch events carry a `run_id`; escalation events do not —
+they can resolve after their run has ended (an abandoned prompt's
+cancellation lands on a later event-loop tick), so instead of a
+possibly-wrong id they carry none: correlate them through the run's
+`run_end.escalations_cancelled` list and timestamps.
+
 The intended consumer is you and a terminal:
 
 ```bash

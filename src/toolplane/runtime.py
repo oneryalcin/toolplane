@@ -15,7 +15,7 @@ from .adapters.ambient_cli import (
 from .artifacts import ArtifactStore, register_artifact_capabilities
 from .audit import AuditLog
 from .backends import CodeBackend, LocalUnsafeBackend, MontyBackend, PyodideDenoBackend
-from .bridges.in_process import InProcessBridge
+from .bridges.in_process import AuditedRunBridge, InProcessBridge
 from .capabilities import Capability, JsonSchema
 from .discovery import DetailLevel, render_capabilities
 from .errors import BackendCapabilityError, BackendNotFoundError
@@ -60,7 +60,6 @@ class Toolplane:
             cli_policy=self.cli_policy,
             result_store=self.result_store,
             artifact_store=self.artifact_store,
-            audit_log=self.audit_log,
         )
         configured = list(
             backends
@@ -485,6 +484,11 @@ class Toolplane:
         return render_capabilities(capabilities, detail=detail, missing=missing)
 
     async def call_tool(self, name: str, params: dict[str, Any] | None = None) -> Any:
+        if self.audit_log.enabled:
+            # direct host calls are audited too, just without a run_id
+            return await AuditedRunBridge(
+                self.bridge, self.audit_log, None
+            ).call_tool(name, params)
         return await self.bridge.call_tool(name, params)
 
     async def execute(
@@ -499,8 +503,16 @@ class Toolplane:
         runner = self.backends.get(backend_name)
         if runner is None:
             raise BackendNotFoundError(f"Unknown backend: {backend_name}")
+        # correlation is explicit and per-run: the run_id rides a bridge
+        # wrapper into every dispatch path (a shared current-run slot was
+        # tried first and misattributed events across overlapping runs —
+        # reproduced independently by two #82 reviewers)
+        run_id = AuditLog.new_run_id() if self.audit_log.enabled else None
+        run_bridge: Any = self.bridge
+        if self.audit_log.enabled:
+            run_bridge = AuditedRunBridge(self.bridge, self.audit_log, run_id)
         run_kwargs: dict[str, Any] = {
-            "bridge": self.bridge,
+            "bridge": run_bridge,
             "inputs": inputs,
             "packages": packages,
             "namespace": self.registry.callable_namespace(),
@@ -525,33 +537,38 @@ class Toolplane:
             if self.artifact_store.enabled
             else set()
         )
-        if self.audit_log.enabled:
-            self.audit_log.run_id = AuditLog.new_run_id()
-            self.audit_log.emit(
-                "run_start",
-                backend=backend_name,
-                code_sha256=hashlib.sha256(code.encode()).hexdigest()[:12],
-                code_chars=len(code),
-            )
+        self.audit_log.emit(
+            "run_start",
+            run_id=run_id,
+            backend=backend_name,
+            code_sha256=hashlib.sha256(code.encode()).hexdigest()[:12],
+            code_chars=len(code),
+        )
         run_started = self.audit_log.timer()
+        raised: BaseException | None = None
         try:
             result = await runner.run(code, **run_kwargs)
         except BaseException as exc:
+            raised = exc
+        # escalations must not outlive the run that asked: a backend
+        # timeout leaves the dispatch coroutine (and its open human
+        # prompt) running detached, and a late answer would mutate
+        # session policy invisibly (found live in #71 certification)
+        interrupted = self.cli_policy.cancel_pending_escalations()
+        if raised is not None:
+            # same run_end shape as the success path: jq consumers key on
+            # these fields (reviewer finding on #82)
             self.audit_log.emit(
                 "run_end",
+                run_id=run_id,
                 backend=backend_name,
                 duration_ms=self.audit_log.elapsed_ms(run_started),
                 ok=False,
-                error_type=type(exc).__name__,
+                error_type=type(raised).__name__,
+                artifacts_saved=0,
+                escalations_cancelled=list(interrupted),
             )
-            self.audit_log.run_id = None
-            raise
-        finally:
-            # escalations must not outlive the run that asked: a backend
-            # timeout leaves the dispatch coroutine (and its open human
-            # prompt) running detached, and a late answer would mutate
-            # session policy invisibly (found live in #71 certification)
-            interrupted = self.cli_policy.cancel_pending_escalations()
+            raise raised
         if interrupted and result.error is not None:
             binaries = ", ".join(interrupted)
             base = result.error.message.rstrip()
@@ -582,17 +599,16 @@ class Toolplane:
             ]
             if saved:
                 result = result.model_copy(update={"artifacts": tuple(saved)})
-        if self.audit_log.enabled:
-            self.audit_log.emit(
-                "run_end",
-                backend=result.backend or backend_name,
-                duration_ms=self.audit_log.elapsed_ms(run_started),
-                ok=result.error is None,
-                error_type=result.error.type if result.error else None,
-                artifacts_saved=len(result.artifacts),
-                escalations_cancelled=list(interrupted),
-            )
-            self.audit_log.run_id = None
+        self.audit_log.emit(
+            "run_end",
+            run_id=run_id,
+            backend=result.backend or backend_name,
+            duration_ms=self.audit_log.elapsed_ms(run_started),
+            ok=result.error is None,
+            error_type=result.error.type if result.error else None,
+            artifacts_saved=len(result.artifacts),
+            escalations_cancelled=list(interrupted),
+        )
         return result
 
     def _get_ambient_cli_names(self) -> tuple[str, ...]:

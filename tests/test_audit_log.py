@@ -208,3 +208,133 @@ def test_write_failure_disables_instead_of_breaking_the_run(
     assert result.value == 42
     assert log.enabled is False
     assert "audit log disabled" in capsys.readouterr().err
+
+
+# --- regressions from the #82 review round -----------------------------------
+
+
+def test_concurrent_runs_keep_their_own_run_ids(tmp_path: Path) -> None:
+    """All four reviewers: a shared current-run slot attributed run A's
+    dispatches to run B and clobbered run_ids at completion. Correlation
+    must hold by construction under overlapping executes."""
+    log_path = tmp_path / "audit.jsonl"
+    runtime = Toolplane(
+        ambient_cli=False,
+        default_backend="local_unsafe",
+        audit_log=AuditLog(log_path, enabled=True),
+    )
+    gate = asyncio.Event()
+
+    @runtime.tool()
+    async def slow_wait() -> str:
+        """Wait for the gate."""
+        await gate.wait()
+        return "slow"
+
+    @runtime.tool()
+    def fast_ping() -> str:
+        """Return fast."""
+        return "fast"
+
+    async def exercise():
+        slow_run = asyncio.create_task(
+            runtime.execute("return await slow_wait()")
+        )
+        await asyncio.sleep(0.05)  # run A is mid-dispatch when B starts
+        fast_result = await runtime.execute("return await fast_ping()")
+        gate.set()
+        return await slow_run, fast_result
+
+    slow_result, fast_result = run(exercise())
+
+    assert slow_result.error is None and fast_result.error is None
+    events = _events(log_path)
+    starts = [e for e in events if e["event"] == "run_start"]
+    slow_id, fast_id = starts[0]["run_id"], starts[1]["run_id"]
+    assert slow_id != fast_id
+    by_capability = {
+        e["capability"]: e["run_id"]
+        for e in events
+        if e["event"] == "dispatch"
+    }
+    assert by_capability["slow_wait"] == slow_id
+    assert by_capability["fast_ping"] == fast_id
+    ends = {e["run_id"] for e in events if e["event"] == "run_end"}
+    assert ends == {slow_id, fast_id}
+
+
+def test_abandoned_escalation_correlates_via_run_end(tmp_path: Path) -> None:
+    """Reviewer-reproduced on #82: the abandoned event can fire after its
+    run ended, so it carries NO run_id (never a wrong one); the join key
+    is run_end.escalations_cancelled."""
+    from toolplane.backends import MontyBackend
+
+    runtime, log_path = _runtime(tmp_path)
+    runtime.backends["monty"] = MontyBackend(timeout_seconds=0.3)
+
+    async def human_still_reading(binary: str) -> bool:
+        await asyncio.Event().wait()
+        return True
+
+    runtime.cli_policy.escalation_handler = human_still_reading
+
+    async def exercise():
+        result = await runtime.execute(
+            'return await cli_run("curl")', backend="monty"
+        )
+        await asyncio.sleep(0)  # let the abandoned task unwind and emit
+        return result
+
+    result = run(exercise())
+
+    assert result.error is not None and result.error.type == "TimeoutError"
+    events = _events(log_path)
+    end = next(e for e in events if e["event"] == "run_end")
+    assert end["escalations_cancelled"] == ["curl"]
+    assert end["run_id"] == events[0]["run_id"]
+    abandoned = next(
+        e
+        for e in events
+        if e["event"] == "escalation" and e["outcome"] == "abandoned"
+    )
+    assert abandoned["binary"] == "curl"
+    assert "run_id" not in abandoned
+
+
+def test_backend_raise_emits_the_same_run_end_shape(tmp_path: Path) -> None:
+    import pytest
+
+    from toolplane.errors import BackendCapabilityError
+
+    runtime, log_path = _runtime(tmp_path)
+
+    with pytest.raises(BackendCapabilityError):
+        run(
+            runtime.execute(
+                "return 1", backend="monty", packages=["pandas"]
+            )
+        )
+
+    end = next(e for e in _events(log_path) if e["event"] == "run_end")
+    assert end["ok"] is False
+    assert end["error_type"] == "BackendCapabilityError"
+    # same shape as the success path: jq consumers key on these fields
+    assert end["artifacts_saved"] == 0
+    assert end["escalations_cancelled"] == []
+    assert end["run_id"] == _events(log_path)[0]["run_id"]
+
+
+def test_unserializable_field_disables_instead_of_raising(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    class Boom:
+        def __str__(self) -> str:
+            raise RuntimeError("no repr for you")
+
+    log = AuditLog(tmp_path / "audit.jsonl", enabled=True)
+
+    log.emit("weird", payload=Boom())  # must not raise
+
+    assert log.enabled is False
+    assert "audit log disabled" in capsys.readouterr().err

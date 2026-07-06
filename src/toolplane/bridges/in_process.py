@@ -45,7 +45,6 @@ class InProcessBridge:
         cli_policy: AmbientCliPolicy | None = None,
         result_store: ResultStore | None = None,
         artifact_store: ArtifactStore | None = None,
-        audit_log: AuditLog | None = None,
     ) -> None:
         self.registry = registry
         # the policy object is shared with the runtime so escalation grants
@@ -53,7 +52,6 @@ class InProcessBridge:
         self._cli_policy = cli_policy or AmbientCliPolicy(
             ambient_cli_allowed_binaries
         )
-        self._audit_log = audit_log or AuditLog()
         # The bridge is per-runtime, so it is the authority for store
         # dispatch: registries can be shared across runtimes, stores must not.
         self._result_store = result_store or ResultStore(enabled=False)
@@ -65,38 +63,6 @@ class InProcessBridge:
         params: Mapping[str, Any] | None = None,
     ) -> Any:
         normalized_params = dict(params or {})
-        if not self._audit_log.enabled:
-            return await self._dispatch_tool(name, normalized_params)
-        started = self._audit_log.timer()
-        # metadata only: the binary name is policy-relevant, the args and
-        # results are not logged — payloads can carry secrets
-        fields: dict[str, Any] = {"capability": name}
-        if name == AMBIENT_CLI_CAPABILITY:
-            fields["binary"] = str(normalized_params.get("binary", ""))
-        try:
-            value = await self._dispatch_tool(name, normalized_params)
-        except BaseException as exc:
-            self._audit_log.emit(
-                "dispatch",
-                duration_ms=self._audit_log.elapsed_ms(started),
-                ok=False,
-                error_type=type(exc).__name__,
-                **fields,
-            )
-            raise
-        self._audit_log.emit(
-            "dispatch",
-            duration_ms=self._audit_log.elapsed_ms(started),
-            ok=True,
-            **fields,
-        )
-        return value
-
-    async def _dispatch_tool(
-        self,
-        name: str,
-        normalized_params: dict[str, Any],
-    ) -> Any:
         if name == RESULTS_SAVE_CAPABILITY:
             return self._result_store.save(**normalized_params)
         if name == RESULTS_LOAD_CAPABILITY:
@@ -154,3 +120,74 @@ class InProcessBridge:
                 )
             )
 
+
+
+class AuditedRunBridge:
+    """Per-run bridge wrapper that owns dispatch audit events.
+
+    Correlation is by construction: the run_id rides this object through
+    every path that reaches dispatch — including pyodide's callback thread,
+    which strips contextvars (the same reason the escalation handler
+    carries its context by closure). A shared current-run slot was tried
+    first and silently misattributed events across overlapping runs.
+    """
+
+    def __init__(
+        self,
+        inner: InProcessBridge,
+        audit_log: AuditLog,
+        run_id: str | None,
+    ) -> None:
+        self._inner = inner
+        self._audit_log = audit_log
+        self.run_id = run_id
+
+    async def call_tool(
+        self,
+        name: str,
+        params: Mapping[str, Any] | None = None,
+    ) -> Any:
+        normalized_params = dict(params or {})
+        if not self._audit_log.enabled:
+            return await self._inner.call_tool(name, normalized_params)
+        started = self._audit_log.timer()
+        # metadata only: the binary name is policy-relevant, the args and
+        # results are not logged — payloads can carry secrets
+        fields: dict[str, Any] = {"capability": name}
+        if name == AMBIENT_CLI_CAPABILITY:
+            fields["binary"] = str(normalized_params.get("binary", ""))
+        try:
+            value = await self._inner.call_tool(name, normalized_params)
+        except BaseException as exc:
+            self._audit_log.emit(
+                "dispatch",
+                run_id=self.run_id,
+                duration_ms=self._audit_log.elapsed_ms(started),
+                ok=False,
+                error_type=type(exc).__name__,
+                **fields,
+            )
+            raise
+        self._audit_log.emit(
+            "dispatch",
+            run_id=self.run_id,
+            duration_ms=self._audit_log.elapsed_ms(started),
+            ok=True,
+            **fields,
+        )
+        return value
+
+    async def dispatch(self, request: ToolCallRequest) -> ToolCallResponse:
+        try:
+            return ToolCallResponse.success(
+                await self.call_tool(request.name, request.params)
+            )
+        except Exception as exc:
+            return ToolCallResponse.failure(
+                ToolCallError(
+                    type=type(exc).__name__,
+                    message=str(exc),
+                    traceback=traceback.format_exc(),
+                    builtin=nearest_builtin_exception(exc),
+                )
+            )

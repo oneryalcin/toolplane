@@ -41,9 +41,6 @@ class AuditLog:
         self._path = Path(path).expanduser() if path is not None else None
         self._file: Any = None
         self._lock = threading.Lock()
-        # set by runtime.execute around a run so dispatch events correlate;
-        # single-live-run assumption, same as the escalation handler slot
-        self.run_id: str | None = None
 
     @classmethod
     def from_settings(cls, settings: "AuditSettings") -> "AuditLog":
@@ -56,18 +53,28 @@ class AuditLog:
     def new_run_id() -> str:
         return secrets.token_hex(4)
 
-    def emit(self, event: str, **fields: Any) -> None:
+    def emit(
+        self,
+        event: str,
+        *,
+        run_id: str | None = None,
+        **fields: Any,
+    ) -> None:
+        """Append one event. Correlation is explicit: there is no ambient
+        current-run state — a shared slot silently misattributed events
+        across overlapping runs (found by all four #82 reviewers).
+        """
         if not self.enabled:
             return
         record: dict[str, Any] = {
             "ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
             "event": event,
         }
-        if self.run_id is not None:
-            record["run_id"] = self.run_id
+        if run_id is not None:
+            record["run_id"] = run_id
         record.update(fields)
-        line = json.dumps(record, separators=(",", ":"), default=str)
         try:
+            line = json.dumps(record, separators=(",", ":"), default=str)
             with self._lock:
                 if self._file is None:
                     assert self._path is not None
@@ -75,7 +82,9 @@ class AuditLog:
                     self._file = self._path.open("a", encoding="utf-8")
                 self._file.write(line + "\n")
                 self._file.flush()
-        except OSError as exc:
+        except Exception as exc:
+            # serialization failures count too (default=str can surface
+            # arbitrary exceptions from __str__): auditing never breaks a run
             self.enabled = False
             print(
                 f"toolplane: audit log disabled, cannot write "
