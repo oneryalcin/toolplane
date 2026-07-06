@@ -155,9 +155,12 @@ return value
 ```
 
 And if you already have an agent framework, `as_tool()` packages the whole
-runtime as one `run_code` tool — a plain async function with a generated,
-cap-safe description that pydantic-ai, the OpenAI Agents SDK, and
-LangChain/LangGraph all accept directly:
+runtime as one `run_code` tool — a plain async function with a generated
+description (compact enough for OpenAI's tool-description cap) that
+pydantic-ai, the OpenAI Agents SDK, and LangChain/LangGraph all accept
+directly. It is sandboxed monty by default: model-authored code never
+inherits the `local_unsafe` dev backend implicitly — that requires an
+explicit `backend="local_unsafe"` opt-in:
 
 ```python
 from pydantic_ai import Agent

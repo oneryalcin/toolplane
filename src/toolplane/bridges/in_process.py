@@ -7,7 +7,12 @@ import traceback
 from collections.abc import Mapping
 from typing import Any
 
-from ..adapters.ambient_cli import AMBIENT_CLI_CAPABILITY, AmbientCliPolicy
+from ..adapters.ambient_cli import (
+    AMBIENT_CLI_CAPABILITY,
+    CLI_SHAPE_GUIDANCE,
+    AmbientCliPolicy,
+)
+from ..errors import CapabilityNotFoundError
 from ..artifacts import (
     ARTIFACTS_LOAD_CAPABILITY,
     ARTIFACTS_SAVE_CAPABILITY,
@@ -75,7 +80,20 @@ class InProcessBridge:
             await self._cli_policy.ensure_allowed(
                 str(normalized_params.get("binary", ""))
             )
-        return await self.registry.call(name, normalized_params)
+        try:
+            return await self.registry.call(name, normalized_params)
+        except CapabilityNotFoundError:
+            # CLI binaries are not registry capabilities; when the missed
+            # name is an allowed binary the dead end must teach the flat
+            # call (live #80 finding: a model tried call_tool('git', ...)
+            # twice and concluded git was unavailable)
+            effective = self._cli_policy.effective_allowlist()
+            if effective and name in effective:
+                raise CapabilityNotFoundError(
+                    f"'{name}' is a CLI binary, not a capability — call it "
+                    f"as a flat async function. {CLI_SHAPE_GUIDANCE}"
+                ) from None
+            raise
 
     def _load_artifact_payload(self, handle: Any) -> dict[str, Any]:
         described = self._artifact_store.describe(handle)

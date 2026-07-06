@@ -288,7 +288,15 @@ def _make_bound_tool(
     bridge: HostBridge,
     capability_name: str,
 ) -> Any:
-    async def call_bound_tool(**params: Any) -> Any:
+    async def call_bound_tool(*args: Any, **params: Any) -> Any:
+        if args:
+            # same lesson as monty's binding: teach keyword-only instead of
+            # leaking "call_bound_tool() takes 0 positional arguments"
+            raise TypeError(
+                f"capability functions take keyword arguments only — "
+                f"e.g. await fn(param=value), or "
+                f'await call_tool("{capability_name}", {{...params}})'
+            )
         return await bridge.call_tool(capability_name, params)
 
     return call_bound_tool

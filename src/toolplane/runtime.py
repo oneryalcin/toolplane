@@ -16,7 +16,7 @@ from .backends import CodeBackend, LocalUnsafeBackend, MontyBackend, PyodideDeno
 from .bridges.in_process import InProcessBridge
 from .capabilities import Capability, JsonSchema
 from .discovery import DetailLevel, render_capabilities
-from .errors import BackendNotFoundError
+from .errors import BackendCapabilityError, BackendNotFoundError
 from .execution import ExecutionResult
 from .registry import CapabilityRegistry
 from .results import ResultStore, register_result_capabilities
@@ -373,13 +373,32 @@ class Toolplane:
         rejects tool descriptions over ~1024 characters, and the full
         manifest does not fit. Pass ``description=`` to override it (e.g.
         with ``describe_namespace()`` for clients without that limit).
+
+        Backend resolution is safe by default: the tool never inherits
+        ``local_unsafe`` implicitly, because here the code author is a
+        model, not the developer. ``backend=None`` uses the runtime default
+        unless that default is ``local_unsafe``, in which case monty is
+        used; pass ``backend="local_unsafe"`` explicitly to opt in.
         """
-        doc = description or self._compact_tool_description()
+        resolved_backend = backend or self.default_backend
+        if backend is None and resolved_backend == "local_unsafe":
+            resolved_backend = "monty"
+        runner = self.backends.get(resolved_backend)
+        if runner is None:
+            # misconfiguration fails at construction, not on the agent's
+            # first tool call
+            raise BackendNotFoundError(f"Unknown backend: {resolved_backend}")
         fixed_packages = tuple(packages)
+        if fixed_packages and not runner.capabilities.third_party_packages:
+            raise BackendCapabilityError(
+                f"backend '{resolved_backend}' cannot install packages; "
+                "use pyodide-deno for package workflows"
+            )
+        doc = description or self._compact_tool_description()
 
         async def run_code(code: str) -> dict[str, Any]:
             result = await self.execute(
-                code, backend=backend, packages=fixed_packages
+                code, backend=resolved_backend, packages=fixed_packages
             )
             return result.model_dump(mode="json")
 
@@ -396,23 +415,38 @@ class Toolplane:
             "call, `return` a JSON-shaped value. Returns "
             "{value, stdout, stderr, error, artifacts}.",
         ]
-        flat = sorted(self.registry.callable_namespace())
+        namespace_map = self.registry.callable_namespace()
+        flat = sorted(namespace_map)
         if flat:
             shown = ", ".join(flat[:12])
             more = f", ... ({len(flat)} total)" if len(flat) > 12 else ""
             lines.append(f"Capabilities: await {flat[0]}(...) etc — {shown}{more}.")
-        lines.append(
-            'Any capability: await call_tool("canonical:name", {...params}).'
-        )
+            # the call_tool example must be a REAL canonical id: a live #80
+            # run showed a model reading a "canonical:name" placeholder as
+            # a literal scheme and inventing canonical:git
+            lines.append(
+                f'Any capability: await call_tool("{namespace_map[flat[0]]}", '
+                "{...params})."
+            )
+        else:
+            lines.append(
+                'Any capability: await call_tool("<canonical id>", {...params}).'
+            )
         if self.ambient_cli:
             names = self._get_ambient_cli_names()
-            shown = ", ".join(names[:8]) + (
-                f", ... ({len(names)} total)" if len(names) > 8 else ""
-            )
-            lines.append(
-                "CLI: await git('log', oneline=True) -> "
-                "{stdout, stderr, exit_code, ok}. Allowed: " + (shown or "none") + "."
-            )
+            if names:
+                shown = ", ".join(names[:8]) + (
+                    f", ... ({len(names)} total)" if len(names) > 8 else ""
+                )
+                # the example verb must be a binary that actually works
+                # here — a hardcoded one misdirects every non-git allowlist
+                lines.append(
+                    f"CLI (subcommand first, flags as kwargs): await "
+                    f"{names[0]}(...) -> {{stdout, stderr, exit_code, ok}}. "
+                    f"Allowed: {shown}."
+                )
+            else:
+                lines.append("CLI: no binaries are allowed.")
         if self.result_store.enabled:
             lines.append(
                 "State between runs: handle = await save_result(value); "
@@ -424,8 +458,9 @@ class Toolplane:
                 'filename="x.csv"); await load_artifact(handle).'
             )
         lines.append(
-            "Errors are real Python exceptions (except ValueError / "
-            "PermissionError / LookupError work)."
+            "Failures raise real Python exceptions: store errors are "
+            "ValueError, CLI policy is PermissionError, unknown "
+            "capabilities are LookupError — catch by type to retry."
         )
         text = "\n".join(lines)
         if len(text) > limit:
