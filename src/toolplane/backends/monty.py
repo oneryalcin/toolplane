@@ -30,6 +30,7 @@ from ..results import build_result_bindings
 from ._python import (
     UNAWAITED_CALL_ERROR_TYPE,
     UNAWAITED_CALL_MESSAGE,
+    find_reserved_rebindings,
     find_unawaited_calls,
     wrap_async_main,
 )
@@ -108,6 +109,18 @@ class MontyBackend:
                 "monty cannot install or import third-party packages; "
                 "use the pyodide-deno backend for package workflows"
             )
+        if self.session and inputs:
+            # inputs are per-run by contract, but everything fed to a session
+            # persists and monty has no `del` — accepting them would silently
+            # turn one-shot host data (including secrets) into durable
+            # session state (Codex adversarial finding on #86)
+            raise BackendCapabilityError(
+                "per-run inputs are not supported in session mode: session "
+                "namespaces persist and monty cannot delete names. Assign "
+                "values inside the snippet (they persist like any session "
+                "variable), or construct the backend with session=False for "
+                "input-driven runs."
+            )
 
         started = time.perf_counter()
         input_namespace = dict(inputs or {})
@@ -130,10 +143,6 @@ class MontyBackend:
             reserved=set(external_functions) | set(input_namespace),
         ).items():
             external_functions.setdefault(name, fn)
-        if self.session:
-            external_functions.setdefault(
-                "reset_session", self._make_reset_session()
-            )
         _ensure_no_input_collisions(input_namespace, set(external_functions))
 
         streams = CollectStreams()
@@ -221,8 +230,29 @@ class MontyBackend:
         trailing bare expression is the value otherwise, and a failed run
         does not wipe the namespace.
         """
+        rebindings = find_reserved_rebindings(code, set(external_functions))
+        if rebindings:
+            # in a session a top-level assignment outlives the run and
+            # permanently masks the injected binding (monty has no `del`);
+            # shadowing reset_session would even remove the escape hatch —
+            # fail loudly before feeding instead
+            joined = ", ".join(sorted(rebindings))
+            return self._result(
+                started,
+                streams,
+                error=ExecutionError(
+                    type="NamespaceCollisionError",
+                    message=(
+                        f"the snippet assigns to Toolplane bindings: "
+                        f"{joined}. In a session that assignment would "
+                        "persist and mask the binding until the session is "
+                        "reset — use different variable names."
+                    ),
+                ),
+            )
         async with self._session_lock:
             repl = self._ensure_repl()
+            pending_reset_before = self._pending_reset
             try:
                 snapshot: bytes | None = repl.dump()
             except Exception:
@@ -247,6 +277,10 @@ class MontyBackend:
                 # pre-run snapshot fixes both: the namespace is as if the run
                 # never happened. Host-side effects are NOT rolled back; the
                 # message must say so instead of promising a transaction.
+                # The reset flag is namespace state too: a reset requested by
+                # the timed-out run must not fire after "rolled back" was
+                # reported (Codex adversarial finding on #86)
+                self._pending_reset = pending_reset_before
                 if snapshot is not None:
                     self._repl = MontyRepl.load(snapshot)
                     recovery = (
@@ -279,10 +313,11 @@ class MontyBackend:
                 cause = exc.exception()
                 message = str(cause)
                 if isinstance(cause, MemoryError):
+                    # NOT `del x` — monty's parser has no del statement
                     message += (
-                        " — the session memory cap was hit; `del` large "
-                        "session variables or call `await reset_session()`, "
-                        "then re-run"
+                        " — the session memory cap was hit; free space by "
+                        "reassigning large session variables (`big = None`) "
+                        "or call `await reset_session()`, then re-run"
                     )
                 return self._result(
                     started,
@@ -294,6 +329,35 @@ class MontyBackend:
                     ),
                 )
             except MontyError as exc:
+                return self._result(
+                    started,
+                    streams,
+                    error=ExecutionError(
+                        type=type(exc).__name__,
+                        message=str(exc),
+                    ),
+                )
+            except Exception as exc:
+                # monty's REPL driver can raise bare builtins — awaiting a
+                # future persisted un-awaited by an EARLIER run raises
+                # RuntimeError("No pending async tasks but ResolveFutures
+                # requested"). Every failure mode here must come back as a
+                # structured error, never crash the caller.
+                if "No pending async tasks" in str(exc):
+                    return self._result(
+                        started,
+                        streams,
+                        error=ExecutionError(
+                            type=UNAWAITED_CALL_ERROR_TYPE,
+                            message=(
+                                "this value came from a call in an earlier "
+                                "run that was never awaited — a pending "
+                                "call cannot cross runs. Re-run the call "
+                                "and await it in the same run (e.g. "
+                                "`handle = await save_result(value)`)."
+                            ),
+                        ),
+                    )
                 return self._result(
                     started,
                     streams,
@@ -348,8 +412,13 @@ class MontyBackend:
         namespace: Mapping[str, str],
     ) -> dict[str, Any]:
         external: dict[str, Any] = {"call_tool": bridge.call_tool}
+        if self.session:
+            # installed before capability aliases so a capability that
+            # happens to be named reset_session cannot claim the slot: the
+            # escape hatch must always be the escape hatch
+            external["reset_session"] = self._make_reset_session()
         for callable_name, capability_name in namespace.items():
-            if callable_name.isidentifier() and callable_name != "call_tool":
+            if callable_name.isidentifier() and callable_name not in external:
                 external[callable_name] = _make_bound_tool(bridge, capability_name)
         return external
 

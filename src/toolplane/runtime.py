@@ -350,7 +350,11 @@ class Toolplane:
                     "after the current run (saved results and artifacts are "
                     "unaffected).",
                     "- The session has a memory cap; if a run fails with "
-                    "MemoryError, `del` large variables or reset.",
+                    "MemoryError, reassign large variables (`big = None` — "
+                    "monty has no `del`) or reset.",
+                    "- Assigning a variable named after a Toolplane binding "
+                    "(e.g. `save_result = ...`) is rejected: in a session "
+                    "the assignment would mask the binding until reset.",
                 ]
             )
         lines.extend(["", "## Result store"])

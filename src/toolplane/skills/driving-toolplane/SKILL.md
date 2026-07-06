@@ -80,8 +80,14 @@ return [r for r in rows if r["score"] > 0.5]
   before timing out stand. Re-run to retry.
 - `await reset_session()` clears all session variables after the current
   run; saved results and artifacts are unaffected.
-- The session has a memory cap. A `MemoryError` names the fix: `del`
-  large variables or reset, then re-run.
+- The session has a memory cap. A `MemoryError` names the fix: reassign
+  large variables (`big = None` — monty has no `del`) or reset, then
+  re-run.
+- Don't name variables after Toolplane bindings (`save_result = ...`);
+  the run is rejected up front because the assignment would mask the
+  binding for the rest of the session.
+- Per-run `inputs` are rejected in session mode — assign values inside
+  the snippet instead; they persist like any session variable.
 
 ## Result store
 

@@ -128,11 +128,25 @@ The contract, chosen from the [#77 spike](monty-session-spike.md):
 - `await reset_session()` clears the namespace after the current run;
   results and artifacts are unaffected.
 - The memory cap is enforced cumulatively; hitting it is a catchable
-  `MemoryError` and the session survives — delete variables or reset.
+  `MemoryError` and the session survives — reassign large variables to
+  `None` (monty has no `del`) or reset.
+- Snippets that assign to a Toolplane binding name (`save_result = ...`)
+  are rejected up front: in a session the assignment would persist and
+  mask the binding — including `reset_session` itself — until reset.
+- Per-run `inputs` are rejected in session mode: everything fed to a
+  session persists, so accepting them would silently turn one-shot host
+  data (including secrets) into durable state. Seed state inside a
+  snippet instead, or disable sessions for input-driven runs.
 
 Like the stores, sessions are per-process state: multi-client transports
 (`serve mcp --transport http`) disable them automatically rather than share
-one namespace (and one interpreter lock) across clients.
+one namespace (and one interpreter lock) across clients. That automatic
+gate lives in the config-driven path (`serve mcp`,
+`build_mcp_facade_from_config`); if you construct `Toolplane()` yourself
+and serve it on a multi-client transport via `build_mcp_facade`, pass
+`Toolplane(sessions=False)` — sessions default on for the default backend
+set. Passing `backends=[...]` explicitly means you own session mode:
+construct `MontyBackend(session=True)` yourself if you want it.
 
 ## Result Store
 

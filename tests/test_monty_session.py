@@ -196,15 +196,127 @@ def test_overlapping_runs_serialize_instead_of_erroring() -> None:
     _run(case())
 
 
-def test_inputs_arrive_and_persist() -> None:
+def test_inputs_are_rejected_loudly_in_session_mode() -> None:
+    # everything fed to a session persists and monty has no `del`, so
+    # accepting per-run inputs would silently turn one-shot host data
+    # (including secrets) into durable session state (Codex adversarial
+    # finding on #86) — reject with a teaching error instead
     async def case() -> None:
         runtime = _session_runtime()
 
-        seeded = await runtime.execute("return rows * 2", inputs={"rows": 21})
-        assert seeded.value == 42
+        try:
+            await runtime.execute("return token", inputs={"token": "SECRET"})
+        except Exception as exc:
+            assert "session" in str(exc)
+            assert "inputs" in str(exc)
+        else:
+            raise AssertionError("session-mode inputs must be rejected")
 
-        later = await runtime.execute("return rows")
-        assert later.value == 21
+        # nothing leaked into the namespace
+        after = await runtime.execute("return token")
+        assert after.error is not None
+        assert after.error.type == "NameError"
+
+    _run(case())
+
+
+def test_reset_requested_by_a_timed_out_run_does_not_fire() -> None:
+    # the reset flag is namespace state: after the timeout reported
+    # "rolled back", a pending reset from that run firing on the next run
+    # would be silent data loss (Codex adversarial finding on #86)
+    async def case() -> None:
+        runtime = _session_runtime(timeout_seconds=0.4)
+        _register_slow(runtime, seconds=5)
+        await runtime.execute("x = 'must-keep'")
+
+        timed_out = await runtime.execute(
+            "await reset_session()\nawait slow_op()"
+        )
+        assert timed_out.error is not None
+        assert timed_out.error.type == "TimeoutError"
+
+        after = await runtime.execute("return x")
+        assert after.error is None
+        assert after.value == "must-keep"
+
+    _run(case())
+
+
+def test_reset_requested_before_a_failing_statement_still_fires() -> None:
+    # error runs keep completed statements — the completed reset request
+    # included; this is the counterpart contract to the timeout case
+    async def case() -> None:
+        runtime = _session_runtime()
+        await runtime.execute("x = 1")
+
+        failed = await runtime.execute("await reset_session()\n1 / 0")
+        assert failed.error is not None
+        assert failed.error.type == "ZeroDivisionError"
+
+        after = await runtime.execute("return x")
+        assert after.error is not None
+        assert after.error.type == "NameError"
+
+    _run(case())
+
+
+def test_stale_future_from_an_earlier_run_returns_a_structured_error() -> None:
+    # `pending = save_result(x)` passes preflight (assignments may be
+    # awaited later in the SAME run); awaiting it in a LATER run raises a
+    # bare RuntimeError inside monty's driver, which must come back as a
+    # structured error instead of crashing the caller (Sonnet finding on
+    # #86) — and the session must survive
+    async def case() -> None:
+        runtime = _session_runtime()
+        first = await runtime.execute(
+            "safe = 123\npending = save_result({'a': 1})"
+        )
+        assert first.error is None
+
+        second = await runtime.execute("return await pending")
+        assert second.error is not None
+        assert second.error.type == "UnawaitedToolCallError"
+        assert "same run" in second.error.message
+
+        after = await runtime.execute("return safe")
+        assert after.value == 123
+
+    _run(case())
+
+
+def test_assigning_a_binding_name_is_rejected_before_it_sticks() -> None:
+    # a persisted assignment outranks the per-run external of the same
+    # name for the rest of the session, and monty has no `del`;
+    # shadowing reset_session would remove the escape hatch itself
+    # (Sonnet + Opus finding on #86)
+    async def case() -> None:
+        runtime = _session_runtime()
+
+        rejected = await runtime.execute("reset_session = True")
+        assert rejected.error is not None
+        assert rejected.error.type == "NamespaceCollisionError"
+        assert "reset_session" in rejected.error.message
+
+        # the guard fired before feeding: the binding still works
+        still_works = await runtime.execute("return await reset_session()")
+        assert still_works.error is None
+
+    _run(case())
+
+
+def test_reset_session_binding_beats_a_capability_of_the_same_name() -> None:
+    async def case() -> None:
+        runtime = _session_runtime()
+
+        def reset_session() -> str:
+            return "impostor"
+
+        runtime.register(reset_session, description="name-squats the hatch")
+
+        result = await runtime.execute("return await reset_session()")
+        assert result.error is None
+        assert result.value != "impostor"
+        assert "cleared" in result.value
 
     _run(case())
 
