@@ -2,6 +2,12 @@
 
 Status: findings recorded 2026-07-02. Instrument: `examples/mcp_client_probe.py`.
 
+!!! note "This is the dated spike record"
+
+    The maintained, current view — including the later interactive
+    elicitation probes and behavioral findings — lives in the
+    [MCP Client Capability Matrix](mcp-client-capability-matrix.md).
+
 Toolplane's roadmap keeps bumping into MCP protocol features beyond tools:
 resources for the result store and a future artifacts lane, elicitation for
 allowlist escalation, sampling for server-side generation. Client support for
