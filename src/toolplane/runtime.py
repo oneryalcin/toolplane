@@ -274,7 +274,7 @@ class Toolplane:
         else:
             lines.append("*(no flat capability bindings)*")
         scoped = self.registry.scoped_namespace()
-        if scoped:
+        if scoped and self._default_backend_capability("scoped_bindings"):
             lines.append("")
             lines.append("Scoped namespaces:")
             for namespace, members in scoped.items():
@@ -282,6 +282,16 @@ class Toolplane:
                     lines.append(
                         f"- `await {namespace}.{member}(...)` — {canonical}"
                     )
+        elif scoped:
+            # advertising ns.member sugar the default backend cannot bind
+            # cost a cold agent a NameError turn (0.3.0 quickstart cert) —
+            # the manifest describes what actually runs here
+            lines.append("")
+            lines.append(
+                "(Scoped `ns.member` sugar exists only on backends that "
+                "support it — this server's default backend binds the flat "
+                "aliases above instead.)"
+            )
         lines.extend(
             [
                 "",
@@ -671,6 +681,12 @@ class Toolplane:
             escalations_cancelled=list(interrupted),
         )
         return result
+
+    def _default_backend_capability(self, name: str) -> bool:
+        backend = self.backends.get(self.default_backend)
+        if backend is None:
+            return False
+        return bool(getattr(backend.capabilities, name, False))
 
     def _session_default(self) -> bool:
         """True when default execute_code runs land in a persistent session.

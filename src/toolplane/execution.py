@@ -24,6 +24,10 @@ class BackendCapabilities(BaseModel):
     resource_limits: frozenset[str] = Field(default_factory=frozenset)
     persistence: PersistenceMode = "none"
     startup_latency: StartupLatency = "low"
+    # whether `ns.member` sugar exists in this backend's namespace; the
+    # manifest must not advertise it where it would NameError (monty is
+    # flat-only — found by the 0.3.0 quickstart cold-agent cert)
+    scoped_bindings: bool = True
 
 
 class ExecutionError(BaseModel):

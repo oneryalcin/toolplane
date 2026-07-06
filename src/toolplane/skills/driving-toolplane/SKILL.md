@@ -37,8 +37,10 @@ capability. You write small Python snippets against a curated namespace.
   arrives in the tool response's `value` field; `print(...)` output arrives
   in `stdout`.
 - Two equivalent capability call shapes:
-  - flat/scoped binding: `await deepwiki_ask_question(repoName=..., question=...)`
-    or `await deepwiki.ask_question(...)`
+  - flat binding: `await deepwiki_ask_question(repoName=..., question=...)`
+    (the scoped `await deepwiki.ask_question(...)` form exists only on the
+    local/pyodide backends — on monty, the usual default, it is a NameError;
+    the manifest lists exactly the forms this server binds)
   - canonical, works for everything including hidden capabilities:
     `await call_tool("mcp:deepwiki/ask_question", {"repoName": ..., "question": ...})`
 
