@@ -239,12 +239,17 @@ url = "https://mcp.linear.app/mcp"
 auth = "oauth"
 ```
 
-!!! warning "Direct OAuth is ephemeral"
+!!! note "OAuth tokens persist encrypted"
 
-    FastMCP's direct `auth = "oauth"` config stores tokens in memory, and
-    Toolplane never persists tokens itself — that boundary is permanent, not
-    a version gap. Use a `fastmcp-remote` stdio bridge for persistent OAuth
-    login; the bridge owns its own token cache.
+    `auth = "oauth"` wires FastMCP's own OAuth helper to an encrypted
+    token store at `~/.toolplane/oauth` (Fernet at rest, via FastMCP's
+    storage wrappers). The encryption key lives in the OS keyring;
+    `TOOLPLANE_STORAGE_KEY` overrides it on headless hosts, and with
+    neither available Toolplane refuses loudly rather than writing
+    plaintext. Prime once with `toolplane mcp login <name>` — one browser
+    consent, then every status probe, serve, and run reuses the stored
+    tokens. Toolplane writes no token-handling code and rolls no crypto;
+    losing the key just means one re-consent.
 
 Local stdio server:
 
@@ -254,30 +259,36 @@ command = "python"
 args = ["examples/mcp_stdio_server.py"]
 ```
 
-Environment-backed bearer token shape:
+## Secrets
+
+Config values in MCP `headers` and stdio `env` tables can reference
+secrets instead of holding them, so `toolplane.toml` stays committable:
 
 ```toml
 [mcp.servers.internal_docs]
 url = "https://docs.example.com/mcp"
 
 [mcp.servers.internal_docs.headers]
-Authorization = "Bearer ${DOCS_MCP_TOKEN}"
+Authorization = "keyring://internal-docs-token"  # or "env://DOCS_MCP_TOKEN"
 ```
 
-The current config loader registers MCP servers through the existing
-`register_mcp_config(...)` path. OAuth login commands and encrypted token
-storage belong to the later Toolplane MCP facade/auth work.
+- `keyring://<name>` reads the OS keyring; store values with
+  `toolplane secret set <name>` (the value is read from stdin or an
+  interactive prompt — never from argv, which process lists leak).
+  `toolplane secret list` shows names only; `toolplane secret rm <name>`
+  deletes.
+- `env://<VAR>` reads the process environment.
+- A missing secret fails loudly at registration with the command that
+  fixes it — never a silently-empty credential.
 
 ## Non-Goals
 
-The first config slice intentionally does not include:
+The config surface intentionally does not include:
 
 - project/user config auto-discovery.
 - Python helper import strings.
 - custom backend imports.
 - plugin or entrypoint discovery.
-- secret management.
-- OAuth browser login commands.
 
-Those features need more policy and lifecycle decisions than the initial
+Those features need more policy and lifecycle decisions than the current
 deterministic bootstrap path.

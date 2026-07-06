@@ -24,6 +24,9 @@ dependencies = [
     # >=0.2 for the _global (pre-subcommand flags) kwarg, cli-to-py#7
     "cli-to-py>=0.2",
     "fastmcp>=3.1",
+    # we import keyring directly (credentials.py); it also arrives
+    # transitively via fastmcp's storage stack
+    "keyring>=25",
     "pydantic>=2.0",
     # HARD pin: monty main (post-0.0.18) deletes MontyRepl for an AsyncMonty
     # subprocess-pool API — 0.0.19 will break our import. Port tracked in the

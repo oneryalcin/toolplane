@@ -49,15 +49,29 @@ async def register_mcp_config(
     tags: set[str] | frozenset[str] | None = None,
     source: str = "mcp",
 ) -> list[Capability]:
-    """Register all tools from a standard `mcpServers` config dictionary."""
+    """Register all tools from a standard `mcpServers` config dictionary.
+
+    Each entry is credential-prepared first: ``env://`` / ``keyring://``
+    references in headers and env resolve to real values, and
+    ``auth = "oauth"`` on url servers becomes a live fastmcp OAuth object
+    backed by Toolplane's encrypted token store — so tokens persist across
+    restarts without ever touching the config file or process output.
+    """
+    from ..credentials import prepare_server_config
+
     parsed = _mcp_config(config)
     capabilities: list[Capability] = []
     for server_name, server_config in parsed.mcpServers.items():
+        raw = (
+            server_config.model_dump(exclude_none=True)
+            if isinstance(server_config, BaseModel)
+            else dict(server_config)
+        )
         capabilities.extend(
             await register_mcp_server(
                 registry,
                 server_name,
-                _single_server_config(server_name, server_config),
+                _single_server_config(server_name, prepare_server_config(raw)),
                 tags=tags,
                 source=source,
             )

@@ -55,8 +55,8 @@ def test_mcp_add_url_writes_config_and_preserves_existing_comments(
         "[mcp.servers.linear]\n"
         'url = "https://mcp.linear.app/mcp"\n'
         'auth = "oauth"\n'
-        "# warning: direct OAuth tokens are ephemeral; Toolplane never persists tokens itself.\n"
-        "# use a fastmcp-remote bridge for persistent login.\n"
+        "# tokens are stored encrypted at rest (key in your OS keyring);\n"
+        "# prime once with: toolplane mcp login linear\n"
     )
     config = load_toolplane_config(config_path)
     MCPConfig.from_dict(config.mcp.to_fastmcp_config())
@@ -93,8 +93,8 @@ def test_mcp_add_print_url_emits_round_trippable_toml(
         "[mcp.servers.linear]\n"
         'url = "https://mcp.linear.app/mcp"\n'
         'auth = "oauth"\n'
-        "# warning: direct OAuth tokens are ephemeral; Toolplane never persists tokens itself.\n"
-        "# use a fastmcp-remote bridge for persistent login.\n"
+        "# tokens are stored encrypted at rest (key in your OS keyring);\n"
+        "# prime once with: toolplane mcp login linear\n"
     )
     assert existing_config.read_text(encoding="utf-8") == "# existing config\n"
     assert_emitted_config_loads(tmp_path, captured.out)
@@ -491,9 +491,7 @@ def test_mcp_status_uses_no_auth_probe(
     assert captured.err == ""
     assert captured.out == (
         "MCP servers:\n"
-        "- linear: ok transport=url auth=oauth tools=2 "
-        "warning=direct OAuth tokens are ephemeral (Toolplane never persists tokens itself); "
-        "use a fastmcp-remote bridge for persistent login\n"
+        "- linear: ok transport=url auth=oauth tools=2\n"
     )
     assert captured_probe["name"] == "linear"
     assert captured_probe["timeout_seconds"] == 5.0
@@ -635,7 +633,7 @@ def test_mcp_status_reports_auth_required_as_data(
     )
 
 
-def test_mcp_status_warns_for_direct_oauth_when_auth_required(
+def test_mcp_status_hints_login_for_direct_oauth_when_auth_required(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
@@ -670,10 +668,54 @@ def test_mcp_status_warns_for_direct_oauth_when_auth_required(
     assert captured.err == ""
     assert captured.out == (
         "MCP servers:\n"
-        "- linear: auth_required transport=url auth=oauth detail=401 Unauthorized "
-        "warning=direct OAuth tokens are ephemeral (Toolplane never persists tokens itself); "
-        "use a fastmcp-remote bridge for persistent login\n"
+        "- linear: auth_required transport=url auth=oauth detail=401 "
+        "Unauthorized — prime it once with: toolplane mcp login linear\n"
     )
+
+
+def test_mcp_status_tells_primed_direct_oauth_apart_from_unprimed(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # after login the status probe still gets 401 (it never attaches
+    # credentials) — the detail must say the saved login exists instead
+    # of re-teaching the login command
+    async def unauthorized_list_mcp_tools(
+        name: str,
+        server_config: object,
+        *,
+        timeout_seconds: float,
+    ) -> list[object]:
+        raise RuntimeError("401 Unauthorized")
+
+    async def tokens_exist(url: str) -> bool:
+        return True
+
+    monkeypatch.setattr(lifecycle, "_list_mcp_tools", unauthorized_list_mcp_tools)
+    monkeypatch.setattr(
+        "toolplane.credentials.has_stored_oauth_tokens", tokens_exist
+    )
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text(
+        textwrap.dedent(
+            """
+            [mcp.servers.linear]
+            url = "https://mcp.linear.app/mcp"
+            auth = "oauth"
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    code = main(["mcp", "status", "--config", str(config_path)])
+
+    captured = capsys.readouterr()
+
+    assert code == 0
+    assert "tokens are stored" in captured.out
+    assert "mcp login" not in captured.out
 
 
 def test_mcp_status_rejects_unknown_server(
@@ -828,10 +870,23 @@ def test_mcp_login_keeps_browser_enabled_and_preserves_env(
     assert captured_probe["timeout_seconds"] == 180.0
 
 
-def test_mcp_login_rejects_direct_oauth_server(
+def test_mcp_login_wires_direct_oauth_to_encrypted_storage(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    captured_probe: dict[str, object] = {}
+
+    async def fake_list_mcp_tools(
+        name: str,
+        server_config: dict[str, object],
+        *,
+        timeout_seconds: float,
+    ) -> list[object]:
+        captured_probe["server_config"] = server_config
+        return [object(), object()]
+
+    monkeypatch.setattr(lifecycle, "_list_mcp_tools", fake_list_mcp_tools)
     config_path = tmp_path / "toolplane.toml"
     config_path.write_text(
         textwrap.dedent(
@@ -849,9 +904,13 @@ def test_mcp_login_rejects_direct_oauth_server(
 
     captured = capsys.readouterr()
 
-    assert code == 2
-    assert captured.out == ""
-    assert "fastmcp-remote bridge" in captured.err
+    assert code == 0
+    assert "Login succeeded" in captured.out
+    from fastmcp.client.auth import OAuth
+
+    probe_config = captured_probe["server_config"]
+    assert isinstance(probe_config["auth"], OAuth)
+    assert probe_config["auth"].context.storage is not None
 
 
 def test_mcp_login_rejects_unknown_server(

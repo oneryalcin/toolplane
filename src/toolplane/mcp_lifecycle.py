@@ -59,10 +59,7 @@ _AUTH_REQUIRED_MARKERS = (
     "authentication",
     "authorization",
 )
-_DIRECT_OAUTH_WARNING = (
-    "direct OAuth tokens are ephemeral (Toolplane never persists tokens "
-    "itself); use a fastmcp-remote bridge for persistent login"
-)
+_DIRECT_OAUTH_LOGIN_HINT = "prime it once with: toolplane mcp login {name}"
 
 
 def render_mcp_add_snippet(
@@ -162,8 +159,15 @@ def _build_mcp_server_table(
         server["url"] = url
         if auth is not None:
             server["auth"] = auth
-            for comment in _direct_oauth_warning_comments():
-                server.add(tomlkit.comment(comment))
+            server.add(
+                tomlkit.comment(
+                    "tokens are stored encrypted at rest (key in your OS "
+                    "keyring);"
+                )
+            )
+            server.add(
+                tomlkit.comment(f"prime once with: toolplane mcp login {name}")
+            )
         return server
 
     server["command"] = command or ""
@@ -281,15 +285,6 @@ async def login_mcp_server(
         raise McpLoginError(f"Unknown MCP server: {name}")
 
     server_config = servers[name]
-    if _is_direct_oauth_server(server_config):
-        raise McpLoginError(
-            f"MCP server {name!r} uses direct OAuth; its tokens are ephemeral "
-            "(Toolplane never persists tokens itself), so login would not "
-            "persist. Re-add it as a "
-            "fastmcp-remote bridge (mcp add --command uvx --arg fastmcp-remote "
-            "--arg <url>), then login."
-        )
-
     return await _probe_mcp_server(
         name,
         server_config,
@@ -352,11 +347,31 @@ async def _probe_mcp_server(
         )
     except Exception as exc:
         detail = _one_line_error(exc)
+        state: McpStatusState = (
+            "auth_required" if _looks_auth_required(detail) else "error"
+        )
+        if state == "auth_required" and _is_direct_oauth_server(server_config):
+            # status probes never construct OAuth (they must stay
+            # browser-free), so a 401 is expected even after login — the
+            # hint must distinguish "not primed yet" from "primed; the
+            # probe just doesn't attach credentials"
+            from .credentials import has_stored_oauth_tokens
+
+            if await has_stored_oauth_tokens(str(server_config["url"])):
+                detail = (
+                    f"{detail} — tokens are stored; status probes never "
+                    "attach credentials, but serve and execute use the "
+                    "saved login"
+                )
+            else:
+                detail = (
+                    f"{detail} — {_DIRECT_OAUTH_LOGIN_HINT.format(name=name)}"
+                )
         return McpServerStatus(
             name=name,
             kind=kind,
             auth=auth,
-            state="auth_required" if _looks_auth_required(detail) else "error",
+            state=state,
             detail=detail,
             warning=warning,
         )
@@ -406,10 +421,19 @@ def _status_probe_server_config(server_config: Mapping[str, Any]) -> dict[str, A
 
 
 def _login_server_config(server_config: Mapping[str, Any]) -> dict[str, Any]:
-    """Return a probe config that may open a browser to complete OAuth."""
+    """Return a probe config that may open a browser to complete OAuth.
+
+    Direct-OAuth servers get the real credential wiring: fastmcp's OAuth
+    helper backed by Toolplane's encrypted token store, so the consent
+    granted here persists for every later status probe and serve.
+    """
     prepared = _sanitized_probe_config(server_config)
     if _server_kind(prepared) == "stdio":
         prepared["env"] = _merged_stdio_env(prepared.get("env"))
+    if _is_direct_oauth_server(server_config):
+        from .credentials import build_oauth
+
+        prepared["auth"] = build_oauth(str(server_config["url"]))
     return prepared
 
 
@@ -459,8 +483,6 @@ def _auth_label(server_config: Mapping[str, Any]) -> str:
 
 
 def _server_warning(server_config: Mapping[str, Any]) -> str:
-    if _is_direct_oauth_server(server_config):
-        return _DIRECT_OAUTH_WARNING
     return ""
 
 
@@ -469,13 +491,6 @@ def _is_direct_oauth_server(server_config: Mapping[str, Any]) -> bool:
         _server_kind(server_config) == "url"
         and server_config.get("auth") == "oauth"
     )
-
-
-def _direct_oauth_warning_comments() -> list[str]:
-    return [
-        "warning: direct OAuth tokens are ephemeral; Toolplane never persists tokens itself.",
-        "use a fastmcp-remote bridge for persistent login.",
-    ]
 
 
 def _looks_auth_required(detail: str) -> bool:
