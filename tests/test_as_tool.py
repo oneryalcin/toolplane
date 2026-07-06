@@ -60,9 +60,22 @@ def test_description_names_the_bindings_and_fits_strict_caps() -> None:
     assert "call_tool" in doc
     assert "await rg(...)" in doc
     assert "git" not in doc
-    assert "save_result" in doc
+    # sessions cover run-to-run state, so the description teaches
+    # reset_session instead of the save/load tax
+    assert "reset_session" in doc
+    assert "save_result" not in doc
     assert "save_artifact" in doc
     assert len(doc) <= 1024
+
+
+def test_description_teaches_the_store_when_sessions_are_off() -> None:
+    runtime = Toolplane(ambient_cli=False, sessions=False)
+
+    doc = runtime.as_tool().__doc__
+
+    assert doc is not None
+    assert "save_result" in doc
+    assert "reset_session" not in doc
 
 
 def test_empty_allowlist_shows_no_example_verb() -> None:

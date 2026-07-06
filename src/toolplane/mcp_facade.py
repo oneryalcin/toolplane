@@ -319,17 +319,22 @@ def resolve_serve_config(
 ) -> ToolplaneConfig:
     """Apply transport-dependent policy before building the runtime.
 
-    Both stores are session-scoped, and only stdio guarantees one client
-    per process. Multi-client transports fail closed: the stores are
-    disabled rather than shared across clients.
+    The stores and the monty session are all session-scoped state, and only
+    stdio guarantees one client per process. Multi-client transports fail
+    closed: they are disabled rather than shared across clients (a shared
+    session would additionally serialize every client's runs behind one
+    interpreter lock).
     """
     if transport == "stdio" or not (
-        config.results.enabled or config.artifacts.enabled
+        config.results.enabled
+        or config.artifacts.enabled
+        or config.session.enabled
     ):
         return config
     updated = config.model_copy(deep=True)
     updated.results.enabled = False
     updated.artifacts.enabled = False
+    updated.session.enabled = False
     return updated
 
 

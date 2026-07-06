@@ -61,10 +61,34 @@ Only binaries on the server's allowlist are bound (the manifest lists them).
   in later runs; a refusal is final for the session — switch to an
   allowed binary instead of retrying.
 
+## Session
+
+On servers with sessions enabled (the manifest has a `## Session` section),
+variables persist across `execute_code` runs on the default backend — write
+snippets like notebook cells:
+
+```python
+rows = await load_data()          # run 1
+# run 2 just uses `rows` — no save/load step
+return [r for r in rows if r["score"] > 0.5]
+```
+
+- A **failed** run keeps the session: prior variables, and statements that
+  completed before the error, persist.
+- A **timed-out** run is rolled back: the namespace returns to its pre-run
+  state — but capability calls, CLI commands, and saves the run made
+  before timing out stand. Re-run to retry.
+- `await reset_session()` clears all session variables after the current
+  run; saved results and artifacts are unaffected.
+- The session has a memory cap. A `MemoryError` names the fix: `del`
+  large variables or reset, then re-run.
+
 ## Result store
 
 Persist JSON-shaped data across `execute_code` runs (in-memory, this server
-session only, never written to disk):
+session only, never written to disk). With sessions enabled your variables
+already persist — reach for the store when a value must survive a session
+reset, cross a backend override, or be read directly as an MCP resource:
 
 ```python
 handle = await save_result(rows, label="q3-latency")

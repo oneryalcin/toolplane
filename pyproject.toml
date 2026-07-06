@@ -24,6 +24,9 @@ dependencies = [
     "cli-to-py>=0.1",
     "fastmcp>=3.1",
     "pydantic>=2.0",
+    # MontyRepl is pre-1.0 surface: on upgrade re-run tests/test_monty_session.py
+    # and revisit the session snapshot/limit guards if pydantic/monty#533 or
+    # #534 landed
     "pydantic-monty>=0.0.18,<0.1",
     "tomlkit>=0.15.0",
 ]

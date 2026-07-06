@@ -12,6 +12,7 @@ from pydantic_monty import (
     CollectStreams,
     Monty,
     MontyError,
+    MontyRepl,
     MontyRuntimeError,
     ResourceLimits,
 )
@@ -68,8 +69,26 @@ class MontyBackend:
         startup_latency="low",
     )
 
-    def __init__(self, *, timeout_seconds: float = 30.0):
+    def __init__(
+        self,
+        *,
+        timeout_seconds: float = 30.0,
+        session: bool = False,
+        session_max_memory_bytes: int | None = 512 * 1024 * 1024,
+    ):
         self.timeout_seconds = timeout_seconds
+        self.session = session
+        self.session_max_memory_bytes = session_max_memory_bytes
+        if session:
+            self.capabilities = self.capabilities.model_copy(
+                update={"persistence": "session"}
+            )
+        self._repl: MontyRepl | None = None
+        self._pending_reset = False
+        # one run at a time per session: MontyRepl holds an internal mutex
+        # and a second feed raises instead of queueing, so overlapping
+        # execute_code calls serialize here in arrival order
+        self._session_lock = asyncio.Lock()
 
     async def run(
         self,
@@ -111,6 +130,10 @@ class MontyBackend:
             reserved=set(external_functions) | set(input_namespace),
         ).items():
             external_functions.setdefault(name, fn)
+        if self.session:
+            external_functions.setdefault(
+                "reset_session", self._make_reset_session()
+            )
         _ensure_no_input_collisions(input_namespace, set(external_functions))
 
         streams = CollectStreams()
@@ -123,6 +146,10 @@ class MontyBackend:
                     type=UNAWAITED_CALL_ERROR_TYPE,
                     message="; ".join(preflight),
                 ),
+            )
+        if self.session:
+            return await self._run_session(
+                code, started, streams, input_namespace, external_functions
             )
         try:
             interpreter = await Monty.acreate(
@@ -178,6 +205,142 @@ class MontyBackend:
                 ),
             )
         return self._result(started, streams, value=value)
+
+    async def _run_session(
+        self,
+        code: str,
+        started: float,
+        streams: CollectStreams,
+        input_namespace: dict[str, Any],
+        external_functions: dict[str, Any],
+    ) -> ExecutionResult:
+        """Run at REPL top level so assignments persist across runs.
+
+        Snippets keep their one-shot contract: top-level ``return`` works
+        (monty's REPL accepts it, stops the run, and keeps prior state), a
+        trailing bare expression is the value otherwise, and a failed run
+        does not wipe the namespace.
+        """
+        async with self._session_lock:
+            repl = self._ensure_repl()
+            try:
+                snapshot: bytes | None = repl.dump()
+            except Exception:
+                # rollback protection is best-effort; a run that cannot be
+                # checkpointed still executes, and a timeout then resets the
+                # session instead of restoring it
+                snapshot = None
+            try:
+                value = await asyncio.wait_for(
+                    repl.feed_run_async(
+                        code,
+                        inputs=input_namespace or None,
+                        external_functions=external_functions,
+                        print_callback=streams,
+                    ),
+                    timeout=self.timeout_seconds,
+                )
+            except TimeoutError:
+                # a cancelled feed leaves partial mutations in the heap and —
+                # whenever the run interned a new string — permanently
+                # poisons the interpreter (pydantic/monty#533). Restoring the
+                # pre-run snapshot fixes both: the namespace is as if the run
+                # never happened. Host-side effects are NOT rolled back; the
+                # message must say so instead of promising a transaction.
+                if snapshot is not None:
+                    self._repl = MontyRepl.load(snapshot)
+                    recovery = (
+                        "Session variables were rolled back to the state "
+                        "before this run"
+                    )
+                else:
+                    self._repl = None
+                    recovery = (
+                        "The session could not be checkpointed, so its "
+                        "variables were cleared"
+                    )
+                return self._result(
+                    started,
+                    streams,
+                    error=ExecutionError(
+                        type="TimeoutError",
+                        message=(
+                            f"monty execution timed out after "
+                            f"{self.timeout_seconds:g}s. {recovery}; "
+                            "capability calls, CLI commands, and results or "
+                            "artifacts the run saved before timing out "
+                            "stand. Execute again to retry."
+                        ),
+                    ),
+                )
+            except MontyRuntimeError as exc:
+                # the session survives a failed run: prior state persists,
+                # and statements completed before the raise persist too
+                cause = exc.exception()
+                message = str(cause)
+                if isinstance(cause, MemoryError):
+                    message += (
+                        " — the session memory cap was hit; `del` large "
+                        "session variables or call `await reset_session()`, "
+                        "then re-run"
+                    )
+                return self._result(
+                    started,
+                    streams,
+                    error=ExecutionError(
+                        type=type(cause).__name__,
+                        message=message,
+                        traceback=_format_frames(exc),
+                    ),
+                )
+            except MontyError as exc:
+                return self._result(
+                    started,
+                    streams,
+                    error=ExecutionError(
+                        type=type(exc).__name__,
+                        message=str(exc),
+                    ),
+                )
+        if _contains_unawaited_future(value) or _printed_unawaited_future(streams):
+            return self._result(
+                started,
+                streams,
+                error=ExecutionError(
+                    type=UNAWAITED_CALL_ERROR_TYPE,
+                    message=UNAWAITED_CALL_MESSAGE,
+                ),
+            )
+        return self._result(started, streams, value=value)
+
+    def _ensure_repl(self) -> MontyRepl:
+        if self._repl is None or self._pending_reset:
+            limits: ResourceLimits | None = None
+            if self.session_max_memory_bytes is not None:
+                # literal key only: ResourceLimits silently ignores unknown
+                # keys (pydantic/monty#534), so the cap is also asserted
+                # empirically in tests, not trusted from construction
+                limits = ResourceLimits(
+                    max_memory=self.session_max_memory_bytes
+                )
+            # no max_duration_secs: the REPL clock runs from construction,
+            # not per feed (pydantic/monty#483) — per-run timeouts are the
+            # host's asyncio.wait_for
+            self._repl = MontyRepl(
+                script_name="toolplane_session.py", limits=limits
+            )
+            self._pending_reset = False
+        return self._repl
+
+    def _make_reset_session(self) -> Any:
+        async def reset_session() -> str:
+            self._pending_reset = True
+            return (
+                "Session variables will be cleared after this run "
+                "completes; saved results and artifacts are unaffected."
+            )
+
+        return reset_session
 
     def _external_functions(
         self,

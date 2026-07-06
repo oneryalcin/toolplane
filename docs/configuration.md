@@ -106,7 +106,39 @@ Only safe Python identifiers become top-level aliases.
     Do not expose ambient CLI mode through a client-facing MCP facade unless the
     project has explicitly chosen that risk.
 
+## Session
+
+On the monty backend, variables persist across `execute_code` runs within
+one served session: assignments and function definitions from one run are
+available in the next, like notebook cells. On by default:
+
+```toml
+[session]
+enabled = true
+max_memory_mb = 512 # cap on the accumulated interpreter heap
+```
+
+The contract, chosen from the [#77 spike](monty-session-spike.md):
+
+- A failed run keeps the session; a **timed-out** run is rolled back to
+  its pre-run namespace (a cancelled monty run can otherwise leave partial
+  state or poison the interpreter — pydantic/monty#533). Rollback covers
+  VM state only: capability calls, CLI commands, and saves the run made
+  before timing out stand, and the timeout error says so.
+- `await reset_session()` clears the namespace after the current run;
+  results and artifacts are unaffected.
+- The memory cap is enforced cumulatively; hitting it is a catchable
+  `MemoryError` and the session survives — delete variables or reset.
+
+Like the stores, sessions are per-process state: multi-client transports
+(`serve mcp --transport http`) disable them automatically rather than share
+one namespace (and one interpreter lock) across clients.
+
 ## Result Store
+
+With sessions enabled, plain variables already persist between runs; the
+store remains the seam for values that must survive a session reset, cross
+a backend override, or be read directly as an MCP resource.
 
 Snippets can pass data between runs without routing it through the model's
 context: `save_result(value, label=None)` returns a `res_` handle, and
