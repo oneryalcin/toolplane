@@ -52,6 +52,7 @@ nav:
       - Toolplane And MCP: toolplane-mcp.md
       - MCP Lifecycle Spike: mcp-lifecycle-spike.md
       - Monty Default Spike: monty-default-spike.md
+      - Monty Session Spike: monty-session-spike.md
       - MCP Client Capability Spike: mcp-client-capability-spike.md
       - Result Store Design: result-store-design.md
   - Research:
