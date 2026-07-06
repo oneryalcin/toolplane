@@ -72,15 +72,23 @@ shape), but it is not in violation.
 ## Status and impact
 
 - Filed as [openai/codex#31163](https://github.com/openai/codex/issues/31163)
-  (2026-07-05) with a minimal repro; no prior report existed. The fix is
-  one line: add `title: Option<String>` or drop `deny_unknown_fields`.
+  (2026-07-05) with a minimal repro; no prior report existed.
+- **Community follow-up (2026-07-06):** a contributor confirmed the root
+  cause and found that a `title`-only fix is incomplete — Pydantic also
+  emits a top-level `description` whenever the elicitation model has a
+  docstring, hitting the identical parse failure. We verified that
+  firsthand against fastmcp 3.4.2. The corrected fix scope: accept both
+  optional top-level fields (matching the per-property schemas in the
+  same file), keeping `deny_unknown_fields` for genuinely unexpected
+  members. A tested community branch exists on the issue thread.
 - Unfixed as of codex-cli 0.143.0-alpha.36 (2026-07-05).
 - Impact: Codex has had a real elicitation form UI since April 2026
   (PR #17043), but no FastMCP-based server can reach it. Any elicitation
   feature must degrade gracefully on Codex — toolplane's CLI-escalation
   flow returns exactly the plain policy refusal there, by construction.
 - Server-side workaround, if you need Codex elicitation before the fix:
-  prune the top-level title from your `requestedSchema` before sending.
+  prune the top-level `title` *and* `description` from your
+  `requestedSchema` before sending.
 
 ## The method, for reuse
 
