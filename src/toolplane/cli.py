@@ -265,7 +265,13 @@ def _cmd_mcp_login(args: argparse.Namespace) -> int:
                 timeout_seconds=args.timeout,
             )
         )
-    except (McpLoginError, McpStatusError, OSError, ValueError) as exc:
+    except (
+        McpLoginError,
+        McpStatusError,
+        CredentialStorageError,
+        OSError,
+        ValueError,
+    ) as exc:
         print(f"toolplane: {exc}", file=sys.stderr)
         return 2
     message = format_mcp_login(status, timeout_seconds=args.timeout)

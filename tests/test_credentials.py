@@ -259,3 +259,57 @@ def test_cli_secret_set_strips_crlf_from_piped_input(
 
     assert code == 0
     assert fake_keyring.values[("toolplane", "api-token")] == "token123"
+
+
+def test_trailing_slash_url_finds_the_stored_login(tmp_path, monkeypatch) -> None:
+    # fastmcp keys token storage on the rstrip("/")-ed URL; a config URL
+    # with a trailing slash must still read as primed (Codex re-check on
+    # #95 — login-then-serve was permanently blocked for such configs)
+    from fastmcp.client.auth.oauth import TokenStorageAdapter
+    from mcp.shared.auth import OAuthToken
+
+    from toolplane.credentials import has_stored_oauth_tokens, oauth_token_storage
+
+    async def prime_and_check() -> tuple[bool, bool]:
+        adapter = TokenStorageAdapter(
+            async_key_value=oauth_token_storage(),
+            server_url="https://x.example/mcp",
+        )
+        await adapter.set_tokens(
+            OAuthToken(access_token="tok", token_type="Bearer")
+        )
+        return (
+            await has_stored_oauth_tokens("https://x.example/mcp"),
+            await has_stored_oauth_tokens("https://x.example/mcp/"),
+        )
+
+    exact, trailing = asyncio.run(prime_and_check())
+    assert exact is True
+    assert trailing is True
+
+
+def test_cli_login_reports_credential_errors_as_diagnostics(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    # a headless host without key material must get "toolplane: ..." from
+    # mcp login, not a RuntimeError traceback (Codex re-check on #95)
+    import toolplane.mcp_lifecycle as lifecycle
+    from toolplane.cli import main
+
+    def no_key(_url: str):
+        raise CredentialStorageError("no OS keyring is available")
+
+    monkeypatch.setattr("toolplane.credentials.build_oauth", no_key)
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text(
+        '[mcp.servers.linear]\nurl = "https://mcp.linear.app/mcp"\n'
+        'auth = "oauth"\n',
+        encoding="utf-8",
+    )
+
+    code = main(["mcp", "login", "linear", "--config", str(config_path)])
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "toolplane: no OS keyring" in captured.err
+    assert lifecycle is not None  # imported for monkeypatch scoping clarity

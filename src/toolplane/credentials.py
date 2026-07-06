@@ -18,6 +18,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from .errors import ToolplaneError
+
 KEYRING_SERVICE = "toolplane"
 OAUTH_KEY_NAME = "oauth-storage-key"
 STORAGE_KEY_ENV = "TOOLPLANE_STORAGE_KEY"
@@ -25,8 +27,13 @@ DEFAULT_TOKEN_DIR = "~/.toolplane/oauth"
 _SECRET_NAMES_FILE = "~/.toolplane/secret-names"
 
 
-class CredentialStorageError(RuntimeError):
-    """No safe place to keep the encryption key — never fall back to plaintext."""
+class CredentialStorageError(ToolplaneError, RuntimeError):
+    """No safe place to keep the encryption key — never fall back to plaintext.
+
+    Dual-inherits ToolplaneError so every CLI catch site that already
+    handles the house taxonomy reports it as a diagnostic, not a
+    traceback (Codex re-check finding on #95).
+    """
 
 
 def _load_or_create_storage_key() -> str:
@@ -123,6 +130,10 @@ async def has_stored_oauth_tokens(url: str) -> bool:
     A missing key/dir just means "not primed"; an INVALID key raises so
     callers can surface the real problem instead of re-teaching login.
     """
+    # fastmcp trims the server URL before keying its token storage
+    # (oauth.py: mcp_url.rstrip("/")) — a trailing-slash config URL must
+    # find the same record login stored (Codex re-check finding on #95)
+    url = url.rstrip("/")
     token_dir = Path(DEFAULT_TOKEN_DIR).expanduser()
     key = _peek_storage_key()
     if key is None or not token_dir.is_dir():
