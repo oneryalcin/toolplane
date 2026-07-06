@@ -68,6 +68,7 @@ class MontyBackend:
         resource_limits=frozenset({"timeout", "memory", "recursion"}),
         persistence="none",
         startup_latency="low",
+        scoped_bindings=False,
     )
 
     def __init__(

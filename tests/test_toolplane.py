@@ -315,3 +315,22 @@ def test_search_matches_words_inside_camel_case_names() -> None:
 
     result = run(runtime.search("wiki"))
     assert result.startswith("No capabilities matched the query.")
+
+
+def test_manifest_hides_scoped_sugar_the_default_backend_cannot_bind() -> None:
+    # a cold agent read `await context7.query_docs(...)` in the manifest and
+    # burned a NameError turn on the flat-only monty default (0.3.0
+    # quickstart cert) — the manifest lists only forms this server binds
+    def ask(question: str) -> str:
+        """Answer a question."""
+        return question
+
+    monty_default = Toolplane(default_backend="monty", ambient_cli=False)
+    monty_default.register_python_namespace("helper", {"ask": ask})
+    manifest = monty_default.describe_namespace()
+    assert "helper.ask" not in manifest
+    assert "flat aliases above" in manifest
+
+    local_default = Toolplane(default_backend="local_unsafe", ambient_cli=False)
+    local_default.register_python_namespace("helper", {"ask": ask})
+    assert "`await helper.ask(...)`" in local_default.describe_namespace()
