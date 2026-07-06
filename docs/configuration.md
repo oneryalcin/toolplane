@@ -86,6 +86,11 @@ identifiers. The `cli.<name>` object forms need `local_unsafe` or
 `pyodide-deno`. The allowlist is enforced host-side by the bridge on every
 call, regardless of backend.
 
+Flags that must precede the subcommand (`git -C <path>`,
+`kubectl --context`) go in the `_global` dict on any of those forms —
+`await git("log", _global={"C": "/path/to/repo"})` renders
+`git -C /path/to/repo log` (cli-to-py ≥ 0.2).
+
 In allowlist mode, non-identifier binaries can still be listed and used through
 the explicit root:
 

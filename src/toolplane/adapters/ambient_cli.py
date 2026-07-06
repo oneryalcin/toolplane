@@ -25,7 +25,9 @@ RESERVED_CLI_NAMES = {"call_tool", "cli"}
 CLI_SHAPE_GUIDANCE = (
     "CLI call shape: subcommand as the first positional argument, flags as "
     "keyword arguments — e.g. await git('log', oneline=True, max_count=3) "
-    "or await cli_run('git', 'log', {'oneline': True, 'max_count': 3})"
+    "or await cli_run('git', 'log', {'oneline': True, 'max_count': 3}). "
+    "Flags that must precede the subcommand (git -C, kubectl --context) go "
+    "in _global: await git('log', _global={'C': '/path/to/repo'})"
 )
 
 
@@ -149,14 +151,29 @@ class AmbientCliRunner:
                 f"CLI options must be a dict of flags, got "
                 f"{type(options).__name__!r}. {CLI_SHAPE_GUIDANCE}"
             )
+        # `_global` rides inside options through every calling surface (flat
+        # bindings, cli_run, the `cli` object, pyodide render) and is split
+        # out only here, at the one dispatch point — cli-to-py renders these
+        # flags before the subcommand (git -C, kubectl --context; its own
+        # reserved-kwarg convention, cli-to-py#7)
+        resolved_options = dict(options or {})
+        global_options = resolved_options.pop("_global", None)
+        if global_options is not None and not isinstance(global_options, Mapping):
+            raise TypeError(
+                f"_global must be a dict of flags that precede the "
+                f"subcommand, got {type(global_options).__name__!r}. "
+                f"{CLI_SHAPE_GUIDANCE}"
+            )
+        if global_options:
+            resolved_options["_global"] = dict(global_options)
         resolved_subcommand = _normalize_subcommand(subcommand)
         api = await self._api(binary)
         if resolved_subcommand is not None:
             await self._parse_subcommand(api, binary, resolved_subcommand)
         command = (
-            api(resolved_subcommand, **dict(options or {}))
+            api(resolved_subcommand, **resolved_options)
             if resolved_subcommand
-            else api(**dict(options or {}))
+            else api(**resolved_options)
         )
         return normalize_cli_result(await command)
 
