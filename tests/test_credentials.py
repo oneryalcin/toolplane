@@ -313,3 +313,20 @@ def test_cli_login_reports_credential_errors_as_diagnostics(
     assert code == 2
     assert "toolplane: no OS keyring" in captured.err
     assert lifecycle is not None  # imported for monkeypatch scoping clarity
+
+
+def test_resolve_config_references_resolves_bearer_auth(monkeypatch):
+    """`auth = "env://X"` must reach fastmcp as the resolved Bearer token
+    (mcp import --from codex writes this shape for bearer_token_env_var)."""
+    monkeypatch.setenv("BEARER_X", "tok-123")
+    resolved = credentials.resolve_config_secret_references(
+        {"url": "https://x.example/mcp", "auth": "env://BEARER_X"}
+    )
+    assert resolved["auth"] == "tok-123"
+
+
+def test_resolve_config_references_leaves_oauth_literal_alone():
+    resolved = credentials.resolve_config_secret_references(
+        {"url": "https://x.example/mcp", "auth": "oauth"}
+    )
+    assert resolved["auth"] == "oauth"

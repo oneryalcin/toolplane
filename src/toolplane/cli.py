@@ -285,11 +285,7 @@ def _cmd_mcp_login(args: argparse.Namespace) -> int:
 
 
 def _cmd_mcp_import(args: argparse.Namespace) -> int:
-    from .mcp_import import (
-        McpImportError,
-        format_import_report,
-        import_mcp_servers,
-    )
+    from .mcp_import import format_import_report, import_mcp_servers
 
     try:
         report = import_mcp_servers(
@@ -300,7 +296,9 @@ def _cmd_mcp_import(args: argparse.Namespace) -> int:
             plaintext=args.plaintext,
             verbatim=args.verbatim,
         )
-    except (McpImportError, CredentialStorageError, OSError) as exc:
+    except (ConfigEditError, CredentialStorageError, OSError) as exc:
+        # ConfigEditError covers McpImportError and malformed-TOML parse
+        # errors from the target config (reviewer finding on #97)
         print(f"toolplane: {exc}", file=sys.stderr)
         return 2
     if not report.imported and not report.skipped:

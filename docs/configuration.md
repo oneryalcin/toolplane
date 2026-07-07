@@ -268,6 +268,10 @@ server entries into `toolplane.toml`:
   scope) plus `./.mcp.json`; the most project-specific entry wins when
   names collide across scopes.
 - **codex** reads the `[mcp_servers.*]` tables in `~/.codex/config.toml`.
+  Codex auth fields map to toolplane equivalents: `http_headers` become
+  `headers`, `env_http_headers` become `env://` header references, and
+  `bearer_token` / `bearer_token_env_var` become an `auth` secret
+  reference (fastmcp sends a plain-string `auth` as a Bearer token).
   Codex-only keys with no toolplane equivalent (like
   `startup_timeout_sec`) are dropped, with a note in the report.
 
@@ -281,19 +285,34 @@ Rules the importer follows:
 - Secret-looking `env`/`headers` values are never copied as literals:
   a value found in your current environment becomes an `env://VAR`
   reference; anything else is stored in the OS keyring and written as a
-  `keyring://<name>` reference. `--plaintext` opts out.
+  `keyring://<name>` reference. `--plaintext` opts out. Derived keyring
+  names never overwrite an existing secret — collisions get a numeric
+  suffix; an identical stored value is reused.
+- Source values that already look like `env://` or `keyring://`
+  references are refused (the server is skipped and reported): a
+  checked-in `.mcp.json` in a cloned repo is attacker-influenced input
+  and must not choose which local secret gets attached to which remote
+  server. Write such entries into `toolplane.toml` yourself.
+- Servers disabled in the source client (Claude Code's
+  `disabledMcpjsonServers`, Codex's `enabled = false`) are skipped and
+  reported, not imported as enabled.
 - `mcp-remote`/`fastmcp-remote` wrapper entries are rewritten to direct
   `url` + `auth = "oauth"` entries (the wrapper existed to work around
   missing OAuth support; toolplane has it natively). `--verbatim` keeps
-  the wrapper as-is.
+  the wrapper as-is — as do wrappers carrying extra flags or `env`
+  vars, which the rewrite would silently lose.
 - Plain `url` imports carry no auth signal in the source config, so no
   `auth` field is guessed; the report points to `toolplane mcp status`,
   which detects auth-required servers and prints the login command.
+  Explicit source transports (`sse`, `http`) survive as a `transport`
+  field so fastmcp does not have to guess from the URL.
 
 ## Secrets
 
-Config values in MCP `headers` and stdio `env` tables can reference
-secrets instead of holding them, so `toolplane.toml` stays committable:
+Config values in MCP `headers`, stdio `env` tables, and the remote
+`auth` field can reference secrets instead of holding them, so
+`toolplane.toml` stays committable (a resolved `auth` string is sent by
+fastmcp as a Bearer token; the literal `"oauth"` is not a reference):
 
 ```toml
 [mcp.servers.internal_docs]

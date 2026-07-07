@@ -455,7 +455,14 @@ def _login_server_config(server_config: Mapping[str, Any]) -> dict[str, Any]:
 
 def _sanitized_probe_config(server_config: Mapping[str, Any]) -> dict[str, Any]:
     sanitized = dict(server_config)
-    sanitized.pop("auth", None)
+    auth = sanitized.get("auth")
+    if not (isinstance(auth, str) and auth != "oauth"):
+        # only OAuth can open a browser mid-probe; a bearer string (or an
+        # env://keyring:// reference to one, resolved later inside the
+        # probe) is a header-equivalent credential and probes attach it —
+        # otherwise imported bearer servers (#97) always read
+        # auth_required with a misleading oauth-login hint
+        sanitized.pop("auth", None)
     sanitized.pop("authentication", None)
     if _server_kind(sanitized) == "stdio":
         sanitized["keep_alive"] = False
