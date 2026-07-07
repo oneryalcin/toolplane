@@ -120,6 +120,22 @@ Every client now sees the same three tools — `search_capabilities`,
 `toolplane://namespace` and a bundled usage skill. Ask your agent to read the
 manifest and go.
 
+### Already using MCP servers?
+
+Bring your existing Claude Code or Codex servers over in one command:
+
+```bash
+uvx toolplane mcp import --from claude --dry-run   # see what would happen
+uvx toolplane mcp import --from claude
+uvx toolplane mcp import --from codex
+```
+
+Import never copies secrets into the TOML: secret-looking values are moved
+into your OS keyring (written as `keyring://...` references), and
+`mcp-remote`-style OAuth wrapper entries are rewritten to direct `url`
+entries that use toolplane's encrypted token storage instead. The report
+tells you exactly what it did and what to run next.
+
 ### Private servers and credentials
 
 For an OAuth-protected MCP server (Linear, Notion, ...), log in once —

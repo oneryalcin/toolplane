@@ -74,6 +74,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_mcp_login(args)
         case ("mcp", "status"):
             return _cmd_mcp_status(args)
+        case ("mcp", "import"):
+            return _cmd_mcp_import(args)
         case ("secret", "set"):
             return _cmd_secret_set(args)
         case ("secret", "rm"):
@@ -280,6 +282,32 @@ def _cmd_mcp_login(args: argparse.Namespace) -> int:
         return 0
     print(f"toolplane: {message}", end="", file=sys.stderr)
     return 2
+
+
+def _cmd_mcp_import(args: argparse.Namespace) -> int:
+    from .mcp_import import (
+        McpImportError,
+        format_import_report,
+        import_mcp_servers,
+    )
+
+    try:
+        report = import_mcp_servers(
+            args.config,
+            args.source,
+            dry_run=args.dry_run,
+            force=args.force,
+            plaintext=args.plaintext,
+            verbatim=args.verbatim,
+        )
+    except (McpImportError, CredentialStorageError, OSError) as exc:
+        print(f"toolplane: {exc}", file=sys.stderr)
+        return 2
+    if not report.imported and not report.skipped:
+        print(f"No MCP servers found to import from {args.source}.")
+        return 0
+    print(format_import_report(report), end="")
+    return 0
 
 
 def _cmd_secret_set(args: argparse.Namespace) -> int:
@@ -550,6 +578,46 @@ def _build_parser() -> argparse.ArgumentParser:
         type=float,
         default=5.0,
         help="Per-server status timeout in seconds",
+    )
+
+    mcp_import = mcp_subcommands.add_parser(
+        "import",
+        help="Import MCP servers from another client's config",
+    )
+    mcp_import.add_argument(
+        "--from",
+        dest="source",
+        required=True,
+        choices=("claude", "codex"),
+        help="Client to import from (claude: ~/.claude.json + ./.mcp.json; "
+        "codex: ~/.codex/config.toml)",
+    )
+    mcp_import.add_argument(
+        "--config",
+        default="toolplane.toml",
+        help="Path to a Toolplane TOML config file",
+    )
+    mcp_import.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Report what would be imported without writing anything",
+    )
+    mcp_import.add_argument(
+        "--force",
+        action="store_true",
+        help="Replace already-configured servers with the same name",
+    )
+    mcp_import.add_argument(
+        "--plaintext",
+        action="store_true",
+        help="Copy secret-looking values literally instead of writing "
+        "env:// or keyring:// references",
+    )
+    mcp_import.add_argument(
+        "--verbatim",
+        action="store_true",
+        help="Keep mcp-remote/fastmcp-remote wrapper entries as-is instead "
+        "of rewriting them to direct url entries",
     )
 
     secret_root = subcommands.add_parser(

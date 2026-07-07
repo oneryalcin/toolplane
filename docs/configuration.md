@@ -259,6 +259,37 @@ command = "python"
 args = ["examples/mcp_stdio_server.py"]
 ```
 
+### Importing from other clients
+
+`toolplane mcp import --from claude` and `--from codex` copy existing MCP
+server entries into `toolplane.toml`:
+
+- **claude** reads `~/.claude.json` (user scope and the current project's
+  scope) plus `./.mcp.json`; the most project-specific entry wins when
+  names collide across scopes.
+- **codex** reads the `[mcp_servers.*]` tables in `~/.codex/config.toml`.
+  Codex-only keys with no toolplane equivalent (like
+  `startup_timeout_sec`) are dropped, with a note in the report.
+
+Rules the importer follows:
+
+- The source configs are never modified.
+- Names already present in `toolplane.toml` are skipped and reported;
+  `--force` replaces them.
+- `--dry-run` prints the full report without writing the config or
+  storing anything.
+- Secret-looking `env`/`headers` values are never copied as literals:
+  a value found in your current environment becomes an `env://VAR`
+  reference; anything else is stored in the OS keyring and written as a
+  `keyring://<name>` reference. `--plaintext` opts out.
+- `mcp-remote`/`fastmcp-remote` wrapper entries are rewritten to direct
+  `url` + `auth = "oauth"` entries (the wrapper existed to work around
+  missing OAuth support; toolplane has it natively). `--verbatim` keeps
+  the wrapper as-is.
+- Plain `url` imports carry no auth signal in the source config, so no
+  `auth` field is guessed; the report points to `toolplane mcp status`,
+  which detects auth-required servers and prints the login command.
+
 ## Secrets
 
 Config values in MCP `headers` and stdio `env` tables can reference
