@@ -1,7 +1,8 @@
 """Code-mode benchmark harness (#72).
 
 Arm A ("direct"): the orders MCP server registered directly in Claude Code —
-classic one-tool-call-per-round-trip usage.
+classic per-record tool invocations (the client may batch them in parallel
+within one API request; tool invocations are NOT API round-trips).
 Arm B ("toolplane"): the same server behind the toolplane facade — the agent
 discovers capabilities and writes Python snippets against them.
 
@@ -174,9 +175,31 @@ def run_case(arm: str, task: str, model: str, workdir: Path) -> dict:
         "bypassPermissions",
     ]
     started = time.monotonic()
-    proc = subprocess.run(
-        cmd, cwd=cwd, capture_output=True, text=True, timeout=900
-    )
+    try:
+        proc = subprocess.run(
+            cmd, cwd=cwd, capture_output=True, text=True, timeout=900
+        )
+    except subprocess.TimeoutExpired as exc:
+        # a hung run must not lose the rows already collected in memory
+        return {
+            "arm": arm,
+            "task": task,
+            "orders_n": orders_n,
+            "model": None,
+            "correct": False,
+            "answer": None,
+            "tool_calls": 0,
+            "tool_call_names": [],
+            "num_turns": None,
+            "input_tokens": 0,
+            "uncached_input_tokens": 0,
+            "output_tokens": 0,
+            "cost_usd": None,
+            "api_duration_ms": None,
+            "wall_s": round(time.monotonic() - started, 1),
+            "exit_code": -1,
+            "error": f"timeout after {exc.timeout}s",
+        }
     wall_s = time.monotonic() - started
 
     tool_calls: list[str] = []
@@ -258,6 +281,9 @@ def main() -> int:
 
     tasks = [t for t in args.tasks.split(",") if t in TASKS]
     arms = args.arms.split(",")
+    client_version = subprocess.run(
+        ["claude", "--version"], capture_output=True, text=True
+    ).stdout.strip()
     rows = []
     with tempfile.TemporaryDirectory() as td:
         workdir = Path(td)
@@ -269,6 +295,7 @@ def main() -> int:
                         flush=True,
                     )
                     row = run_case(arm, task, args.model, workdir)
+                    row["client_version"] = client_version
                     rows.append(row)
                     print(
                         f"  ok={row['correct']} tools={row['tool_calls']} "

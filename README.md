@@ -50,11 +50,13 @@ What makes toolplane different from other code-mode runtimes:
   written back to config. (MCP elicitation; degrades to a plain refusal on
   clients that can't prompt.)
 - **A measured envelope, not a slogan.** We benchmarked code mode against
-  raw MCP tool-calling in a real client and published where it *loses*:
-  below ~30–50 tool interactions per task, plain MCP is cheaper and faster;
-  above that, code mode wins on every metric (at 100 records: 9x fewer
-  round-trips, 15% cheaper, 32% faster). Harness and raw results are in
-  [`bench/`](bench/); numbers and limitations in
+  raw MCP tool-calling in a real client and published where it *loses*: at
+  30 tool interactions per task, plain MCP is ~20% cheaper; at 100, code
+  mode wins on median across every metric (~15% cheaper, ~32% faster, 4.3x
+  fewer output tokens) — the crossover is somewhere between, unmeasured.
+  The surprise: round-trips aren't the mechanism (clients batch tool calls
+  in parallel); output-token scaling and context growth are. Harness and
+  raw results in [`bench/`](bench/); numbers, variance, and limitations in
   [The Code-Mode Envelope, Measured](https://oneryalcin.github.io/toolplane/code-mode-benchmark/).
 - **Safe by default, with zero infrastructure.** The default backend
   ([Monty](https://github.com/pydantic/monty)) is a sandboxed interpreter
