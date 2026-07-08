@@ -475,3 +475,16 @@ def test_cli_deny_in_ambient_mode_names_the_mode(
     assert code == 2
     assert "cli mode is 'ambient'" in captured.err
     assert "only applies in allowlist mode" in captured.err
+
+
+def test_cli_version_flag_prints_version(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The first question in any support conversation (#102)."""
+    from toolplane import __version__
+
+    with pytest.raises(SystemExit) as excinfo:
+        main(["--version"])
+
+    assert excinfo.value.code == 0
+    assert capsys.readouterr().out == f"toolplane {__version__}\n"

@@ -70,6 +70,11 @@ What makes toolplane different from other code-mode runtimes:
   and the firsthand
   [MCP Client Capability Matrix](https://oneryalcin.github.io/toolplane/mcp-client-capability-matrix/).
 
+Toolplane is developed and CI-tested on macOS and Linux (Python 3.11–3.13).
+Windows is currently untested — reports welcome. Found a bug or a rough
+edge? [Open an issue](https://github.com/oneryalcin/toolplane/issues) —
+cold-start friction reports are especially valuable.
+
 ## Quickstart
 
 Set up a config (safe defaults: sandboxed backend, CLI disabled):
