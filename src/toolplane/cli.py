@@ -463,7 +463,14 @@ def _format_config_summary(config_path: str, config: ToolplaneConfig) -> str:
 
 
 def _build_parser() -> argparse.ArgumentParser:
+    from . import __version__
+
     parser = argparse.ArgumentParser(prog="toolplane")
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"toolplane {__version__}",
+    )
     subcommands = parser.add_subparsers(dest="command")
 
     serve = subcommands.add_parser("serve", help="Serve Toolplane surfaces")
