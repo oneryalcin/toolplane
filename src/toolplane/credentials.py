@@ -218,12 +218,17 @@ def resolve_secret_reference(value: Any) -> Any:
 def resolve_config_secret_references(
     server_config: dict[str, Any],
 ) -> dict[str, Any]:
-    """Resolve secret references in headers/env without touching auth.
+    """Resolve secret references in headers/env/auth (never ``"oauth"``).
 
     Split out of :func:`prepare_server_config` so browser-free lifecycle
     probes (mcp status) can resolve secrets identically to serve/execute
     without constructing OAuth (Codex finding on #95: probes previously
     sent literal ``env://`` strings upstream).
+
+    A reference in ``auth`` resolves to a plain string, which fastmcp
+    treats as a Bearer token — the shape ``mcp import --from codex``
+    writes for ``bearer_token_env_var`` servers (#97). The literal
+    ``"oauth"`` is not a reference and passes through for OAuth wiring.
     """
     prepared = dict(server_config)
     headers = prepared.get("headers")
@@ -236,6 +241,9 @@ def resolve_config_secret_references(
         prepared["env"] = {
             key: resolve_secret_reference(item) for key, item in env.items()
         }
+    auth = prepared.get("auth")
+    if isinstance(auth, str) and auth.startswith(("env://", "keyring://")):
+        prepared["auth"] = resolve_secret_reference(auth)
     return prepared
 
 
@@ -293,6 +301,24 @@ def _validate_secret_name(name: str) -> None:
             f"{OAUTH_KEY_NAME!r} is reserved — it is the OAuth token "
             "encryption key; changing it would orphan every stored token"
         )
+
+
+def secret_peek(name: str) -> str | None:
+    """Read a stored secret, or None. Never creates or prompts.
+
+    Exists for collision checks (mcp import must not silently overwrite a
+    secret the user stored themselves — reviewer finding on #97); it is
+    not a general read surface, and values must never be printed.
+    """
+    import keyring
+
+    _validate_secret_name(name)
+    try:
+        return keyring.get_password(KEYRING_SERVICE, name)
+    except Exception as exc:
+        raise CredentialStorageError(
+            f"the OS keyring backend failed ({exc.__class__.__name__})"
+        ) from exc
 
 
 def secret_set(name: str, value: str) -> None:

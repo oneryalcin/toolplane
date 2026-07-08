@@ -1086,3 +1086,20 @@ def test_probe_missing_secret_becomes_status_detail(
     assert code == 0
     assert "DEFINITELY_MISSING_TOKEN_XYZ" in captured.out
     assert "error" in captured.out
+
+
+def test_probe_config_keeps_bearer_auth_but_strips_oauth():
+    """Bearer strings/refs are header-equivalent credentials: probes attach
+    them (else imported bearer servers always read auth_required with a
+    misleading oauth-login hint). OAuth stays stripped — it opens browsers."""
+    from toolplane.mcp_lifecycle import _sanitized_probe_config
+
+    bearer = _sanitized_probe_config(
+        {"url": "https://x.example/mcp", "auth": "env://TOKEN"}
+    )
+    assert bearer["auth"] == "env://TOKEN"
+
+    oauth = _sanitized_probe_config(
+        {"url": "https://x.example/mcp", "auth": "oauth"}
+    )
+    assert "auth" not in oauth
