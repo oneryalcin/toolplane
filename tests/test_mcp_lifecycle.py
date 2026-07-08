@@ -1103,3 +1103,93 @@ def test_probe_config_keeps_bearer_auth_but_strips_oauth():
         {"url": "https://x.example/mcp", "auth": "oauth"}
     )
     assert "auth" not in oauth
+
+
+def test_mcp_remove_deletes_server_and_preserves_the_rest(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text(
+        "# keep me\n"
+        "[mcp.servers.linear]\n"
+        'url = "https://mcp.linear.app/mcp"\n'
+        "\n"
+        "# math stays\n"
+        "[mcp.servers.math]\n"
+        'command = "uvx"\n',
+        encoding="utf-8",
+    )
+
+    code = main(["mcp", "remove", "linear", "--config", str(config_path)])
+
+    captured = capsys.readouterr()
+    assert code == 0
+    assert "Removed MCP server 'linear'" in captured.out
+    written = config_path.read_text(encoding="utf-8")
+    assert written.startswith("# keep me\n")
+    assert "# math stays" in written
+    assert "linear" not in written
+    config = load_toolplane_config(config_path)
+    assert list(config.mcp.servers) == ["math"]
+
+
+def test_mcp_remove_unknown_name_teaches_candidates(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text(
+        '[mcp.servers.linear]\nurl = "https://mcp.linear.app/mcp"\n',
+        encoding="utf-8",
+    )
+
+    code = main(["mcp", "remove", "liner", "--config", str(config_path)])
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "no MCP server 'liner'" in captured.err
+    assert "configured: linear" in captured.err
+    assert "linear" in config_path.read_text(encoding="utf-8")
+
+
+def test_mcp_remove_on_empty_config_reports_none(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text("", encoding="utf-8")
+
+    code = main(["mcp", "remove", "anything", "--config", str(config_path)])
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "configured: (none)" in captured.err
+
+
+def test_mcp_remove_notes_stored_oauth_tokens(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Removal never deletes tokens; the note must say so — but only when
+    tokens actually exist for the removed server's URL."""
+
+    async def fake_has_tokens(url: str) -> bool:
+        return url == "https://mcp.linear.app/mcp"
+
+    monkeypatch.setattr(
+        "toolplane.credentials.has_stored_oauth_tokens", fake_has_tokens
+    )
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text(
+        '[mcp.servers.linear]\nurl = "https://mcp.linear.app/mcp"\n'
+        '[mcp.servers.other]\nurl = "https://other.example/mcp"\n',
+        encoding="utf-8",
+    )
+
+    assert main(["mcp", "remove", "linear", "--config", str(config_path)]) == 0
+    assert "stored OAuth tokens" in capsys.readouterr().out
+
+    assert main(["mcp", "remove", "other", "--config", str(config_path)]) == 0
+    assert "stored OAuth tokens" not in capsys.readouterr().out

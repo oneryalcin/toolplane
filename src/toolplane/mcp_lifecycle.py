@@ -25,6 +25,10 @@ class McpAddError(ConfigEditError):
     """Raised when an MCP add snippet cannot be rendered."""
 
 
+class McpRemoveError(ConfigEditError):
+    """Raised when an MCP server cannot be removed from the config."""
+
+
 class McpStatusError(ValueError):
     """Raised when MCP status cannot inspect the requested config."""
 
@@ -117,6 +121,76 @@ def write_mcp_add_config(
     )
     write_text_atomic(path, tomlkit.dumps(document))
     return path
+
+
+def write_mcp_remove_config(
+    config_path: str | os.PathLike[str],
+    name: str,
+) -> tuple[Path, dict[str, Any]]:
+    """Delete one MCP server table; returns the removed server's config.
+
+    Unknown names error with the configured candidates (a remove that
+    silently matched nothing would read as done). Stored OAuth tokens are
+    deliberately untouched — the caller notes them so a re-add keeps its
+    login; deletion stays a separate, explicit decision.
+    """
+    path = Path(config_path).expanduser()
+    document = parse_config_document(path)
+    mcp = document.get("mcp")
+    servers = mcp.get("servers") if isinstance(mcp, Mapping) else None
+    if not isinstance(servers, Mapping) or name not in servers:
+        configured = (
+            ", ".join(sorted(servers)) if isinstance(servers, Mapping) and servers
+            else "(none)"
+        )
+        raise McpRemoveError(
+            f"no MCP server {name!r} in {path}; configured: {configured}"
+        )
+    removed = {key: value for key, value in servers[name].items()}
+    _relocate_trailing_comments(servers, name)
+    del servers[name]
+    write_text_atomic(path, tomlkit.dumps(document))
+    return path, removed
+
+
+def _relocate_trailing_comments(servers: Any, name: str) -> None:
+    """Save comments that visually precede the NEXT table header.
+
+    tomlkit parses comments between two ``[mcp.servers.X]`` headers as
+    trailing trivia of the FIRST table, so deleting it silently swallows
+    the next server's comment. Move them to the previous sibling (renders
+    identically), or to the parent container when the removed table is
+    first (costs a cosmetic ``[mcp.servers]`` header). Conservative by
+    design: a stale comment beats a lost one.
+    """
+    from tomlkit.items import Comment, Whitespace
+
+    try:
+        body = servers[name].value.body
+        trailing: list[Any] = []
+        while (
+            body
+            and body[-1][0] is None
+            and isinstance(body[-1][1], (Comment, Whitespace))
+        ):
+            trailing.insert(0, body.pop()[1])
+        if not any(isinstance(item, Comment) for item in trailing):
+            return
+        parent = servers.value.body
+        index = next(
+            i for i, (key, _) in enumerate(parent) if key and key.key == name
+        )
+        if index > 0 and parent[index - 1][0] is not None:
+            previous = parent[index - 1][1]
+            for item in trailing:
+                previous.value.body.append((None, item))
+        else:
+            for item in reversed(trailing):
+                parent.insert(index + 1, (None, item))
+    except Exception:
+        # trivia relocation is best-effort over tomlkit internals; the
+        # removal itself must never fail because of it
+        return
 
 
 def _validate_mcp_add_request(
