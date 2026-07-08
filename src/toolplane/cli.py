@@ -227,7 +227,7 @@ def _cmd_cli_deny(args: argparse.Namespace) -> int:
     except (ConfigEditError, OSError) as exc:
         print(f"toolplane: {exc}", file=sys.stderr)
         return 2
-    removed = ", ".join(args.binaries)
+    removed = ", ".join(dict.fromkeys(args.binaries))
     if remaining:
         print(f"Denied {removed} in {path}; still allowed: {', '.join(remaining)}")
     else:
@@ -278,7 +278,8 @@ def _cmd_mcp_remove(args: argparse.Namespace) -> int:
                 print(
                     "note: stored OAuth tokens for this server remain "
                     "encrypted in ~/.toolplane/oauth — re-adding it keeps "
-                    "the login; delete the directory to revoke locally"
+                    "the login; deleting that directory revokes ALL locally "
+                    "stored logins, not just this one"
                 )
         except Exception:
             # the token note is best-effort; removal already succeeded

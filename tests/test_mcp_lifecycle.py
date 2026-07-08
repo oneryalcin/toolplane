@@ -1193,3 +1193,99 @@ def test_mcp_remove_notes_stored_oauth_tokens(
 
     assert main(["mcp", "remove", "other", "--config", str(config_path)]) == 0
     assert "stored OAuth tokens" not in capsys.readouterr().out
+
+
+def test_mcp_remove_preserves_comment_after_subtable_terminated_server(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The comment before the next header is trailing trivia of the removed
+    server's LAST SUB-TABLE (common stdio shape), one level deeper than the
+    outer body (reviewer finding on #100)."""
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text(
+        "[mcp.servers.linear]\n"
+        'command = "uvx"\n'
+        "[mcp.servers.linear.env]\n"
+        'FOO = "bar"\n'
+        "\n"
+        "# math stays\n"
+        "[mcp.servers.math]\n"
+        'command = "uvx"\n',
+        encoding="utf-8",
+    )
+
+    assert main(["mcp", "remove", "linear", "--config", str(config_path)]) == 0
+
+    written = config_path.read_text(encoding="utf-8")
+    assert "# math stays" in written
+    assert list(load_toolplane_config(config_path).mcp.servers) == ["math"]
+
+
+def test_mcp_remove_array_of_tables_shape_errors_cleanly(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """[[mcp.servers.x]] is valid TOML but not a server table; the error
+    must be toolplane-shaped, not an AttributeError traceback."""
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text(
+        '[[mcp.servers.linear]]\nurl = "https://x.example/mcp"\n',
+        encoding="utf-8",
+    )
+
+    code = main(["mcp", "remove", "linear", "--config", str(config_path)])
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert captured.err.startswith("toolplane:")
+
+
+def test_mcp_remove_last_server_leaves_no_trailing_blank_line(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """tomlkit stores the inter-table blank line on the PREVIOUS sibling,
+    so deleting the last server strands it at EOF (reviewer finding on
+    #100). Exact-text assertion: this is the byte-stability bar."""
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text(
+        "[mcp.servers.alpha]\n"
+        'url = "https://a.example/mcp"\n'
+        "\n"
+        "[mcp.servers.beta]\n"
+        'url = "https://b.example/mcp"\n',
+        encoding="utf-8",
+    )
+
+    assert main(["mcp", "remove", "beta", "--config", str(config_path)]) == 0
+
+    assert config_path.read_text(encoding="utf-8") == (
+        "[mcp.servers.alpha]\n"
+        'url = "https://a.example/mcp"\n'
+    )
+
+
+def test_mcp_add_then_remove_round_trips_byte_identical(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The most common real workflow: add X, remove X, file unchanged."""
+    config_path = tmp_path / "toolplane.toml"
+    original = (
+        "# keep me\n"
+        "[mcp.servers.linear]\n"
+        'url = "https://mcp.linear.app/mcp"\n'
+    )
+    config_path.write_text(original, encoding="utf-8")
+
+    assert main(
+        [
+            "mcp", "add", "ctx",
+            "--url", "https://mcp.context7.com/mcp",
+            "--config", str(config_path),
+        ]
+    ) == 0
+    assert main(["mcp", "remove", "ctx", "--config", str(config_path)]) == 0
+
+    assert config_path.read_text(encoding="utf-8") == original

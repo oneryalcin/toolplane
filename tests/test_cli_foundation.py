@@ -442,3 +442,36 @@ def test_cli_list_shows_allowlist_and_other_modes(
     config_path.write_text("", encoding="utf-8")
     assert main(["cli", "list", "--config", str(config_path)]) == 0
     assert capsys.readouterr().out == "cli: disabled\n"
+
+
+def test_cli_deny_message_dedupes_repeated_names(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text(
+        '[cli]\nmode = "allowlist"\nallow = ["git", "rg"]\n', encoding="utf-8"
+    )
+
+    assert main(["cli", "deny", "git", "git", "--config", str(config_path)]) == 0
+
+    out = capsys.readouterr().out
+    assert "Denied git in" in out
+    assert "git, git" not in out
+
+
+def test_cli_deny_in_ambient_mode_names_the_mode(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """'currently allowed: (empty)' alone reads as 'nothing runs' when
+    ambient mode actually allows everything (reviewer finding on #100)."""
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text('[cli]\nmode = "ambient"\n', encoding="utf-8")
+
+    code = main(["cli", "deny", "git", "--config", str(config_path)])
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "cli mode is 'ambient'" in captured.err
+    assert "only applies in allowlist mode" in captured.err

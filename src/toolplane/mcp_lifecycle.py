@@ -146,11 +146,44 @@ def write_mcp_remove_config(
         raise McpRemoveError(
             f"no MCP server {name!r} in {path}; configured: {configured}"
         )
-    removed = {key: value for key, value in servers[name].items()}
+    entry = servers[name]
+    if not isinstance(entry, Mapping):
+        raise McpRemoveError(
+            f"MCP server {name!r} in {path} is not a single server table "
+            f"(found {type(entry).__name__}); edit the file directly"
+        )
+    removed = {key: value for key, value in entry.items()}
     _relocate_trailing_comments(servers, name)
+    was_last = _is_last_content_item(servers, name)
     del servers[name]
+    if was_last:
+        _trim_trailing_blank_lines(servers)
     write_text_atomic(path, tomlkit.dumps(document))
     return path, removed
+
+
+def _deepest_last_table_body(body: list[Any]) -> list[Any]:
+    """Follow last-child tables down: trivia that renders before the NEXT
+    section header lives in the deepest last sub-table's body (a server
+    ending with ``[mcp.servers.X.env]`` keeps it one level down).
+
+    Deletions leave ``(None, Null)`` tombstones in the container body;
+    they render as nothing and must not stop the descent.
+    """
+    import tomlkit.items
+
+    while body:
+        index = len(body) - 1
+        while index >= 0 and isinstance(body[index][1], tomlkit.items.Null):
+            index -= 1
+        if index < 0:
+            break
+        key, value = body[index]
+        if key is not None and isinstance(value, tomlkit.items.Table):
+            body = value.value.body
+        else:
+            break
+    return body
 
 
 def _relocate_trailing_comments(servers: Any, name: str) -> None:
@@ -166,7 +199,7 @@ def _relocate_trailing_comments(servers: Any, name: str) -> None:
     from tomlkit.items import Comment, Whitespace
 
     try:
-        body = servers[name].value.body
+        body = _deepest_last_table_body(servers[name].value.body)
         trailing: list[Any] = []
         while (
             body
@@ -190,6 +223,39 @@ def _relocate_trailing_comments(servers: Any, name: str) -> None:
     except Exception:
         # trivia relocation is best-effort over tomlkit internals; the
         # removal itself must never fail because of it
+        return
+
+
+def _is_last_content_item(servers: Any, name: str) -> bool:
+    try:
+        seen = False
+        for key, _ in servers.value.body:
+            if key is None:
+                continue
+            if seen:
+                return False
+            if key.key == name:
+                seen = True
+        return seen
+    except Exception:
+        return False
+
+
+def _trim_trailing_blank_lines(servers: Any) -> None:
+    """Drop the now-dangling inter-table separator after a last-item remove.
+
+    tomlkit stores the blank line between two ``[mcp.servers.X]`` headers
+    as trailing whitespace on the PREVIOUS sibling's body, so deleting the
+    last server strands it at EOF (reviewer finding on #100). Comments are
+    never dropped — only pure whitespace past the last content.
+    """
+    from tomlkit.items import Whitespace
+
+    try:
+        body = _deepest_last_table_body(servers.value.body)
+        while body and body[-1][0] is None and isinstance(body[-1][1], Whitespace):
+            body.pop()
+    except Exception:
         return
 
 

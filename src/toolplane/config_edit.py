@@ -81,10 +81,18 @@ def write_cli_deny_config(
     unknown = [binary for binary in binaries if binary not in allowed]
     if unknown:
         current = ", ".join(allowed) or "(empty)"
-        raise ConfigEditError(
+        message = (
             f"not in the allowlist: {', '.join(unknown)}; "
             f"currently allowed: {current}"
         )
+        mode = cli.get("mode") or "disabled"
+        if mode != "allowlist":
+            message += (
+                f"; note: cli mode is {str(mode)!r} and deny only applies "
+                "in allowlist mode — set one with: toolplane cli allow "
+                "<binary>"
+            )
+        raise ConfigEditError(message)
 
     remaining = [binary for binary in allowed if binary not in set(binaries)]
     if remaining:

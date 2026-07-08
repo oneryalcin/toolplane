@@ -45,7 +45,9 @@ not in the allowlist (a deny that silently matched nothing would read as
 done), and denying the last binary sets `mode = "disabled"` — equally
 fail-closed, and the config stays valid. `mcp remove` errors on unknown
 names with the configured candidates, and never deletes stored OAuth
-tokens: re-adding the server keeps its login. `doctor` warns (without failing) when a config would
+tokens: re-adding the server keeps its login.
+
+`doctor` warns (without failing) when a config would
 require `serve mcp --unsafe`, and fails when an allowlisted binary or a
 required runtime like Deno is missing.
 
