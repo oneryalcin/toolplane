@@ -87,16 +87,18 @@ controlled Python runtime where multiple capability sources become composable.
 
 The first stable command-line surface should optimize for explicit setup. This
 section is the target lifecycle, and all of it is implemented: `toolplane
-init` writes a safe starter config, `toolplane cli allow` switches to
-allowlist CLI policy, `toolplane mcp add` edits the project config with
-comment-preserving TOML writes, `toolplane mcp login` primes a server
-interactively, `toolplane mcp list`/`status` inspect configured servers,
-`toolplane config check`/`doctor` validate the config and local environment,
-`toolplane run` executes a snippet file, and `toolplane serve mcp` serves the
-configured facade.
+init` writes a safe starter config, `toolplane cli allow`/`deny`/`list`
+manage allowlist CLI policy, `toolplane mcp add`/`remove` edit the project
+config with comment-preserving TOML writes, `toolplane mcp import` adopts
+existing Claude Code or Codex server configs in one command, `toolplane mcp
+login` primes a server interactively, `toolplane mcp list`/`status` inspect
+configured servers, `toolplane config check`/`doctor` validate the config and
+local environment, `toolplane run` executes a snippet file, and `toolplane
+serve mcp` serves the configured facade.
 
 ```bash
 toolplane init
+toolplane mcp import --from claude   # or start from scratch with mcp add:
 toolplane mcp add linear --url https://mcp.linear.app/mcp
 toolplane mcp login linear
 toolplane cli allow git gh rg
@@ -156,9 +158,12 @@ first connect and persists its tokens in the bridge's cache. For a direct
 `url` + `auth = "oauth"` server, login runs FastMCP's OAuth flow against
 Toolplane's encrypted token store — one browser consent, and every later
 `serve mcp` and `execute_code` call reuses (and silently refreshes) the
-stored tokens without a browser. (`mcp status` stays credential-free by
-design; on a primed server it reports `auth_required` with a note that
-the saved login exists and serve/execute will use it.)
+stored tokens without a browser. (`mcp status` never constructs OAuth by
+design: on a primed direct-OAuth server it reports `auth_required` with a
+note that the saved login exists and serve/execute will use it. Non-OAuth
+credentials — resolved header references and bearer `auth` strings — ARE
+attached by status probes, so a config that works in production probes the
+same way.)
 
 The current `mcp status` command reads the project config and reports each
 configured MCP server as data:
@@ -254,9 +259,11 @@ search_capabilities -> get_capability_schemas -> execute_code
 ```
 
 This skeleton was the early risk-reduction step before the OAuth lifecycle
-work. That work resolved as bridge delegation (`toolplane mcp login` priming
-a `fastmcp-remote` bridge that owns its own token cache), not as
-Toolplane-owned storage.
+work. That work resolved as delegation to FastMCP's own OAuth and
+token-storage machinery: direct `url` + `auth = "oauth"` servers use
+FastMCP's OAuth helper against an encrypted store that Toolplane configures
+but writes no token-handling code for, and `fastmcp-remote` bridges own
+their own cache.
 
 ## Auth Boundary
 
@@ -276,28 +283,28 @@ url = "https://mcp.linear.app/mcp"
 ```
 
 Toolplane delegates both the MCP OAuth flow and its token persistence to the
-FastMCP client layer: a `fastmcp-remote` stdio bridge performs the
-browser-based authorization code flow with PKCE, handles dynamic client
-registration and token refresh, and owns its own token cache. Toolplane's job
-is the host command surface around that machinery — it never holds tokens
-itself:
+FastMCP client layer. For a direct `url` + `auth = "oauth"` server, FastMCP's
+OAuth helper performs the browser-based authorization code flow with PKCE and
+persists tokens to a Fernet-encrypted store that Toolplane configures
+(`~/.toolplane/oauth`, key in the OS keyring). For a `fastmcp-remote` stdio
+bridge, the bridge performs the same flow and owns its own token cache.
+Either way, Toolplane's job is the host command surface around FastMCP's
+machinery — it contains no token-handling code and rolls no crypto:
 
 ```bash
 toolplane mcp login linear
 toolplane mcp status
-toolplane mcp logout linear
+toolplane mcp remove linear   # config only; stored tokens survive a re-add
 ```
 
 For non-interactive environments, secrets should be referenced, not stored in
-plain TOML:
+plain TOML — a plain-string `auth` value is sent by FastMCP as a Bearer
+token:
 
 ```toml
-[mcp.servers.linear]
-url = "https://mcp.linear.app/mcp"
-
-[mcp.servers.linear.auth]
-type = "bearer"
-env = "LINEAR_MCP_TOKEN"
+[mcp.servers.internal]
+url = "https://internal.example.com/mcp"
+auth = "env://INTERNAL_MCP_TOKEN"   # or "keyring://internal-mcp-token"
 ```
 
 Rules:
