@@ -66,10 +66,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_run(args)
         case ("cli", "allow"):
             return _cmd_cli_allow(args)
+        case ("cli", "deny"):
+            return _cmd_cli_deny(args)
+        case ("cli", "list"):
+            return _cmd_cli_list(args)
         case ("mcp", "list"):
             return _cmd_mcp_list(args)
         case ("mcp", "add"):
             return _cmd_mcp_add(args)
+        case ("mcp", "remove"):
+            return _cmd_mcp_remove(args)
         case ("mcp", "login"):
             return _cmd_mcp_login(args)
         case ("mcp", "status"):
@@ -213,11 +219,71 @@ def _cmd_cli_allow(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_cli_deny(args: argparse.Namespace) -> int:
+    from .config_edit import write_cli_deny_config
+
+    try:
+        path, remaining = write_cli_deny_config(args.config, tuple(args.binaries))
+    except (ConfigEditError, OSError) as exc:
+        print(f"toolplane: {exc}", file=sys.stderr)
+        return 2
+    removed = ", ".join(dict.fromkeys(args.binaries))
+    if remaining:
+        print(f"Denied {removed} in {path}; still allowed: {', '.join(remaining)}")
+    else:
+        print(
+            f"Denied {removed} in {path}; the allowlist is now empty, so "
+            "cli mode is set to disabled — re-enable with: "
+            "toolplane cli allow <binary>"
+        )
+    return 0
+
+
+def _cmd_cli_list(args: argparse.Namespace) -> int:
+    config = _load_config(args.config)
+    if config is None:
+        return 2
+    mode = config.cli.mode
+    if mode == "allowlist":
+        allow = ", ".join(config.cli.allow) or "(empty — no binaries callable)"
+        print(f"cli: allowlist [{allow}]")
+    else:
+        print(f"cli: {mode}")
+    return 0
+
+
 def _cmd_mcp_list(args: argparse.Namespace) -> int:
     config = _load_config(args.config)
     if config is None:
         return 2
     print(format_mcp_list(config), end="")
+    return 0
+
+
+def _cmd_mcp_remove(args: argparse.Namespace) -> int:
+    from .mcp_lifecycle import write_mcp_remove_config
+
+    try:
+        path, removed = write_mcp_remove_config(args.config, args.name)
+    except (ConfigEditError, OSError) as exc:
+        print(f"toolplane: {exc}", file=sys.stderr)
+        return 2
+    print(f"Removed MCP server {args.name!r} from {path}")
+    url = removed.get("url")
+    if url:
+        try:
+            from .credentials import has_stored_oauth_tokens
+
+            if asyncio.run(has_stored_oauth_tokens(str(url))):
+                print(
+                    "note: stored OAuth tokens for this server remain "
+                    "encrypted in ~/.toolplane/oauth — re-adding it keeps "
+                    "the login; deleting that directory revokes ALL locally "
+                    "stored logins, not just this one"
+                )
+        except Exception:
+            # the token note is best-effort; removal already succeeded
+            pass
     return 0
 
 
@@ -488,6 +554,31 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Path to a Toolplane TOML config file",
     )
 
+    cli_deny = cli_subcommands.add_parser(
+        "deny",
+        help="Remove CLI binaries from the allowlist",
+    )
+    cli_deny.add_argument(
+        "binaries",
+        nargs="+",
+        help="CLI binary name(s) to remove from the allowlist",
+    )
+    cli_deny.add_argument(
+        "--config",
+        default="toolplane.toml",
+        help="Path to a Toolplane TOML config file",
+    )
+
+    cli_list = cli_subcommands.add_parser(
+        "list",
+        help="Show the CLI policy mode and allowlist",
+    )
+    cli_list.add_argument(
+        "--config",
+        default="toolplane.toml",
+        help="Path to a Toolplane TOML config file",
+    )
+
     mcp_root = subcommands.add_parser("mcp", help="Manage MCP server snippets")
     mcp_subcommands = mcp_root.add_subparsers(dest="mcp_command")
 
@@ -538,6 +629,17 @@ def _build_parser() -> argparse.ArgumentParser:
         "--auth",
         choices=("oauth",),
         help="Authentication mode for remote URL snippets",
+    )
+
+    mcp_remove = mcp_subcommands.add_parser(
+        "remove",
+        help="Remove an MCP server from a Toolplane TOML config",
+    )
+    mcp_remove.add_argument("name", help="MCP server name to remove")
+    mcp_remove.add_argument(
+        "--config",
+        default="toolplane.toml",
+        help="Path to a Toolplane TOML config file",
     )
 
     mcp_login = mcp_subcommands.add_parser(

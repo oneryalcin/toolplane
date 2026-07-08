@@ -364,3 +364,114 @@ def test_cli_run_rejects_missing_script(
     assert code == 2
     assert captured.out == ""
     assert "toolplane:" in captured.err
+
+
+def test_cli_deny_removes_binaries_and_preserves_comments(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text(
+        '# keep me\n\n[cli]\nmode = "allowlist"\nallow = ["git", "gh", "rg"]\n',
+        encoding="utf-8",
+    )
+
+    code = main(["cli", "deny", "gh", "--config", str(config_path)])
+
+    captured = capsys.readouterr()
+    assert code == 0
+    assert "still allowed: git, rg" in captured.out
+    written = config_path.read_text(encoding="utf-8")
+    assert written.startswith("# keep me\n")
+    config = load_toolplane_config(config_path)
+    assert config.cli.allow == ("git", "rg")
+    assert config.cli.mode == "allowlist"
+
+
+def test_cli_deny_unknown_binary_teaches_current_list(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text(
+        '[cli]\nmode = "allowlist"\nallow = ["git"]\n', encoding="utf-8"
+    )
+
+    code = main(["cli", "deny", "gti", "--config", str(config_path)])
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "not in the allowlist: gti" in captured.err
+    assert "currently allowed: git" in captured.err
+    # nothing changed on the failed deny
+    assert load_toolplane_config(config_path).cli.allow == ("git",)
+
+
+def test_cli_deny_last_binary_disables_mode_and_config_stays_loadable(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """allowlist-with-empty-list fails config validation, so deny-all must
+    degrade to disabled (equally fail-closed) instead of bricking the file."""
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text(
+        '[cli]\nmode = "allowlist"\nallow = ["git"]\n', encoding="utf-8"
+    )
+
+    code = main(["cli", "deny", "git", "--config", str(config_path)])
+
+    captured = capsys.readouterr()
+    assert code == 0
+    assert "cli mode is set to disabled" in captured.out
+    config = load_toolplane_config(config_path)
+    assert config.cli.mode == "disabled"
+    assert config.cli.allow == ()
+
+
+def test_cli_list_shows_allowlist_and_other_modes(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text(
+        '[cli]\nmode = "allowlist"\nallow = ["git", "rg"]\n', encoding="utf-8"
+    )
+    assert main(["cli", "list", "--config", str(config_path)]) == 0
+    assert capsys.readouterr().out == "cli: allowlist [git, rg]\n"
+
+    config_path.write_text("", encoding="utf-8")
+    assert main(["cli", "list", "--config", str(config_path)]) == 0
+    assert capsys.readouterr().out == "cli: disabled\n"
+
+
+def test_cli_deny_message_dedupes_repeated_names(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text(
+        '[cli]\nmode = "allowlist"\nallow = ["git", "rg"]\n', encoding="utf-8"
+    )
+
+    assert main(["cli", "deny", "git", "git", "--config", str(config_path)]) == 0
+
+    out = capsys.readouterr().out
+    assert "Denied git in" in out
+    assert "git, git" not in out
+
+
+def test_cli_deny_in_ambient_mode_names_the_mode(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """'currently allowed: (empty)' alone reads as 'nothing runs' when
+    ambient mode actually allows everything (reviewer finding on #100)."""
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text('[cli]\nmode = "ambient"\n', encoding="utf-8")
+
+    code = main(["cli", "deny", "git", "--config", str(config_path)])
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "cli mode is 'ambient'" in captured.err
+    assert "only applies in allowlist mode" in captured.err

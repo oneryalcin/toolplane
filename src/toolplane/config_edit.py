@@ -58,6 +58,52 @@ def write_text_atomic(path: Path, text: str) -> None:
         raise
 
 
+def write_cli_deny_config(
+    config_path: str | os.PathLike[str],
+    binaries: Sequence[str],
+) -> tuple[Path, tuple[str, ...]]:
+    """Remove binaries from the CLI allowlist; returns the remaining list.
+
+    Unknown names are an error (typo protection: a deny that silently
+    matched nothing would read as done). Denying the last binary flips
+    the mode to "disabled" — equally fail-closed, and the config model's
+    teaching validator (allowlist requires a non-empty allow) cannot
+    tell a deliberate empty list from a forgotten one.
+    """
+    path = Path(config_path).expanduser()
+    document = parse_config_document(path)
+    cli = ensure_table(document, "cli")
+
+    existing = cli.get("allow", [])
+    if not isinstance(existing, Sequence) or isinstance(existing, str):
+        raise ConfigEditError("Config key 'cli.allow' must be an array of strings")
+    allowed = [str(binary) for binary in existing]
+    unknown = [binary for binary in binaries if binary not in allowed]
+    if unknown:
+        current = ", ".join(allowed) or "(empty)"
+        message = (
+            f"not in the allowlist: {', '.join(unknown)}; "
+            f"currently allowed: {current}"
+        )
+        mode = cli.get("mode") or "disabled"
+        if mode != "allowlist":
+            message += (
+                f"; note: cli mode is {str(mode)!r} and deny only applies "
+                "in allowlist mode — set one with: toolplane cli allow "
+                "<binary>"
+            )
+        raise ConfigEditError(message)
+
+    remaining = [binary for binary in allowed if binary not in set(binaries)]
+    if remaining:
+        cli["allow"] = remaining
+    else:
+        cli["mode"] = "disabled"
+        del cli["allow"]
+    write_text_atomic(path, tomlkit.dumps(document))
+    return path, tuple(remaining)
+
+
 def write_cli_allow_config(
     config_path: str | os.PathLike[str],
     binaries: Sequence[str],

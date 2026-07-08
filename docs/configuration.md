@@ -26,7 +26,11 @@ The CLI covers the whole lifecycle from empty directory to served facade:
 toolplane init                  # write a starter toolplane.toml (safe defaults)
 toolplane config check          # validate and summarize, no network calls
 toolplane cli allow git gh rg   # switch to allowlist CLI policy
+toolplane cli deny gh           # remove a binary from the allowlist
+toolplane cli list              # show the CLI policy without connecting
 toolplane mcp add linear --command uvx --arg fastmcp-remote --arg <url>
+toolplane mcp import --from claude   # adopt existing client configs
+toolplane mcp remove linear     # delete a server (stored tokens survive)
 toolplane mcp list              # what is configured, without connecting
 toolplane doctor                # local prerequisites (backends, binaries)
 toolplane mcp login linear      # prime an OAuth bridge interactively
@@ -35,8 +39,15 @@ toolplane run snippet.py        # execute a snippet against the runtime
 toolplane serve mcp             # serve the facade to MCP clients
 ```
 
-`config check`, `doctor`, and `mcp list` never open network connections, so
-they are safe in CI. `doctor` warns (without failing) when a config would
+`config check`, `doctor`, `cli list`, and `mcp list` never open network
+connections, so they are safe in CI. `cli deny` errors on names that are
+not in the allowlist (a deny that silently matched nothing would read as
+done), and denying the last binary sets `mode = "disabled"` — equally
+fail-closed, and the config stays valid. `mcp remove` errors on unknown
+names with the configured candidates, and never deletes stored OAuth
+tokens: re-adding the server keeps its login.
+
+`doctor` warns (without failing) when a config would
 require `serve mcp --unsafe`, and fails when an allowlisted binary or a
 required runtime like Deno is missing.
 

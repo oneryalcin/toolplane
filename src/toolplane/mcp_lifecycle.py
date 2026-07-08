@@ -25,6 +25,10 @@ class McpAddError(ConfigEditError):
     """Raised when an MCP add snippet cannot be rendered."""
 
 
+class McpRemoveError(ConfigEditError):
+    """Raised when an MCP server cannot be removed from the config."""
+
+
 class McpStatusError(ValueError):
     """Raised when MCP status cannot inspect the requested config."""
 
@@ -117,6 +121,142 @@ def write_mcp_add_config(
     )
     write_text_atomic(path, tomlkit.dumps(document))
     return path
+
+
+def write_mcp_remove_config(
+    config_path: str | os.PathLike[str],
+    name: str,
+) -> tuple[Path, dict[str, Any]]:
+    """Delete one MCP server table; returns the removed server's config.
+
+    Unknown names error with the configured candidates (a remove that
+    silently matched nothing would read as done). Stored OAuth tokens are
+    deliberately untouched — the caller notes them so a re-add keeps its
+    login; deletion stays a separate, explicit decision.
+    """
+    path = Path(config_path).expanduser()
+    document = parse_config_document(path)
+    mcp = document.get("mcp")
+    servers = mcp.get("servers") if isinstance(mcp, Mapping) else None
+    if not isinstance(servers, Mapping) or name not in servers:
+        configured = (
+            ", ".join(sorted(servers)) if isinstance(servers, Mapping) and servers
+            else "(none)"
+        )
+        raise McpRemoveError(
+            f"no MCP server {name!r} in {path}; configured: {configured}"
+        )
+    entry = servers[name]
+    if not isinstance(entry, Mapping):
+        raise McpRemoveError(
+            f"MCP server {name!r} in {path} is not a single server table "
+            f"(found {type(entry).__name__}); edit the file directly"
+        )
+    removed = {key: value for key, value in entry.items()}
+    _relocate_trailing_comments(servers, name)
+    was_last = _is_last_content_item(servers, name)
+    del servers[name]
+    if was_last:
+        _trim_trailing_blank_lines(servers)
+    write_text_atomic(path, tomlkit.dumps(document))
+    return path, removed
+
+
+def _deepest_last_table_body(body: list[Any]) -> list[Any]:
+    """Follow last-child tables down: trivia that renders before the NEXT
+    section header lives in the deepest last sub-table's body (a server
+    ending with ``[mcp.servers.X.env]`` keeps it one level down).
+
+    Deletions leave ``(None, Null)`` tombstones in the container body;
+    they render as nothing and must not stop the descent.
+    """
+    import tomlkit.items
+
+    while body:
+        index = len(body) - 1
+        while index >= 0 and isinstance(body[index][1], tomlkit.items.Null):
+            index -= 1
+        if index < 0:
+            break
+        key, value = body[index]
+        if key is not None and isinstance(value, tomlkit.items.Table):
+            body = value.value.body
+        else:
+            break
+    return body
+
+
+def _relocate_trailing_comments(servers: Any, name: str) -> None:
+    """Save comments that visually precede the NEXT table header.
+
+    tomlkit parses comments between two ``[mcp.servers.X]`` headers as
+    trailing trivia of the FIRST table, so deleting it silently swallows
+    the next server's comment. Move them to the previous sibling (renders
+    identically), or to the parent container when the removed table is
+    first (costs a cosmetic ``[mcp.servers]`` header). Conservative by
+    design: a stale comment beats a lost one.
+    """
+    from tomlkit.items import Comment, Whitespace
+
+    try:
+        body = _deepest_last_table_body(servers[name].value.body)
+        trailing: list[Any] = []
+        while (
+            body
+            and body[-1][0] is None
+            and isinstance(body[-1][1], (Comment, Whitespace))
+        ):
+            trailing.insert(0, body.pop()[1])
+        if not any(isinstance(item, Comment) for item in trailing):
+            return
+        parent = servers.value.body
+        index = next(
+            i for i, (key, _) in enumerate(parent) if key and key.key == name
+        )
+        if index > 0 and parent[index - 1][0] is not None:
+            previous = parent[index - 1][1]
+            for item in trailing:
+                previous.value.body.append((None, item))
+        else:
+            for item in reversed(trailing):
+                parent.insert(index + 1, (None, item))
+    except Exception:
+        # trivia relocation is best-effort over tomlkit internals; the
+        # removal itself must never fail because of it
+        return
+
+
+def _is_last_content_item(servers: Any, name: str) -> bool:
+    try:
+        seen = False
+        for key, _ in servers.value.body:
+            if key is None:
+                continue
+            if seen:
+                return False
+            if key.key == name:
+                seen = True
+        return seen
+    except Exception:
+        return False
+
+
+def _trim_trailing_blank_lines(servers: Any) -> None:
+    """Drop the now-dangling inter-table separator after a last-item remove.
+
+    tomlkit stores the blank line between two ``[mcp.servers.X]`` headers
+    as trailing whitespace on the PREVIOUS sibling's body, so deleting the
+    last server strands it at EOF (reviewer finding on #100). Comments are
+    never dropped — only pure whitespace past the last content.
+    """
+    from tomlkit.items import Whitespace
+
+    try:
+        body = _deepest_last_table_body(servers.value.body)
+        while body and body[-1][0] is None and isinstance(body[-1][1], Whitespace):
+            body.pop()
+    except Exception:
+        return
 
 
 def _validate_mcp_add_request(
