@@ -282,12 +282,17 @@ Rules the importer follows:
   `--force` replaces them.
 - `--dry-run` prints the full report without writing the config or
   storing anything.
-- Secret-looking `env`/`headers` values are never copied as literals:
-  a value found in your current environment becomes an `env://VAR`
-  reference; anything else is stored in the OS keyring and written as a
-  `keyring://<name>` reference. `--plaintext` opts out. Derived keyring
-  names never overwrite an existing secret — collisions get a numeric
-  suffix; an identical stored value is reused.
+- Secrets are never copied as literals: every remote `headers` value is
+  treated as a credential (name-based detection misses shapes like
+  `X-Auth` or `Cookie`), and stdio `env` values are classified by a
+  key/value heuristic. A value found in your current environment becomes
+  an `env://VAR` reference; anything else is stored in the OS keyring
+  and written as a `keyring://<name>` reference. `--plaintext` opts out
+  (including for Codex bearer tokens). Derived keyring names never
+  overwrite an existing secret — collisions get a numeric suffix; an
+  identical stored value is reused. `--dry-run` never touches the
+  keyring at all, so previewed names are tentative until the real
+  import checks for collisions.
 - Source values that already look like `env://` or `keyring://`
   references are refused (the server is skipped and reported): a
   checked-in `.mcp.json` in a cloned repo is attacker-influenced input
@@ -296,11 +301,12 @@ Rules the importer follows:
 - Servers disabled in the source client (Claude Code's
   `disabledMcpjsonServers`, Codex's `enabled = false`) are skipped and
   reported, not imported as enabled.
-- `mcp-remote`/`fastmcp-remote` wrapper entries are rewritten to direct
-  `url` + `auth = "oauth"` entries (the wrapper existed to work around
-  missing OAuth support; toolplane has it natively). `--verbatim` keeps
-  the wrapper as-is — as do wrappers carrying extra flags or `env`
-  vars, which the rewrite would silently lose.
+- `mcp-remote`/`fastmcp-remote` wrapper entries (including versioned
+  specs like `mcp-remote@latest`) are rewritten to direct `url` +
+  `auth = "oauth"` entries (the wrapper existed to work around missing
+  OAuth support; toolplane has it natively). `--verbatim` keeps the
+  wrapper as-is — as do wrappers carrying extra flags or `env` vars,
+  which the rewrite would silently lose.
 - Plain `url` imports carry no auth signal in the source config, so no
   `auth` field is guessed; the report points to `toolplane mcp status`,
   which detects auth-required servers and prints the login command.

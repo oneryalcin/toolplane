@@ -45,7 +45,8 @@ class McpImportError(ConfigEditError):
 
 
 _SECRET_KEY_HINT = re.compile(
-    r"(key|token|secret|password|credential|authorization)", re.IGNORECASE
+    r"(key|token|secret|password|credential|auth|cookie|session|bearer|signature)",
+    re.IGNORECASE,
 )
 # A value that looks like a bare credential: long, no whitespace, mixed
 # letters and digits, and not a path or URL. Paths ("/...") and URLs keep
@@ -161,6 +162,7 @@ def import_mcp_servers(
                 plaintext=plaintext,
                 verbatim=verbatim,
                 secret_names_used=secret_names_used,
+                peek_keyring=not dry_run,
             )
         except McpImportError as exc:
             report.skipped.append(SkippedServer(name, raw.source, str(exc)))
@@ -344,6 +346,7 @@ def _convert_server(
     plaintext: bool,
     verbatim: bool,
     secret_names_used: set[str],
+    peek_keyring: bool = True,
 ) -> PlannedServer:
     planned = PlannedServer(name=name, source=raw.source, config={})
     mapping = raw.mapping
@@ -359,8 +362,15 @@ def _convert_server(
     url = mapping.get("url")
     command = mapping.get("command")
     if isinstance(url, str) and url.strip():
-        _convert_url_server(planned, mapping, environ=environ, plaintext=plaintext,
-                            secret_names_used=secret_names_used, is_codex=is_codex)
+        _convert_url_server(
+            planned,
+            mapping,
+            environ=environ,
+            plaintext=plaintext,
+            secret_names_used=secret_names_used,
+            is_codex=is_codex,
+            peek_keyring=peek_keyring,
+        )
         return planned
 
     if not isinstance(command, str) or not command.strip():
@@ -404,6 +414,7 @@ def _convert_server(
                 environ=environ,
                 plaintext=plaintext,
                 secret_names_used=secret_names_used,
+                peek_keyring=peek_keyring,
             )
     _note_unused_branch_keys(
         planned, mapping, used=("command", "args", "env", "type", "enabled")
@@ -419,6 +430,7 @@ def _convert_url_server(
     plaintext: bool,
     secret_names_used: set[str],
     is_codex: bool,
+    peek_keyring: bool = True,
 ) -> None:
     planned.config["url"] = mapping["url"]
     transport = mapping.get("type")
@@ -442,12 +454,17 @@ def _convert_url_server(
                 "(from env_http_headers)"
             )
     if headers:
+        # every header on a remote MCP server is treated as a credential:
+        # name-based detection misses X-Auth/Cookie shapes, and a missed
+        # header lands a literal secret in a committable file
         planned.config["headers"] = _reference_secrets(
             headers,
             planned,
             environ=environ,
             plaintext=plaintext,
             secret_names_used=secret_names_used,
+            peek_keyring=peek_keyring,
+            assume_secret=True,
         )
 
     auth_wired = False
@@ -461,11 +478,15 @@ def _convert_url_server(
                 "(fastmcp sends it as a Bearer token)"
             )
             auth_wired = True
+        elif isinstance(bearer_token, str) and bearer_token and plaintext:
+            planned.config["auth"] = bearer_token
+            auth_wired = True
         elif isinstance(bearer_token, str) and bearer_token:
             secret_name, needs_store = _unique_secret_name(
                 _secret_name_for(planned.name, "bearer-token"),
                 bearer_token,
                 secret_names_used,
+                peek_keyring=peek_keyring,
             )
             planned.config["auth"] = f"keyring://{secret_name}"
             if needs_store:
@@ -562,9 +583,9 @@ def _rewrite_remote_bridge(
     """
     bridge = next(
         (
-            _basename(part)
+            _bridge_basename(part)
             for part in (command, *args)
-            if _basename(part) in _REMOTE_BRIDGE_BASENAMES
+            if _bridge_basename(part) in _REMOTE_BRIDGE_BASENAMES
         ),
         None,
     )
@@ -581,7 +602,7 @@ def _rewrite_remote_bridge(
         part
         for part in args
         if part not in urls
-        and _basename(part) not in _REMOTE_BRIDGE_BASENAMES
+        and _bridge_basename(part) not in _REMOTE_BRIDGE_BASENAMES
         and part not in ("-y", "--yes")
     ]
     if len(urls) > 1 or extra_args:
@@ -604,6 +625,19 @@ def _basename(value: str) -> str:
     return value.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
 
 
+def _bridge_basename(value: str) -> str:
+    """Basename with any npm version spec stripped.
+
+    ``npx mcp-remote@latest`` is the same wrapper as ``mcp-remote``
+    (Codex finding on #97); after _basename a scoped package like
+    ``@scope/pkg@1.2`` is already ``pkg@1.2``, so any ``@`` past the
+    first character starts a version spec.
+    """
+    name = _basename(value)
+    at = name.find("@", 1)
+    return name[:at] if at > 0 else name
+
+
 def _reference_secrets(
     values: dict[str, Any],
     planned: PlannedServer,
@@ -611,12 +645,24 @@ def _reference_secrets(
     environ: Mapping[str, str],
     plaintext: bool,
     secret_names_used: set[str],
+    peek_keyring: bool = True,
+    assume_secret: bool = False,
 ) -> dict[str, Any]:
+    """``assume_secret`` treats every non-empty string value as secret.
+
+    Used for remote headers: a header on an authenticated MCP server is
+    nearly always a credential, and name-based detection misses shapes
+    like ``X-Auth`` or ``Cookie`` (Codex finding on #97). The heuristic
+    path remains for stdio env, where most values are boring config.
+    """
     if plaintext:
         return values
     referenced: dict[str, Any] = {}
     for key, value in values.items():
-        if not isinstance(value, str) or not _looks_secret(key, value):
+        is_secret = isinstance(value, str) and (
+            bool(value) if assume_secret else _looks_secret(key, value)
+        )
+        if not is_secret:
             referenced[key] = value
             continue
         if value.startswith(_REF_PREFIXES):
@@ -633,7 +679,10 @@ def _reference_secrets(
             )
             continue
         secret_name, needs_store = _unique_secret_name(
-            _secret_name_for(planned.name, key), value, secret_names_used
+            _secret_name_for(planned.name, key),
+            value,
+            secret_names_used,
+            peek_keyring=peek_keyring,
         )
         referenced[key] = f"keyring://{secret_name}"
         if needs_store:
@@ -654,6 +703,8 @@ def _unique_secret_name(
     base: str,
     value: str,
     secret_names_used: set[str],
+    *,
+    peek_keyring: bool = True,
 ) -> tuple[str, bool]:
     """``(name, needs_store)`` — never silently overwrites a secret.
 
@@ -662,12 +713,16 @@ def _unique_secret_name(
     ``-3``, ...), as are names already claimed this run (reviewer finding
     on #97: two servers can derive the same name, and an import could
     clobber a secret the user set themselves).
+
+    ``peek_keyring=False`` skips the keyring read entirely: dry-run must
+    preview without a working keyring backend (Codex finding on #97), so
+    its names are tentative — the real import adjusts past collisions.
     """
     candidate = base
     counter = 2
     while True:
         if candidate not in secret_names_used:
-            existing = secret_peek(candidate)
+            existing = secret_peek(candidate) if peek_keyring else None
             if existing == value:
                 secret_names_used.add(candidate)
                 return candidate, False

@@ -858,3 +858,108 @@ def test_report_sanitizes_control_characters(
     rendered = format_import_report(report)
     assert "\n[cli]" not in rendered
     assert "\\n" in rendered
+
+
+# --- Codex review round (PR #99) ---
+
+
+def test_all_remote_headers_are_treated_as_credentials(
+    tmp_path: Path, fake_home: Path, project_dir: Path
+) -> None:
+    """X-Auth/Cookie evade name heuristics; headers are secret by default."""
+    _write_claude_config(
+        fake_home,
+        {
+            "mcpServers": {
+                "api": {
+                    "url": "https://x.example/mcp",
+                    "headers": {
+                        "X-Auth": "Bearer sk-live-abc123",
+                        "Cookie": "session=deadbeef01",
+                    },
+                }
+            }
+        },
+    )
+    config_path = tmp_path / "toolplane.toml"
+
+    _import(config_path, "claude", fake_home, project_dir)
+
+    written = config_path.read_text(encoding="utf-8")
+    assert "Bearer sk-live-abc123" not in written
+    assert "session=deadbeef01" not in written
+    assert "keyring://api-x-auth" in written
+    assert "keyring://api-cookie" in written
+
+
+def test_dry_run_works_without_a_keyring_backend(
+    tmp_path: Path,
+    fake_home: Path,
+    project_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Preview must not require the OS keyring the real import will use."""
+    import keyring as keyring_module
+
+    def dead(*args):
+        raise RuntimeError("keyring locked")
+
+    monkeypatch.setattr(keyring_module, "get_password", dead)
+    _write_claude_config(
+        fake_home,
+        {
+            "mcpServers": {
+                "gh": {"command": "a", "env": {"API_KEY": "abcd1234efgh5678ijkl"}}
+            }
+        },
+    )
+    config_path = tmp_path / "toolplane.toml"
+
+    report = _import(config_path, "claude", fake_home, project_dir, dry_run=True)
+
+    assert [p.name for p in report.imported] == ["gh"]
+    assert not config_path.exists()
+
+
+def test_plaintext_covers_codex_bearer_token(
+    tmp_path: Path, fake_home: Path, project_dir: Path
+) -> None:
+    codex_dir = fake_home / ".codex"
+    codex_dir.mkdir()
+    (codex_dir / "config.toml").write_text(
+        '[mcp_servers.b]\nurl = "https://b.example/mcp"\n'
+        'bearer_token = "abcd1234efgh5678ijkl"\n',
+        encoding="utf-8",
+    )
+    config_path = tmp_path / "toolplane.toml"
+
+    _import(config_path, "codex", fake_home, project_dir, plaintext=True)
+
+    written = config_path.read_text(encoding="utf-8")
+    assert 'auth = "abcd1234efgh5678ijkl"' in written
+    assert "keyring://" not in written
+
+
+def test_versioned_mcp_remote_wrapper_is_rewritten(
+    tmp_path: Path, fake_home: Path, project_dir: Path
+) -> None:
+    _write_claude_config(
+        fake_home,
+        {
+            "mcpServers": {
+                "linear": {
+                    "command": "npx",
+                    "args": ["-y", "mcp-remote@latest", "https://mcp.linear.app/sse"],
+                }
+            }
+        },
+    )
+    config_path = tmp_path / "toolplane.toml"
+
+    _import(config_path, "claude", fake_home, project_dir)
+
+    config = load_toolplane_config(config_path)
+    assert config.mcp.servers["linear"] == {
+        "url": "https://mcp.linear.app/sse",
+        "auth": "oauth",
+    }
