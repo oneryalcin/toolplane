@@ -256,7 +256,9 @@ class Toolplane:
         lines = [
             "Rules for execute_code snippets: every binding is async — "
             "always `await`; pass arguments as keywords exactly as shown "
-            "(positional calls fail on the default backend); `return` a "
+            "(positional calls fail on the default backend); awaiting "
+            "returns the tool's plain value, already unwrapped — never "
+            "index into a ['result'] or ['value'] envelope; `return` a "
             "JSON-shaped value."
         ]
         extras = []
