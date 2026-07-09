@@ -130,8 +130,11 @@ TASKS = {
         "check": _check_region_totals,
         "orders_n": 20,
     },
-    # the shape prior work says code mode loses (#107 item 2): each next
-    # fetch requires reading prose with a decoy — judgment per hop
+    # the shape prior work says code mode loses (#107 item 2): each note
+    # names the next order plus a decoy, inviting judgment per hop. The
+    # templated prose IS heuristically separable (a keyword regex walks
+    # the chain — review-verified), so this measures what agents choose
+    # to do with an adaptive-looking task, not impossibility.
     "chain": {
         "prompt": _CHAIN_PROMPT,
         "check": _check_chain,
@@ -404,10 +407,13 @@ def _cell_stats(group: list[dict], key: str) -> tuple:
 def summarize(rows: list[dict]) -> str:
     """Median table with mechanical honesty annotations (#107 items 3-4).
 
-    † on cost/wall: the per-rep ranges of the two arms OVERLAP for this
-    task — the median gap is inside the noise; do not publish it as a
-    win without more reps. cost/pass = total spend / successful runs
-    (TPS-Bench cost-of-pass): a cheap wrong answer prices in as a loss.
+    † on cost/wall: the OBSERVED per-rep ranges of the two arms overlap
+    for this task. That is a statement about the samples, not a noise
+    conclusion — at these rep counts it means the median gap is
+    unresolved; do not publish it as a win without more reps.
+    cost/pass = total spend / successful runs (TPS-Bench cost-of-pass):
+    a cheap wrong answer prices in as a loss; a run with unknown spend
+    (timeout) makes the cell "n/a" rather than silently pricing as free.
     """
     lines = [
         "| task | M | arm | ok | tool calls | turns | out tokens "
@@ -433,9 +439,15 @@ def summarize(rows: list[dict]) -> str:
                 spans = {
                     arm: _cell_stats(g, key) for arm, g in groups.items() if g
                 }
-                if len(spans) == 2:
-                    (_, lo_a, hi_a), (_, lo_b, hi_b) = spans.values()
-                    overlaps[key] = lo_a <= hi_b and lo_b <= hi_a
+                direct_span = spans.get("direct")
+                toolplane_span = spans.get("toolplane")
+                if direct_span and toolplane_span:
+                    _, lo_a, hi_a = direct_span
+                    _, lo_b, hi_b = toolplane_span
+                    # an all-timeout arm has no numeric bounds; no claim
+                    # to annotate either way
+                    if None not in (lo_a, hi_a, lo_b, hi_b):
+                        overlaps[key] = lo_a <= hi_b and lo_b <= hi_a
             for arm, group in groups.items():
                 if not group:
                     continue
@@ -449,10 +461,15 @@ def summarize(rows: list[dict]) -> str:
                     return f"{med(key)}{mark}"
 
                 successes = sum(r["correct"] for r in group)
-                spent = sum(r["cost_usd"] or 0 for r in group)
-                cost_of_pass = (
-                    round(spent / successes, 2) if successes else "inf"
-                )
+                costs = [r["cost_usd"] for r in group]
+                if any(c is None for c in costs):
+                    # a timed-out run billed an unknown amount; pricing it
+                    # as zero would make unreliable arms look cheaper
+                    cost_of_pass = "n/a"
+                elif successes:
+                    cost_of_pass = round(sum(costs) / successes, 2)
+                else:
+                    cost_of_pass = "inf"
                 overlap_seen = overlap_seen or any(overlaps.values())
                 ok = f"{successes}/{len(group)}"
                 lines.append(
@@ -463,8 +480,8 @@ def summarize(rows: list[dict]) -> str:
                 )
     if overlap_seen:
         lines.append(
-            "\n† per-rep ranges of the two arms overlap for this task — "
-            "the median gap is inside the noise at this rep count."
+            "\n† observed per-rep ranges of the two arms overlap for this "
+            "task — the median gap is unresolved at this rep count."
         )
     return "\n".join(lines)
 

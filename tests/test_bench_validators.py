@@ -123,6 +123,44 @@ def test_summarize_flags_overlapping_ranges_and_prices_failures() -> None:
     assert "0.3†" in line  # median cost flagged as overlapping
     assert "| 0.6 |" in line  # cost/pass: (0.20+0.40)/1 success
     assert "ranges of the two arms overlap" in table
+    assert "noise" not in table  # observed overlap, not a noise conclusion
+
+
+def test_summarize_survives_all_timeout_arm_and_prices_unknown_as_na() -> None:
+    # an arm whose reps all timed out has cost_usd=None everywhere; the
+    # table must not crash (data is already on disk, but losing the
+    # printed summary loses the run report) and a mixed cell with one
+    # unknown cost must say n/a, not price the timeout as free
+    from run import summarize
+
+    def row(arm, cost, correct):
+        return {
+            "task": "loop",
+            "arm": arm,
+            "m_servers": 1,
+            "correct": correct,
+            "cost_usd": cost,
+            "wall_s": None if cost is None else 10.0,
+            "tool_calls": None if cost is None else 1,
+            "num_turns": None,
+            "output_tokens": 0,
+            "uncached_input_tokens": 0,
+        }
+
+    all_timeout = summarize(
+        [row("direct", 0.10, True), row("toolplane", None, False)]
+    )
+    assert "| inf |" in all_timeout or "| n/a |" in all_timeout
+
+    mixed = summarize(
+        [
+            row("direct", 0.10, True),
+            row("toolplane", 0.20, True),
+            row("toolplane", None, False),
+        ]
+    )
+    line = next(ln for ln in mixed.splitlines() if "| toolplane |" in ln)
+    assert "| n/a |" in line
 
 
 def test_summarize_no_flag_when_ranges_disjoint() -> None:

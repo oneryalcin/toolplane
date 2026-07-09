@@ -36,9 +36,11 @@ see the docs piece for the usage-data arithmetic).
 - `single` — one record lookup. The shape where code-mode's discovery
   overhead should LOSE; published anyway.
 - `chain` — follow a 4-hop follow-up thread where each order's prose note
-  names the next order AND a decoy; judgment per hop, so the loop cannot
-  be one snippet (#107 item 2, the shape prior work says code mode
-  loses — it does; see the docs piece).
+  names the next order AND a decoy, inviting judgment per hop (#107
+  item 2, the shape prior work says code mode loses — it does; see the
+  docs piece). The templated notes are heuristically separable — a
+  keyword regex can walk the chain in one snippet — so this measures
+  what agents choose to do, not impossibility; disclosed in the docs.
 - `loop_lat100` — `loop` with 100ms per-call server latency
   (`BENCH_TOOL_LATENCY_MS`, async so the fixture never serializes);
   measures monty's sequential awaits, gates #109.
