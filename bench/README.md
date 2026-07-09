@@ -65,8 +65,12 @@ end (medians across reps).
 ## Transcripts and classification (#104)
 
 Every run's full stream-json transcript is persisted under
-`bench/results/transcripts/run-<stamp>/` (init-event client-environment
-fields redacted). `bench/classify.py <transcripts-dir>` splits extra
+`bench/results/transcripts/run-<stamp>/`. Redaction covers the
+init-event client-environment fields (plugins, commands, memory paths)
+only — tool inputs and outputs are verbatim by design (they are the
+evidence), so transcripts can contain local paths and usernames from
+commands the agent chose to run. `bench/classify.py <transcripts-dir>`
+splits extra
 `execute_code` calls into retries-after-error vs staged-after-success
 (snippet failures are *successful* MCP calls carrying a non-null
 `ExecutionResult.error`), extracts the snippet error taxonomy, and

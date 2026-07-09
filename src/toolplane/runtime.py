@@ -240,10 +240,25 @@ class Toolplane:
                 "them all, or read the toolplane://namespace resource "
                 "for the full execution namespace."
             )
-        rendered = render_capabilities(capabilities, detail=detail)
+        rendered = render_capabilities(
+            capabilities, detail=detail, reserved=self._reserved_binding_names()
+        )
         if detail == "full":
             return rendered
         return f"{rendered}\n\n{self._search_footer()}"
+
+    def _reserved_binding_names(self) -> frozenset[str]:
+        """Names the default backend claims before capabilities bind.
+
+        A sessioned monty backend installs reset_session first — the
+        escape hatch must always be the escape hatch — so a capability
+        with that name is shadowed in the sandbox and must not be
+        advertised as flat-callable by discovery.
+        """
+        backend = self.backends.get(self.default_backend)
+        if backend is not None and getattr(backend, "session", False):
+            return frozenset({"reset_session"})
+        return frozenset()
 
     def _search_footer(self) -> str:
         """Snippet rules appended to every search result.
@@ -255,22 +270,31 @@ class Toolplane:
         """
         lines = [
             "Rules for execute_code snippets: every binding is async — "
-            "always `await`; pass arguments as keywords exactly as shown "
-            "(positional calls fail on the default backend); awaiting "
-            "returns the tool's plain value, already unwrapped — never "
-            "index into a ['result'] or ['value'] envelope; `return` a "
-            "JSON-shaped value."
+            "always `await`; call capability functions with keywords "
+            "exactly as shown (positional calls fail on the default "
+            "backend); awaiting a capability returns the tool's plain "
+            "value, already unwrapped — never index into a ['result'] or "
+            "['value'] envelope; `return` a JSON-shaped value."
         ]
         extras = []
         if self.ambient_cli:
             if self.cli_policy.restricted:
-                names = ", ".join(self._get_ambient_cli_names())
-                extras.append(
-                    f"CLI bindings for: {names} — e.g. "
-                    "`await git('log', oneline=True)`"
-                )
+                names = self._get_ambient_cli_names()
+                if names:
+                    # the example must use a binding that actually exists —
+                    # advertising an unbound name is the NameError class
+                    # this footer exists to prevent
+                    extras.append(
+                        f"CLI bindings for: {', '.join(names)} — shape "
+                        f"`await {names[0]}('<subcommand>', flag=value)`, "
+                        "returning {'stdout','stderr','exit_code','ok'}"
+                    )
             else:
-                extras.append("CLI bindings for binaries on PATH")
+                extras.append(
+                    "CLI bindings for binaries on PATH — shape "
+                    "`await git('<subcommand>', flag=value)`, returning "
+                    "{'stdout','stderr','exit_code','ok'}"
+                )
         if self.result_store.enabled:
             extras.append("`save_result`/`load_result`")
         if extras:
@@ -287,7 +311,11 @@ class Toolplane:
         return "\n".join(lines)
 
     async def list_tools(self, *, detail: DetailLevel = "brief") -> str:
-        return render_capabilities(self.registry.all(), detail=detail)
+        return render_capabilities(
+            self.registry.all(),
+            detail=detail,
+            reserved=self._reserved_binding_names(),
+        )
 
     def describe_namespace(self) -> str:
         """Render a live manifest of the execute_code Python namespace.
@@ -596,7 +624,12 @@ class Toolplane:
         detail: DetailLevel = "detailed",
     ) -> str:
         capabilities, missing = self.registry.schemas(tools)
-        return render_capabilities(capabilities, detail=detail, missing=missing)
+        return render_capabilities(
+            capabilities,
+            detail=detail,
+            missing=missing,
+            reserved=self._reserved_binding_names(),
+        )
 
     async def call_tool(self, name: str, params: dict[str, Any] | None = None) -> Any:
         if self.audit_log.enabled:

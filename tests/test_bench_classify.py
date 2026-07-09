@@ -122,3 +122,62 @@ def test_transport_error_counts_as_failure(tmp_path: Path) -> None:
     assert run["failed_executes"] == 1
     assert run["retries_after_error"] == 1
     assert run["snippet_error_types"] == {"TransportError": 1}
+
+
+def test_unparseable_execute_result_counts_as_failure(tmp_path: Path) -> None:
+    # payload-format drift must never silently zero the failure counts
+    lines = [
+        _assistant("t1", "mcp__toolplane__execute_code", code="x"),
+        _result("t1", "not json at all"),
+        _assistant("t2", "mcp__toolplane__execute_code", code="retry"),
+        _result("t2", _execute_payload(None)),
+    ]
+    run = classify_run(_write(tmp_path, lines))
+    assert run["failed_executes"] == 1
+    assert run["retries_after_error"] == 1
+    assert run["snippet_error_types"] == {"UnparseableResult": 1}
+
+
+def test_non_dict_error_payload_counts_as_failure(tmp_path: Path) -> None:
+    lines = [
+        _assistant("t1", "mcp__toolplane__execute_code", code="x"),
+        _result("t1", json.dumps({"backend": "monty", "error": "boom"})),
+    ]
+    run = classify_run(_write(tmp_path, lines))
+    assert run["snippet_error_types"] == {"UnknownError": 1}
+
+
+def test_manifest_reads_keyed_on_uri_not_tool_name(tmp_path: Path) -> None:
+    # a skill:// read through the same client tool is not manifest usage
+    lines = [
+        _assistant("t1", "ReadMcpResourceTool", uri="skill://driving-toolplane/SKILL.md"),
+        _result("t1", "skill text " * 20),
+        _assistant("t2", "ReadMcpResourceTool", uri="toolplane://namespace"),
+        _result("t2", "manifest " * 30),
+        _assistant("t3", "mcp__toolplane__execute_code", code="z"),
+        _result("t3", _execute_payload(None)),
+    ]
+    run = classify_run(_write(tmp_path, lines))
+    assert run["manifest_read_chars"] == [len("manifest " * 30)]
+
+
+def test_facade_discovery_excludes_client_tools(tmp_path: Path) -> None:
+    # ToolSearch/Bash are the client's own ceremony, not the facade's
+    lines = [
+        _assistant("t1", "Bash", command="ls"),
+        _result("t1", "files"),
+        _assistant("t2", "ToolSearch", query="order"),
+        _result("t2", "tools"),
+        _assistant("t3", "mcp__toolplane__search_capabilities", query="order"),
+        _result("t3", "- hits"),
+        _assistant("t4", "ReadMcpResourceTool", uri="toolplane://namespace"),
+        _result("t4", "manifest"),
+        _assistant("t5", "mcp__toolplane__execute_code", code="z"),
+        _result("t5", _execute_payload(None)),
+    ]
+    run = classify_run(_write(tmp_path, lines))
+    assert run["facade_discovery_before_first_execute"] == [
+        "search_capabilities",
+        "ReadMcpResourceTool",
+    ]
+    assert len(run["discovery_calls_before_first_execute"]) == 4

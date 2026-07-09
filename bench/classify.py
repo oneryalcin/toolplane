@@ -87,18 +87,40 @@ def _snippet_error(text: str, transport_error: bool) -> str | None:
 
     execute_code failures are SUCCESSFUL MCP calls carrying a non-null
     "error" in the ExecutionResult payload; is_error covers transport-level
-    failure only.
+    failure only. Anything that does not parse as an ExecutionResult
+    counts AGAINST the run — a payload-format drift must never silently
+    zero the failure counts.
     """
     if transport_error:
         return "TransportError"
     try:
         payload = json.loads(text)
     except json.JSONDecodeError:
+        return "UnparseableResult"
+    if not isinstance(payload, dict) or "error" not in payload:
+        return "UnparseableResult"
+    error = payload["error"]
+    if error is None:
         return None
-    error = payload.get("error") if isinstance(payload, dict) else None
     if isinstance(error, dict):
         return str(error.get("type", "UnknownError"))
-    return None
+    return "UnknownError"
+
+
+def _is_manifest_read(event: dict) -> bool:
+    """A namespace-manifest read specifically — not any resource read.
+
+    Keyed on the requested URI: a skill:// or toolplane://results read
+    through the same client tool must not count as manifest usage.
+    """
+    if event["name"] != "ReadMcpResourceTool":
+        return False
+    uri = (event.get("input") or {}).get("uri", "")
+    return str(uri).startswith("toolplane://namespace")
+
+
+def _is_facade_discovery(event: dict) -> bool:
+    return event["name"] in FACADE_TOOLS or _is_manifest_read(event)
 
 
 def classify_run(transcript: Path) -> dict:
@@ -108,9 +130,15 @@ def classify_run(transcript: Path) -> dict:
         (i for i, e in enumerate(events) if e["name"] == "execute_code"),
         len(events),
     )
+    # the full pre-execute sequence (client tools like ToolSearch/Bash
+    # included) is context; the facade-only count is the discovery-tax
+    # metric — conflating them was a review finding on #111
     discovery = [
         {"name": e["name"], "result_chars": e["result_chars"]}
         for e in events[:first_execute_at]
+    ]
+    facade_discovery = [
+        e["name"] for e in events[:first_execute_at] if _is_facade_discovery(e)
     ]
 
     # an execute after a FAILED execute is a retry; after a successful one,
@@ -129,13 +157,12 @@ def classify_run(transcript: Path) -> dict:
             error_types[e["snippet_error"]] += 1
         prev_failed = e["snippet_error"] is not None
 
-    manifest_reads = [
-        e for e in events if e["name"] == "ReadMcpResourceTool"
-    ]
+    manifest_reads = [e for e in events if _is_manifest_read(e)]
     return {
         "transcript": transcript.name,
         "tool_sequence": [e["name"] for e in events],
         "discovery_calls_before_first_execute": discovery,
+        "facade_discovery_before_first_execute": facade_discovery,
         "executes": len(executes),
         "failed_executes": sum(1 for e in executes if e["snippet_error"]),
         "retries_after_error": retries,
@@ -175,6 +202,9 @@ def main() -> int:
     for r in runs:
         errors.update(r["snippet_error_types"])
     disc_counts = [len(r["discovery_calls_before_first_execute"]) for r in runs]
+    facade_counts = [
+        len(r["facade_discovery_before_first_execute"]) for r in runs
+    ]
     print(f"runs: {len(runs)}  (wrote {out})")
     print(
         f"executes/run: median {statistics.median([r['executes'] for r in runs])}, "
@@ -188,8 +218,15 @@ def main() -> int:
         )
     print(f"snippet error types: {dict(errors) or 'none'}")
     print(
-        f"discovery calls before first execute: median "
-        f"{statistics.median(disc_counts)}, range {min(disc_counts)}-{max(disc_counts)}"
+        f"facade discovery calls before first execute "
+        f"(search/schemas/manifest): median "
+        f"{statistics.median(facade_counts)}, "
+        f"range {min(facade_counts)}-{max(facade_counts)}"
+    )
+    print(
+        f"all tool calls before first execute (client tools included): "
+        f"median {statistics.median(disc_counts)}, "
+        f"range {min(disc_counts)}-{max(disc_counts)}"
     )
     for label, key in (
         ("manifest", "manifest_read_chars"),

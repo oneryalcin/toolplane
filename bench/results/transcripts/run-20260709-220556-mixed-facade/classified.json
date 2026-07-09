@@ -26,6 +26,10 @@
         "result_chars": 2682
       }
     ],
+    "facade_discovery_before_first_execute": [
+      "search_capabilities",
+      "ReadMcpResourceTool"
+    ],
     "executes": 1,
     "failed_executes": 0,
     "retries_after_error": 0,
@@ -69,6 +73,9 @@
         "result_chars": 0
       }
     ],
+    "facade_discovery_before_first_execute": [
+      "search_capabilities"
+    ],
     "executes": 4,
     "failed_executes": 1,
     "retries_after_error": 1,
@@ -103,6 +110,9 @@
         "name": "search_capabilities",
         "result_chars": 845
       }
+    ],
+    "facade_discovery_before_first_execute": [
+      "search_capabilities"
     ],
     "executes": 1,
     "failed_executes": 0,
@@ -153,6 +163,10 @@
         "result_chars": 0
       }
     ],
+    "facade_discovery_before_first_execute": [
+      "search_capabilities",
+      "ReadMcpResourceTool"
+    ],
     "executes": 2,
     "failed_executes": 0,
     "retries_after_error": 0,
@@ -193,6 +207,9 @@
         "result_chars": 0
       }
     ],
+    "facade_discovery_before_first_execute": [
+      "search_capabilities"
+    ],
     "executes": 1,
     "failed_executes": 0,
     "retries_after_error": 0,
@@ -227,6 +244,9 @@
         "name": "ToolSearch",
         "result_chars": 0
       }
+    ],
+    "facade_discovery_before_first_execute": [
+      "search_capabilities"
     ],
     "executes": 3,
     "failed_executes": 1,
@@ -263,6 +283,9 @@
         "result_chars": 644
       }
     ],
+    "facade_discovery_before_first_execute": [
+      "search_capabilities"
+    ],
     "executes": 1,
     "failed_executes": 0,
     "retries_after_error": 0,
@@ -296,6 +319,9 @@
         "result_chars": 644
       }
     ],
+    "facade_discovery_before_first_execute": [
+      "search_capabilities"
+    ],
     "executes": 1,
     "failed_executes": 0,
     "retries_after_error": 0,
@@ -328,6 +354,9 @@
         "name": "search_capabilities",
         "result_chars": 644
       }
+    ],
+    "facade_discovery_before_first_execute": [
+      "search_capabilities"
     ],
     "executes": 1,
     "failed_executes": 0,

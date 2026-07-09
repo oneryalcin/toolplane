@@ -184,10 +184,14 @@ extra execute_code before the answer. Transcript-level instrumentation
 harness: per-run stream-json under `bench/results/transcripts/`, classified
 by `bench/classify.py`) showed why: the three things an agent needs before
 its first snippet — canonical name, parameters, Python binding name —
-each lived on a different discovery surface, and the extra executes were
-mostly *return-shape probes*: agents guessed that bindings return a
-wrapped envelope (`ids["result"]`, `o["value"]`), hit a TypeError, and
-burned a turn printing the type.
+each lived on a different discovery surface. The same-day instrumented
+runs also exposed a second failure class: with call shapes but no
+return-shape teaching, agents guessed that bindings return a wrapped
+envelope (`ids["result"]`, `o["value"]`), hit a TypeError, and burned a
+turn printing the type. (No transcripts exist for 0.4.0 itself —
+persistence lands with this change — so attributing the same mechanism
+to 0.4.0's median-2-executes is an inference from the matching teaching
+gap, not an observation.)
 
 The fix ([#106](https://github.com/oneryalcin/toolplane/issues/106)):
 `search_capabilities` results now carry each hit's exact awaitable call
@@ -204,8 +208,12 @@ against the published 0.4.0 numbers above:
 | task | toolplane 0.4.0 | toolplane after | direct (same day) |
 |---|---|---|---|
 | single | $0.26 · 10 turns · 21.7s | **$0.18 · 5 turns · 15.1s** | $0.14 · 3 turns · 9.1s |
-| loop (N=30) | $0.24 · ~10 turns · 26.8s | **$0.18 · 6 turns · 20.9s** | $0.20 · 33 turns · 30.4s |
-| loop100 | $0.28 · 11 turns · 36.6s | **$0.18 · 6 turns · 20.2s** | $0.33 · 104 turns · 57.3s |
+| loop (N=30) | $0.24 · 11 turns · 26.8s | **$0.18 · 6 turns · 20.9s** | $0.20 · 33 turns · 30.4s |
+| loop100 | $0.28 · 12 turns · 36.6s | **$0.18 · 6 turns · 20.2s** | $0.33 · 104 turns · 57.3s |
+
+(Turns are the client's `num_turns` in every cell. The 0.4.0 wall times
+come from client 2.1.204 — conservative here, since the same-version
+pre-fix walls in `run-20260709-114215.json` are slightly worse.)
 
 The direct arm is the control: its same-day medians reproduce the
 published tables to the cent ($0.14/$0.20/$0.33), so the toolplane-arm
@@ -214,20 +222,25 @@ committed transcripts show after the change: **zero namespace-manifest
 reads** (previously every run read the ~2.7k-char manifest), one
 `search_capabilities` call per run, median **1** execute_code with **zero
 failed snippets and zero retries** across all nine toolplane runs
-(previously median 2 executes; the pre-fix runs in the same-day
-mixed-facade transcripts still show the TypeError-probe pattern).
+(previously median 2 executes overall and 5 in the worst task, loop100).
+The TypeError probes appear in the same-day runs served the intermediate
+teaching — call shapes without the return-shape sentence — while the two
+genuinely pre-fix runs in the mixed-facade transcripts spent their extra
+turns on the manifest ceremony instead.
 
 What this does to the envelope: **the crossover moved from "between 30
-and 100 tool interactions" to below 30** — at N=30 toolplane now wins
-cost ($0.18 vs $0.20) and wall (20.9s vs 30.4s) outright, and at N=100 it
-is ~45% cheaper and ~2.8x faster. Single lookups still lose ($0.18 vs
+and 100 tool interactions" to below 30** — at N=30 toolplane now wins on
+median cost ($0.18 vs $0.20; per-rep ranges still overlap at n=3) and
+cleanly on wall (20.9s vs 30.4s, ranges disjoint), and at N=100 it is
+~45% cheaper and ~2.8x faster. Single lookups still lose ($0.18 vs
 $0.14, 15.1s vs 9.1s): the floor is one search turn plus one execute turn
 against direct's ToolSearch-plus-call, and the facade schemas still ride
 in context. Where between 1 and 30 the crossover now sits is unmeasured.
 
 Honesty notes for this section: n=3 per cell, one day, client 2.1.205
 (cost-controlled by the direct arm as above; wall comparisons to the
-2.1.204 tables are not supported). A first same-day "before" matrix was
+2.1.204 tables are not supported). The `filter` task from the published
+tables was not re-run. A first same-day "before" matrix was
 accidentally contaminated — the facade change landed mid-run, so later
 reps were served the new code; it is committed as
 `run-20260709-220556-mixed-facade` (transcripts partition cleanly by a
@@ -235,7 +248,13 @@ footer fingerprint) and excluded from every number above, with the
 published 0.4.0 tables serving as the before-side instead. The
 return-shape footer sentence was added *after* observing the TypeError
 probes in those mixed transcripts and before the clean 18-run matrix —
-one teaching iteration, disclosed.
+one teaching iteration, disclosed; note the sentence was written against
+the exact envelope keys agents guessed on this two-tool server, and its
+generalization to other tool surfaces is untested. Post-review copy
+edits to the footer and call-shape rendering (a real-allowlist CLI
+example, scoping the rules to capability bindings, `call_tool` fallbacks
+for shapes that cannot render faithfully) landed *after* the measured
+runs — the committed transcripts record the exact text each run saw.
 
 ## What actually happened (read the usage data, not the folklore)
 
@@ -284,7 +303,7 @@ task in today's Claude Code; we did not measure between those points.**
 Below it, plain MCP is the right tool — which is why toolplane serves
 both: any server behind the facade can also be registered directly.
 *(This paragraph describes toolplane 0.4.0 as shipped. The discovery-tax
-fix measured in "Cutting the discovery tax" below moved the crossover
+fix measured in "Cutting the discovery tax" above moved the crossover
 under 30.)*
 
 We resist extrapolating further. Slower (network-bound) tools cut both
@@ -314,7 +333,7 @@ measured it. Those are hypotheses, labeled as such.
   into every toolplane number above. *(Since resolved: the harness now
   persists transcripts and `bench/classify.py` splits the causes — the
   dominant one was return-shape guessing, fixed and re-measured in
-  "Cutting the discovery tax" below.)*
+  "Cutting the discovery tax" above.)*
 - **Fixed run order** (direct before toolplane, same 5-minute window)
   means reps are not independent: prompt-cache warmth from earlier runs is
   visible in the raw usage of later ones. Small at these sizes, but real.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import keyword
 from collections.abc import Sequence
 from typing import Any, Literal
 
@@ -16,6 +17,7 @@ def render_capabilities(
     *,
     detail: DetailLevel = "brief",
     missing: Sequence[str] = (),
+    reserved: frozenset[str] = frozenset(),
 ) -> str:
     if detail == "full":
         data: list[dict[str, Any]] = [
@@ -29,9 +31,13 @@ def render_capabilities(
     if not capabilities:
         text = "No capabilities matched the query."
     elif detail == "detailed":
-        text = "\n\n".join(_render_detailed(capability) for capability in capabilities)
+        text = "\n\n".join(
+            _render_detailed(capability, reserved) for capability in capabilities
+        )
     else:
-        text = "\n".join(_render_brief(capability) for capability in capabilities)
+        text = "\n".join(
+            _render_brief(capability, reserved) for capability in capabilities
+        )
 
     if missing:
         text += f"\n\nCapabilities not found: {', '.join(missing)}. {_MISSING_HINT}"
@@ -45,30 +51,33 @@ _MISSING_HINT = (
 )
 
 
-def _render_brief(capability: Capability) -> str:
+def _render_brief(
+    capability: Capability, reserved: frozenset[str] = frozenset()
+) -> str:
+    shape = call_shape(capability, reserved=reserved)
     desc = f" — {capability.description}" if capability.description else ""
-    shape = call_shape(capability)
-    if shape is None:
-        desc = f": {capability.description}" if capability.description else ""
-        return f"- {capability.name}{desc}"
     return f"- `{shape}`{desc} [{capability.name}]"
 
 
-def _render_detailed(capability: Capability) -> str:
+def _render_detailed(
+    capability: Capability, reserved: frozenset[str] = frozenset()
+) -> str:
     lines = [f"### {capability.name}"]
     if capability.description:
         lines.extend(["", capability.description])
-    shape = call_shape(capability)
-    if shape is not None:
-        lines.extend(["", f"**Call**: `{shape}`"])
+    lines.extend(
+        ["", f"**Call**: `{call_shape(capability, reserved=reserved)}`"]
+    )
     lines.extend(["", *_schema_section(capability.parameters, "Parameters")])
     if capability.returns is not None:
         lines.extend(["", *_schema_section(capability.returns, "Returns")])
     return "\n".join(lines)
 
 
-def call_shape(capability: Capability) -> str | None:
-    """The exact awaitable Python call for a capability's flat binding.
+def call_shape(
+    capability: Capability, *, reserved: frozenset[str] = frozenset()
+) -> str:
+    """The exact awaitable Python call for a capability.
 
     This is what lets one search turn replace the
     search -> get_capability_schemas -> namespace-manifest ceremony for
@@ -76,30 +85,62 @@ def call_shape(capability: Capability) -> str | None:
     two things an agent otherwise reads two more surfaces for) travel with
     every hit. Keywords only — positional calls fail on the monty backend.
 
-    Binding resolution mirrors registry.callable_namespace: the capability
-    name itself when it is a safe identifier, else the first safe alias —
-    a shape rendered here must actually resolve in the sandbox.
+    A rendered shape must actually resolve in the sandbox — and to the
+    capability, not to something else. Flat-binding resolution mirrors
+    registry.callable_namespace (the capability name when it is a safe
+    identifier, else the first safe alias), minus names the runtime's
+    backend reserves for itself (``reserved``): a sessioned monty backend
+    installs reset_session first, so a capability with that name is
+    shadowed and must not be advertised as flat-callable. Whenever the
+    flat form cannot be rendered faithfully — no unshadowed safe binding,
+    a parameter name that is not a valid Python keyword argument (``from``,
+    ``user-id``), or a parameter surface the schema does not describe —
+    the shape falls back to ``await call_tool("canonical", {...})``, which
+    is valid for every capability on every backend.
     """
     from .registry import _is_safe_python_name
 
-    if _is_safe_python_name(capability.name):
+    binding = None
+    if _is_safe_python_name(capability.name) and capability.name not in reserved:
         binding = capability.name
     else:
-        safe_aliases = sorted(
-            alias for alias in capability.aliases if _is_safe_python_name(alias)
-        )
-        if not safe_aliases:
-            return None
-        binding = safe_aliases[0]
-    schema = capability.parameters if isinstance(capability.parameters, dict) else {}
-    properties = schema.get("properties") or {}
+        for alias in sorted(capability.aliases):
+            if _is_safe_python_name(alias) and alias not in reserved:
+                binding = alias
+                break
+
+    schema = (
+        capability.parameters if isinstance(capability.parameters, dict) else None
+    )
+    properties = schema.get("properties") if schema is not None else None
+    if not isinstance(properties, dict):
+        # schema does not describe the parameters — advertising `await x()`
+        # would affirmatively claim zero arguments
+        return f'await call_tool("{capability.name}", {{...}})'
     required = set(schema.get("required", []))
-    args = [
-        f"{name}=<{_schema_type(field)}>{'' if name in required else '?'}"
-        for name, field in properties.items()
-    ]
-    # required first, so a truncated read still sees the mandatory part
-    args.sort(key=lambda a: a.endswith("?"))
+
+    def _sorted(items: list[str]) -> list[str]:
+        # required first, so a truncated read still sees the mandatory part
+        return sorted(items, key=lambda item: item.endswith("?"))
+
+    kwargs_ok = binding is not None and all(
+        name.isidentifier() and not keyword.iskeyword(name) for name in properties
+    )
+    if not kwargs_ok:
+        pairs = _sorted(
+            [
+                f'"{name}": <{_schema_type(field)}>'
+                f"{'' if name in required else '?'}"
+                for name, field in properties.items()
+            ]
+        )
+        return f'await call_tool("{capability.name}", {{{", ".join(pairs)}}})'
+    args = _sorted(
+        [
+            f"{name}=<{_schema_type(field)}>{'' if name in required else '?'}"
+            for name, field in properties.items()
+        ]
+    )
     return f"await {binding}({', '.join(args)})"
 
 
