@@ -37,11 +37,25 @@ see the docs piece for the usage-data arithmetic).
 Correctness is validated programmatically against the shared dataset —
 a cheap wrong answer counts as a loss, not a win.
 
+## The M axis (server count)
+
+`--servers 1,5,15` adds distractor MCP servers to BOTH arms — registered
+directly in arm A, behind the facade in arm B. `distractor_server.py`
+ships 7 realistic-but-irrelevant profiles (crm, calendar, tickets, wiki,
+payments, analytics, files; ~0.6–1k tokens of tool definitions each by a
+chars/4 estimate over the tool-list JSON);
+M=15 wraps the profiles into a second `-eu` workspace. Every distractor
+tool returns an inert empty result, so a run that strays is visible in
+the recorded tool names rather than corrupted. M counts total configured
+servers including `orders`. Finding (2026-07-09): Claude Code's deferred
+tool loading neutralizes most of the M axis — see the docs piece.
+
 ## Run it
 
 ```bash
 uv run python bench/run.py --reps 3            # full matrix, 24 paid runs
 uv run python bench/run.py --reps 1 --tasks single   # cheap smoke
+uv run python bench/run.py --reps 3 --tasks loop,single --servers 1,5,15   # M-axis, 36 paid runs
 ```
 
 Requires the `claude` CLI on PATH and an authenticated session. Results
