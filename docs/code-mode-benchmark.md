@@ -75,6 +75,75 @@ Definitions, precisely:
 | direct | 3/3 | 103 | 7569 (6890–7580) | $0.33 (0.32–0.33) | 53.6s (51.2–55.4) |
 | toolplane | 3/3 | **11** (10–14) | **1760** (1700–3330) | **$0.28** (0.26–0.33) | **36.6s** (36.1–52.6) |
 
+## The M axis: does server count change the picture? (2026-07-09 follow-up)
+
+The tables above froze M=1 configured server with 2 tools — toolplane's
+worst case, since the facade's fixed overhead buys nothing when there is
+almost nothing to aggregate. The folklore predicts that at realistic server
+counts (5–15 servers, dozens of tools), direct registration drowns in tool
+definitions and code mode wins everywhere. We tested it: same tasks, same
+arms (Claude Code 2.1.205 this time; the fresh M=1 baseline matches the
+2.1.204 tables above, so no client drift), adding 4 or 14 distractor
+servers (realistic-but-irrelevant CRM /
+calendar / tickets / wiki / payments / analytics / files surfaces,
+~430–700 tokens of definitions each, 41 distractor tools at M=15) to
+**both** arms — registered directly in arm A, behind the facade in arm B.
+36 fresh runs, 36/36 correct, medians of 3:
+
+**Aggregate over 30 records** (the task where M should matter most):
+
+| M | direct cost | toolplane cost | direct wall | toolplane wall |
+|---|---|---|---|---|
+| 1 | **$0.20** (0.194–0.208) | $0.22 (0.214–0.255) | 29.9s | 31.3s |
+| 5 | $0.20 (0.198–0.200) | **$0.18** (0.174–0.237) | 27.4s | 27.3s |
+| 15 | $0.23 (0.205–0.232) | $0.23 (0.227–0.250) | 31.0s | 34.7s |
+
+**Single lookup**: direct stays flat and dominant at every M
+($0.13–0.14 vs $0.25–0.27); the discovery tax never amortizes over one
+call, no matter how many servers are configured.
+
+The folklore got a second mechanism wrong. **Claude Code's deferred tool
+loading neutralized the M axis before code mode could exploit it**: every
+direct run at every M made exactly one ToolSearch call and loaded only the
+orders tools — the 41 distractor definitions never entered context. We
+verified the mechanism with a raw-transcript probe rather than inferring
+it from the call counts: at M=15 the session init event lists zero
+`mcp__` tools (all deferred), and the agent's first action is
+`ToolSearch("order status")` followed directly by the loaded
+`get_order`. The
+residual is ~300–400 uncached tokens per added server (deferred-tool
+stubs), i.e. ~+12% cost from M=1 to M=15 on the loop task, not the 2–3x
+the raw definition sizes would predict. This is the same story as the
+round-trip folklore above: a mechanism argument for code mode that modern
+clients have already engineered away — here via exactly the
+"platform-native deferred loading" cluster from
+[the landscape survey](code-mode-landscape.md).
+
+Three honest observations from the same data:
+
+- **The crossover does still shift toolplane's way, mildly.** At N=30 the
+  M=1 verdict was "direct ~20% cheaper"; at M=5 toolplane wins on median
+  cost and ties on wall; at M=15 it's a dead heat. Direction favors code
+  mode as M grows, magnitude is small at n=3 noise levels.
+- **Toolplane pays its own M tax.** The facade's namespace manifest lists
+  *every* capability, so its `ReadMcpResource` turn grows ~160–290
+  tokens/server — at M=15 that cancels most of direct's residual growth.
+  A filterable or paginated manifest is now a measured design input for
+  [#106](https://github.com/oneryalcin/toolplane/issues/106).
+- **No selection-accuracy degradation either arm**: 36/36 correct, and no
+  run in either arm ever invoked a distractor tool. At 43 tools, with
+  deferred loading, the "too many tools confuses the model" failure mode
+  did not appear. (Anthropic's published accuracy gains from Tool Search
+  were measured at much larger surfaces, without deferral as baseline.)
+
+Caveats: distractor definitions are lean (~550 tokens/server; a GitHub-
+scale server ships ~50k) — but since definitions are deferred, definition
+*weight* mostly stops mattering; what scales is the stub list. Deferred
+loading was default-on in this client version (2.1.205, headless) — a
+client without it, or with it disabled, should reproduce the folklore
+scenario, which we did not measure. Same n=3, same machine, same day
+caveats as above. Raw data: `bench/results/run-20260709-114215.json`.
+
 ## What actually happened (read the usage data, not the folklore)
 
 The naive reading of the N=100 table is "103 round-trips vs 11." The
