@@ -116,6 +116,8 @@ _PROFILES = ("crm", "calendar", "tickets", "wiki", "payments", "analytics", "fil
 
 def distractors(m_servers: int) -> list[tuple[str, str]]:
     """(server_name, profile) pairs for M total servers (orders included)."""
+    if m_servers < 1:
+        raise ValueError("m_servers counts total servers including orders; min is 1")
     if m_servers - 1 > 2 * len(_PROFILES):
         raise ValueError(f"max servers is {2 * len(_PROFILES) + 1}")
     out = []
@@ -230,7 +232,7 @@ def run_case(
             "model": None,
             "correct": False,
             "answer": None,
-            "tool_calls": 0,
+            "tool_calls": None,
             "tool_call_names": [],
             "num_turns": None,
             "input_tokens": 0,

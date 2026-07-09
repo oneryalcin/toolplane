@@ -83,11 +83,14 @@ almost nothing to aggregate. The folklore predicts that at realistic server
 counts (5–15 servers, dozens of tools), direct registration drowns in tool
 definitions and code mode wins everywhere. We tested it: same tasks, same
 arms (Claude Code 2.1.205 this time; the fresh M=1 baseline matches the
-2.1.204 tables above, so no client drift), adding 4 or 14 distractor
-servers (realistic-but-irrelevant CRM /
-calendar / tickets / wiki / payments / analytics / files surfaces,
-~430–700 tokens of definitions each, 41 distractor tools at M=15) to
-**both** arms — registered directly in arm A, behind the facade in arm B.
+2.1.204 tables above on cost and token counts, but wall times ran 30–40%
+slower across the board with non-overlapping ranges — treat cross-version
+latency comparisons as unsupported; every M comparison below is same-day,
+same-version), adding 4 or 14 distractor servers (realistic-but-irrelevant
+CRM / calendar / tickets / wiki / payments / analytics / files surfaces,
+~0.6–1k tokens of definitions each by a chars/4 estimate over the
+tool-list JSON; 82 distractor tools at M=15, since the 7 profiles register
+twice as separate workspaces) to **both** arms — registered directly in arm A, behind the facade in arm B.
 36 fresh runs, 36/36 correct, medians of 3:
 
 **Aggregate over 30 records** (the task where M should matter most):
@@ -105,15 +108,24 @@ call, no matter how many servers are configured.
 The folklore got a second mechanism wrong. **Claude Code's deferred tool
 loading neutralized the M axis before code mode could exploit it**: every
 direct run at every M made exactly one ToolSearch call and loaded only the
-orders tools — the 41 distractor definitions never entered context. We
+orders tools — the 82 distractor definitions never entered context. We
 verified the mechanism with a raw-transcript probe rather than inferring
 it from the call counts: at M=15 the session init event lists zero
 `mcp__` tools (all deferred), and the agent's first action is
 `ToolSearch("order status")` followed directly by the loaded
-`get_order`. The
-residual is ~300–400 uncached tokens per added server (deferred-tool
-stubs), i.e. ~+12% cost from M=1 to M=15 on the loop task, not the 2–3x
-the raw definition sizes would predict. This is the same story as the
+`get_order`. The probe transcript is committed
+(`bench/results/probe-m15-direct-single.jsonl`; client-environment
+fields redacted from the init event, tool inventory untouched).
+
+The residual is smaller than the summary table suggests. Two of three
+M=15 direct runs took an extra Bash turn (~2.5k uncached tokens each) and
+the median pairs those against Bash-free M=1 runs — a behavioral
+covariate, not an M mechanism. Like-for-like (Bash-free runs only),
+direct grows **~185 uncached tokens per added server, +3% cost from M=1
+to M=15** on the loop task; the table's median-vs-median reading (~360
+tokens/server, +12%) is the upper bound with the covariate left in. Either
+way it is a fraction of the ~11k tokens the raw definitions would have
+added at M=15 had they actually ridden in context. This is the same story as the
 round-trip folklore above: a mechanism argument for code mode that modern
 clients have already engineered away — here via exactly the
 "platform-native deferred loading" cluster from
@@ -121,24 +133,42 @@ clients have already engineered away — here via exactly the
 
 Three honest observations from the same data:
 
-- **The crossover does still shift toolplane's way, mildly.** At N=30 the
-  M=1 verdict was "direct ~20% cheaper"; at M=5 toolplane wins on median
-  cost and ties on wall; at M=15 it's a dead heat. Direction favors code
-  mode as M grows, magnitude is small at n=3 noise levels.
-- **Toolplane pays its own M tax.** The facade's namespace manifest lists
-  *every* capability, so its `ReadMcpResource` turn grows ~160–290
-  tokens/server — at M=15 that cancels most of direct's residual growth.
-  A filterable or paginated manifest is now a measured design input for
-  [#106](https://github.com/oneryalcin/toolplane/issues/106).
+- **No reliable M-trend in the crossover at n=3.** Direct-minus-toolplane
+  cost at N=30 is non-monotone across M=1/5/15 (−$0.02, +$0.02, −$0.00),
+  and toolplane's cost tracks its own discovery-turn count far more
+  tightly than it tracks M (5 facade calls → ~$0.17, 10 → ~$0.26,
+  regardless of M). The M=5 "win" in the table is two low-turn runs, and
+  the M=15 "dead heat" is cost-only — direct still wins wall there (31.0s
+  vs 34.7s). The honest statement: at N=30, adding servers does not
+  rescue code mode, because deferral means there is little to rescue it
+  from.
+- **Toolplane's context also grows with M — attribution pending.** Its
+  arm-level uncached-input slopes are ~160–290 tokens/server (loop,
+  single), though the loop M=1→5 slope is negative, so noise is
+  comparable to signal. The namespace manifest — which lists *every*
+  capability and is read once per run — is the prime suspect, and at M=15
+  this growth offsets roughly 40% of direct's own residual. But the
+  committed data cannot isolate the manifest turn
+  ([#104](https://github.com/oneryalcin/toolplane/issues/104)); treat the
+  filterable-manifest idea in
+  [#106](https://github.com/oneryalcin/toolplane/issues/106) as a
+  hypothesis with a suspect, not a measured verdict.
 - **No selection-accuracy degradation either arm**: 36/36 correct, and no
-  run in either arm ever invoked a distractor tool. At 43 tools, with
+  run in either arm ever invoked a distractor tool. At 84 tools, with
   deferred loading, the "too many tools confuses the model" failure mode
-  did not appear. (Anthropic's published accuracy gains from Tool Search
-  were measured at much larger surfaces, without deferral as baseline.)
+  did not appear — with the caveat that our distractors are semantically
+  distant from the task (CRM/calendar/wiki vs orders); near-miss
+  distractors (an `invoices` or `orders-legacy` server) are the harder
+  test and unmeasured. (Anthropic's published accuracy gains from Tool
+  Search were measured at much larger surfaces, without deferral as
+  baseline.)
 
-Caveats: distractor definitions are lean (~550 tokens/server; a GitHub-
+Caveats: distractor definitions are lean (~0.8k tokens/server; a GitHub-
 scale server ships ~50k) — but since definitions are deferred, definition
-*weight* mostly stops mattering; what scales is the stub list. Deferred
+*weight* mostly stops mattering; what scales is the stub list. This
+matrix ran only `loop` (N=30) and `single`: `loop100`, the task toolplane
+wins at M=1, was left out for cost, so whether M widens the N=100 win is
+unmeasured. Deferred
 loading was default-on in this client version (2.1.205, headless) — a
 client without it, or with it disabled, should reproduce the folklore
 scenario, which we did not measure. Same n=3, same machine, same day

@@ -51,3 +51,26 @@ def test_filter_requires_exact_integer() -> None:
     assert _check_filter("5", 30)
     assert not _check_filter("4", 30)
     assert not _check_filter("five", 30)
+
+
+def test_distractors_rejects_zero_and_negative_m() -> None:
+    # a silently-empty distractor list would record rows labelled M=0
+    # against a config that actually ran one server
+    import pytest
+
+    from run import distractors
+
+    for bad in (0, -3):
+        with pytest.raises(ValueError):
+            distractors(bad)
+
+
+def test_distractors_boundary_counts() -> None:
+    from run import distractors
+
+    assert distractors(1) == []
+    assert len(distractors(15)) == 14
+    import pytest
+
+    with pytest.raises(ValueError):
+        distractors(16)

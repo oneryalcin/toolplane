@@ -42,7 +42,8 @@ a cheap wrong answer counts as a loss, not a win.
 `--servers 1,5,15` adds distractor MCP servers to BOTH arms — registered
 directly in arm A, behind the facade in arm B. `distractor_server.py`
 ships 7 realistic-but-irrelevant profiles (crm, calendar, tickets, wiki,
-payments, analytics, files; ~430–700 tokens of tool definitions each);
+payments, analytics, files; ~0.6–1k tokens of tool definitions each by a
+chars/4 estimate over the tool-list JSON);
 M=15 wraps the profiles into a second `-eu` workspace. Every distractor
 tool returns an inert empty result, so a run that strays is visible in
 the recorded tool names rather than corrupted. M counts total configured
