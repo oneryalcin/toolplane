@@ -240,7 +240,49 @@ class Toolplane:
                 "them all, or read the toolplane://namespace resource "
                 "for the full execution namespace."
             )
-        return render_capabilities(capabilities, detail=detail)
+        rendered = render_capabilities(capabilities, detail=detail)
+        if detail == "full":
+            return rendered
+        return f"{rendered}\n\n{self._search_footer()}"
+
+    def _search_footer(self) -> str:
+        """Snippet rules appended to every search result.
+
+        The benchmark's transcript anatomy (#106) showed agents spending
+        3-5 sequential turns collecting exactly this before their first
+        snippet; carrying it with the hits makes one search turn
+        sufficient for straightforward tasks.
+        """
+        lines = [
+            "Rules for execute_code snippets: every binding is async — "
+            "always `await`; pass arguments as keywords exactly as shown "
+            "(positional calls fail on the default backend); `return` a "
+            "JSON-shaped value."
+        ]
+        extras = []
+        if self.ambient_cli:
+            if self.cli_policy.restricted:
+                names = ", ".join(self._get_ambient_cli_names())
+                extras.append(
+                    f"CLI bindings for: {names} — e.g. "
+                    "`await git('log', oneline=True)`"
+                )
+            else:
+                extras.append("CLI bindings for binaries on PATH")
+        if self.result_store.enabled:
+            extras.append("`save_result`/`load_result`")
+        if extras:
+            lines.append(
+                "The namespace also binds surfaces search does not list: "
+                + "; ".join(extras)
+                + "."
+            )
+        lines.append(
+            "Details only when needed: toolplane://namespace (full "
+            "manifest) and skill://driving-toolplane/SKILL.md "
+            "(conventions)."
+        )
+        return "\n".join(lines)
 
     async def list_tools(self, *, detail: DetailLevel = "brief") -> str:
         return render_capabilities(self.registry.all(), detail=detail)

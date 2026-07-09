@@ -46,18 +46,61 @@ _MISSING_HINT = (
 
 
 def _render_brief(capability: Capability) -> str:
-    desc = f": {capability.description}" if capability.description else ""
-    return f"- {capability.name}{desc}"
+    desc = f" — {capability.description}" if capability.description else ""
+    shape = call_shape(capability)
+    if shape is None:
+        desc = f": {capability.description}" if capability.description else ""
+        return f"- {capability.name}{desc}"
+    return f"- `{shape}`{desc} [{capability.name}]"
 
 
 def _render_detailed(capability: Capability) -> str:
     lines = [f"### {capability.name}"]
     if capability.description:
         lines.extend(["", capability.description])
+    shape = call_shape(capability)
+    if shape is not None:
+        lines.extend(["", f"**Call**: `{shape}`"])
     lines.extend(["", *_schema_section(capability.parameters, "Parameters")])
     if capability.returns is not None:
         lines.extend(["", *_schema_section(capability.returns, "Returns")])
     return "\n".join(lines)
+
+
+def call_shape(capability: Capability) -> str | None:
+    """The exact awaitable Python call for a capability's flat binding.
+
+    This is what lets one search turn replace the
+    search -> get_capability_schemas -> namespace-manifest ceremony for
+    straightforward tasks: the binding name and the keyword arguments (the
+    two things an agent otherwise reads two more surfaces for) travel with
+    every hit. Keywords only — positional calls fail on the monty backend.
+
+    Binding resolution mirrors registry.callable_namespace: the capability
+    name itself when it is a safe identifier, else the first safe alias —
+    a shape rendered here must actually resolve in the sandbox.
+    """
+    from .registry import _is_safe_python_name
+
+    if _is_safe_python_name(capability.name):
+        binding = capability.name
+    else:
+        safe_aliases = sorted(
+            alias for alias in capability.aliases if _is_safe_python_name(alias)
+        )
+        if not safe_aliases:
+            return None
+        binding = safe_aliases[0]
+    schema = capability.parameters if isinstance(capability.parameters, dict) else {}
+    properties = schema.get("properties") or {}
+    required = set(schema.get("required", []))
+    args = [
+        f"{name}=<{_schema_type(field)}>{'' if name in required else '?'}"
+        for name, field in properties.items()
+    ]
+    # required first, so a truncated read still sees the mandatory part
+    args.sort(key=lambda a: a.endswith("?"))
+    return f"await {binding}({', '.join(args)})"
 
 
 def _schema_section(schema: dict[str, Any] | None, title: str) -> list[str]:

@@ -321,7 +321,11 @@ def test_mcp_facade_search_schema_execute_flow() -> None:
 
     result = run(exercise())
 
-    assert "- add: Add two numbers." in result["search"]
+    assert (
+        "- `await add(x=<integer>, y=<integer>)` — Add two numbers. [add]"
+        in result["search"]
+    )
+    assert "**Call**: `await add(x=<integer>, y=<integer>)`" in result["schema"]
     assert "### add" in result["schema"]
     assert result["execution"]["value"] == 5
     assert result["execution"]["backend"] == "local_unsafe"

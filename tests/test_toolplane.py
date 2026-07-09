@@ -29,7 +29,12 @@ def test_register_search_and_get_schema() -> None:
         return x + y
 
     search = run(runtime.search("add numbers"))
-    assert "- add: Add two numbers." in search
+    # one search turn must carry the executable call shape (kwargs only),
+    # the canonical name for schema escalation, and the snippet rules —
+    # this is the #106 short path
+    assert "- `await add(x=<integer>, y=<integer>)` — Add two numbers. [add]" in search
+    assert "every binding is async" in search
+    assert "toolplane://namespace" in search
 
     schema = run(runtime.get_schema(["add"]))
     assert "### add" in schema
@@ -334,3 +339,51 @@ def test_manifest_hides_scoped_sugar_the_default_backend_cannot_bind() -> None:
     local_default = Toolplane(default_backend="local_unsafe", ambient_cli=False)
     local_default.register_python_namespace("helper", {"ask": ask})
     assert "`await helper.ask(...)`" in local_default.describe_namespace()
+
+
+def test_call_shape_orders_required_first_and_marks_optional() -> None:
+    from toolplane.capabilities import Capability
+    from toolplane.discovery import call_shape
+
+    capability = Capability(
+        name="mcp:crm/search_contacts",
+        callable=lambda: None,
+        description="Search contacts.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer"},
+                "query": {"type": "string"},
+            },
+            "required": ["query"],
+        },
+        returns=None,
+        tags=frozenset(),
+        source="mcp:crm",
+        aliases=frozenset({"crm_search_contacts"}),
+    )
+    # a truncated read must still see the mandatory part; optionals carry ?
+    assert call_shape(capability) == (
+        "await crm_search_contacts(query=<string>, limit=<integer>?)"
+    )
+
+
+def test_call_shape_falls_back_to_none_without_safe_binding() -> None:
+    from toolplane.capabilities import Capability
+    from toolplane.discovery import call_shape, render_capabilities
+
+    capability = Capability(
+        name="mcp:x/1weird-name",
+        callable=lambda: None,
+        description="No safe binding.",
+        parameters={"type": "object", "properties": {}},
+        returns=None,
+        tags=frozenset(),
+        source="mcp:x",
+        aliases=frozenset({"class"}),  # keyword: unsafe as identifier
+    )
+    assert call_shape(capability) is None
+    # brief rendering must not advertise an unresolvable call
+    assert render_capabilities([capability]) == (
+        "- mcp:x/1weird-name: No safe binding."
+    )

@@ -69,15 +69,14 @@ def build_mcp_facade(
     mcp = FastMCP(
         "Toolplane",
         instructions=(
-            "Discover capabilities with search_capabilities (an empty query "
-            "lists everything), inspect schemas with get_capability_schemas, "
-            "then execute Python with execute_code. The execution namespace "
-            "also has surfaces that are not registry capabilities: flat CLI "
-            "bindings for allowed binaries and save_result/load_result for "
-            "passing JSON-shaped data between runs. Read the "
-            "toolplane://namespace resource for the full namespace with "
-            "call shapes, and the skill://driving-toolplane/SKILL.md "
-            "resource for snippet conventions and usage guidance."
+            "One search_capabilities call (an empty query lists everything) "
+            "returns each hit's exact Python call shape plus the snippet "
+            "rules — for straightforward tasks, go straight from one search "
+            "to execute_code. Escalate only when that is not enough: "
+            "get_capability_schemas for full parameter docs, the "
+            "toolplane://namespace resource for the complete namespace "
+            "(CLI bindings, result store), and "
+            "skill://driving-toolplane/SKILL.md for conventions in depth."
         ),
     )
 
@@ -143,12 +142,13 @@ def build_mcp_facade(
     ) -> str:
         """Search the Toolplane capability registry by keyword.
 
-        Matching is exact-word, not fuzzy: if nothing matches, retry with
-        different words, or pass an empty query to list every capability.
-        Before writing code with execute_code, read the
-        toolplane://namespace resource — it documents every binding in the
-        execution namespace with call shapes and gotchas, including
-        surfaces (CLI, result store) that this search does not cover.
+        Results carry each hit's exact Python call shape and the snippet
+        rules — for straightforward tasks, write execute_code directly
+        from one search. Matching is exact-word, not fuzzy: if nothing
+        matches, retry with different words, or pass an empty query to
+        list every capability. The namespace surfaces search does not
+        cover (CLI bindings, result store) are summarized in the result
+        footer and documented fully in the toolplane://namespace resource.
         """
         return await runtime.search(
             query,
@@ -180,12 +180,13 @@ def build_mcp_facade(
     ) -> dict[str, Any]:
         """Execute Python against the configured Toolplane namespace.
 
-        Read the toolplane://namespace resource BEFORE writing code — it
-        documents every binding with exact call shapes; guessing shapes
-        fails. The namespace binds capability functions, flat CLI
-        functions for allowed binaries, and save_result/load_result for
-        passing JSON-shaped data between runs. Every binding is async —
-        always `await` it.
+        Use the call shapes exactly as search_capabilities returned them —
+        guessed binding names or positional arguments fail. Every binding
+        is async — always `await` it — and the snippet should `return` a
+        JSON-shaped value. Beyond capability functions the namespace binds
+        flat CLI functions for allowed binaries and
+        save_result/load_result; the toolplane://namespace resource is the
+        full manifest when a shape is unclear.
         """
         if (
             policy is not None
