@@ -1,0 +1,320 @@
+[
+  {
+    "transcript": "loop-toolplane-m1-rep1.jsonl",
+    "tool_sequence": [
+      "Bash",
+      "ToolSearch",
+      "search_capabilities",
+      "ToolSearch",
+      "execute_code"
+    ],
+    "discovery_calls_before_first_execute": [
+      {
+        "name": "Bash",
+        "result_chars": 100
+      },
+      {
+        "name": "ToolSearch",
+        "result_chars": 0
+      },
+      {
+        "name": "search_capabilities",
+        "result_chars": 959
+      },
+      {
+        "name": "ToolSearch",
+        "result_chars": 0
+      }
+    ],
+    "executes": 1,
+    "failed_executes": 0,
+    "retries_after_error": 0,
+    "staged_after_success": 0,
+    "snippet_error_types": {},
+    "manifest_read_chars": [],
+    "search_result_chars": [
+      959
+    ],
+    "schema_result_chars": []
+  },
+  {
+    "transcript": "loop-toolplane-m1-rep2.jsonl",
+    "tool_sequence": [
+      "ToolSearch",
+      "search_capabilities",
+      "ToolSearch",
+      "execute_code"
+    ],
+    "discovery_calls_before_first_execute": [
+      {
+        "name": "ToolSearch",
+        "result_chars": 0
+      },
+      {
+        "name": "search_capabilities",
+        "result_chars": 959
+      },
+      {
+        "name": "ToolSearch",
+        "result_chars": 0
+      }
+    ],
+    "executes": 1,
+    "failed_executes": 0,
+    "retries_after_error": 0,
+    "staged_after_success": 0,
+    "snippet_error_types": {},
+    "manifest_read_chars": [],
+    "search_result_chars": [
+      959
+    ],
+    "schema_result_chars": []
+  },
+  {
+    "transcript": "loop-toolplane-m1-rep3.jsonl",
+    "tool_sequence": [
+      "Bash",
+      "Bash",
+      "ToolSearch",
+      "search_capabilities",
+      "execute_code",
+      "execute_code"
+    ],
+    "discovery_calls_before_first_execute": [
+      {
+        "name": "Bash",
+        "result_chars": 31
+      },
+      {
+        "name": "Bash",
+        "result_chars": 104
+      },
+      {
+        "name": "ToolSearch",
+        "result_chars": 0
+      },
+      {
+        "name": "search_capabilities",
+        "result_chars": 758
+      }
+    ],
+    "executes": 2,
+    "failed_executes": 0,
+    "retries_after_error": 0,
+    "staged_after_success": 1,
+    "snippet_error_types": {},
+    "manifest_read_chars": [],
+    "search_result_chars": [
+      758
+    ],
+    "schema_result_chars": []
+  },
+  {
+    "transcript": "loop100-toolplane-m1-rep1.jsonl",
+    "tool_sequence": [
+      "Bash",
+      "ToolSearch",
+      "search_capabilities",
+      "ToolSearch",
+      "execute_code"
+    ],
+    "discovery_calls_before_first_execute": [
+      {
+        "name": "Bash",
+        "result_chars": 102
+      },
+      {
+        "name": "ToolSearch",
+        "result_chars": 0
+      },
+      {
+        "name": "search_capabilities",
+        "result_chars": 959
+      },
+      {
+        "name": "ToolSearch",
+        "result_chars": 0
+      }
+    ],
+    "executes": 1,
+    "failed_executes": 0,
+    "retries_after_error": 0,
+    "staged_after_success": 0,
+    "snippet_error_types": {},
+    "manifest_read_chars": [],
+    "search_result_chars": [
+      959
+    ],
+    "schema_result_chars": []
+  },
+  {
+    "transcript": "loop100-toolplane-m1-rep2.jsonl",
+    "tool_sequence": [
+      "Bash",
+      "ToolSearch",
+      "search_capabilities",
+      "ToolSearch",
+      "execute_code"
+    ],
+    "discovery_calls_before_first_execute": [
+      {
+        "name": "Bash",
+        "result_chars": 102
+      },
+      {
+        "name": "ToolSearch",
+        "result_chars": 0
+      },
+      {
+        "name": "search_capabilities",
+        "result_chars": 959
+      },
+      {
+        "name": "ToolSearch",
+        "result_chars": 0
+      }
+    ],
+    "executes": 1,
+    "failed_executes": 0,
+    "retries_after_error": 0,
+    "staged_after_success": 0,
+    "snippet_error_types": {},
+    "manifest_read_chars": [],
+    "search_result_chars": [
+      959
+    ],
+    "schema_result_chars": []
+  },
+  {
+    "transcript": "loop100-toolplane-m1-rep3.jsonl",
+    "tool_sequence": [
+      "Bash",
+      "ToolSearch",
+      "search_capabilities",
+      "execute_code"
+    ],
+    "discovery_calls_before_first_execute": [
+      {
+        "name": "Bash",
+        "result_chars": 102
+      },
+      {
+        "name": "ToolSearch",
+        "result_chars": 0
+      },
+      {
+        "name": "search_capabilities",
+        "result_chars": 959
+      }
+    ],
+    "executes": 1,
+    "failed_executes": 0,
+    "retries_after_error": 0,
+    "staged_after_success": 0,
+    "snippet_error_types": {},
+    "manifest_read_chars": [],
+    "search_result_chars": [
+      959
+    ],
+    "schema_result_chars": []
+  },
+  {
+    "transcript": "single-toolplane-m1-rep1.jsonl",
+    "tool_sequence": [
+      "ToolSearch",
+      "ToolSearch",
+      "search_capabilities",
+      "execute_code"
+    ],
+    "discovery_calls_before_first_execute": [
+      {
+        "name": "ToolSearch",
+        "result_chars": 0
+      },
+      {
+        "name": "ToolSearch",
+        "result_chars": 0
+      },
+      {
+        "name": "search_capabilities",
+        "result_chars": 758
+      }
+    ],
+    "executes": 1,
+    "failed_executes": 0,
+    "retries_after_error": 0,
+    "staged_after_success": 0,
+    "snippet_error_types": {},
+    "manifest_read_chars": [],
+    "search_result_chars": [
+      758
+    ],
+    "schema_result_chars": []
+  },
+  {
+    "transcript": "single-toolplane-m1-rep2.jsonl",
+    "tool_sequence": [
+      "ToolSearch",
+      "ToolSearch",
+      "search_capabilities",
+      "execute_code"
+    ],
+    "discovery_calls_before_first_execute": [
+      {
+        "name": "ToolSearch",
+        "result_chars": 0
+      },
+      {
+        "name": "ToolSearch",
+        "result_chars": 0
+      },
+      {
+        "name": "search_capabilities",
+        "result_chars": 758
+      }
+    ],
+    "executes": 1,
+    "failed_executes": 0,
+    "retries_after_error": 0,
+    "staged_after_success": 0,
+    "snippet_error_types": {},
+    "manifest_read_chars": [],
+    "search_result_chars": [
+      758
+    ],
+    "schema_result_chars": []
+  },
+  {
+    "transcript": "single-toolplane-m1-rep3.jsonl",
+    "tool_sequence": [
+      "ToolSearch",
+      "ToolSearch",
+      "search_capabilities",
+      "execute_code"
+    ],
+    "discovery_calls_before_first_execute": [
+      {
+        "name": "ToolSearch",
+        "result_chars": 0
+      },
+      {
+        "name": "ToolSearch",
+        "result_chars": 0
+      },
+      {
+        "name": "search_capabilities",
+        "result_chars": 758
+      }
+    ],
+    "executes": 1,
+    "failed_executes": 0,
+    "retries_after_error": 0,
+    "staged_after_success": 0,
+    "snippet_error_types": {},
+    "manifest_read_chars": [],
+    "search_result_chars": [
+      758
+    ],
+    "schema_result_chars": []
+  }
+]

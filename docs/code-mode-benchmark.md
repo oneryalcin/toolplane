@@ -174,6 +174,69 @@ client without it, or with it disabled, should reproduce the folklore
 scenario, which we did not measure. Same n=3, same machine, same day
 caveats as above. Raw data: `bench/results/run-20260709-114215.json`.
 
+## Cutting the discovery tax (2026-07-09 follow-up, toolplane 0.4.0+)
+
+The envelope above identified toolplane's entire small-N disadvantage as
+a fixed discovery tax: 3–5 sequential model turns (search → schemas →
+namespace manifest, per the facade's own teaching) plus a median of one
+extra execute_code before the answer. Transcript-level instrumentation
+([#104](https://github.com/oneryalcin/toolplane/issues/104), now in the
+harness: per-run stream-json under `bench/results/transcripts/`, classified
+by `bench/classify.py`) showed why: the three things an agent needs before
+its first snippet — canonical name, parameters, Python binding name —
+each lived on a different discovery surface, and the extra executes were
+mostly *return-shape probes*: agents guessed that bindings return a
+wrapped envelope (`ids["result"]`, `o["value"]`), hit a TypeError, and
+burned a turn printing the type.
+
+The fix ([#106](https://github.com/oneryalcin/toolplane/issues/106)):
+`search_capabilities` results now carry each hit's exact awaitable call
+shape (`await orders_get_order(order_id=<string>)` — keywords only,
+required first, binding names resolved exactly as the sandbox binds them)
+plus a short footer with the snippet rules, the return-shape contract
+(values arrive plain, never enveloped), and the namespace surfaces search
+does not list. The facade instructions and skill teach search-first with
+escalation instead of the old four-read ceremony.
+
+Same harness, same tasks, 18 fresh runs (18/18 correct), medians of 3,
+against the published 0.4.0 numbers above:
+
+| task | toolplane 0.4.0 | toolplane after | direct (same day) |
+|---|---|---|---|
+| single | $0.26 · 10 turns · 21.7s | **$0.18 · 5 turns · 15.1s** | $0.14 · 3 turns · 9.1s |
+| loop (N=30) | $0.24 · ~10 turns · 26.8s | **$0.18 · 6 turns · 20.9s** | $0.20 · 33 turns · 30.4s |
+| loop100 | $0.28 · 11 turns · 36.6s | **$0.18 · 6 turns · 20.2s** | $0.33 · 104 turns · 57.3s |
+
+The direct arm is the control: its same-day medians reproduce the
+published tables to the cent ($0.14/$0.20/$0.33), so the toolplane-arm
+movement is the facade change, not client or day drift. What the
+committed transcripts show after the change: **zero namespace-manifest
+reads** (previously every run read the ~2.7k-char manifest), one
+`search_capabilities` call per run, median **1** execute_code with **zero
+failed snippets and zero retries** across all nine toolplane runs
+(previously median 2 executes; the pre-fix runs in the same-day
+mixed-facade transcripts still show the TypeError-probe pattern).
+
+What this does to the envelope: **the crossover moved from "between 30
+and 100 tool interactions" to below 30** — at N=30 toolplane now wins
+cost ($0.18 vs $0.20) and wall (20.9s vs 30.4s) outright, and at N=100 it
+is ~45% cheaper and ~2.8x faster. Single lookups still lose ($0.18 vs
+$0.14, 15.1s vs 9.1s): the floor is one search turn plus one execute turn
+against direct's ToolSearch-plus-call, and the facade schemas still ride
+in context. Where between 1 and 30 the crossover now sits is unmeasured.
+
+Honesty notes for this section: n=3 per cell, one day, client 2.1.205
+(cost-controlled by the direct arm as above; wall comparisons to the
+2.1.204 tables are not supported). A first same-day "before" matrix was
+accidentally contaminated — the facade change landed mid-run, so later
+reps were served the new code; it is committed as
+`run-20260709-220556-mixed-facade` (transcripts partition cleanly by a
+footer fingerprint) and excluded from every number above, with the
+published 0.4.0 tables serving as the before-side instead. The
+return-shape footer sentence was added *after* observing the TypeError
+probes in those mixed transcripts and before the clean 18-run matrix —
+one teaching iteration, disclosed.
+
 ## What actually happened (read the usage data, not the folklore)
 
 The naive reading of the N=100 table is "103 round-trips vs 11." The
@@ -220,6 +283,9 @@ Two measured points; nothing measured between them:
 task in today's Claude Code; we did not measure between those points.**
 Below it, plain MCP is the right tool — which is why toolplane serves
 both: any server behind the facade can also be registered directly.
+*(This paragraph describes toolplane 0.4.0 as shipped. The discovery-tax
+fix measured in "Cutting the discovery tax" below moved the crossover
+under 30.)*
 
 We resist extrapolating further. Slower (network-bound) tools cut both
 ways — direct pays per-call latency but parallelizes; monty snippets await
@@ -245,7 +311,10 @@ measured it. Those are hypotheses, labeled as such.
   in the worst N=100 run) plus one namespace-manifest read — a mix of
   deliberate staged execution and failed-snippet retries (the monty
   dialect tax) that transcripts will let us split. All of it is priced
-  into every toolplane number above.
+  into every toolplane number above. *(Since resolved: the harness now
+  persists transcripts and `bench/classify.py` splits the causes — the
+  dominant one was return-shape guessing, fixed and re-measured in
+  "Cutting the discovery tax" below.)*
 - **Fixed run order** (direct before toolplane, same 5-minute window)
   means reps are not independent: prompt-cache warmth from earlier runs is
   visible in the raw usage of later ones. Small at these sizes, but real.
