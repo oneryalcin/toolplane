@@ -57,6 +57,7 @@ nav:
       - Result Store Design: result-store-design.md
   - Research:
       - The Code-Mode Envelope, Measured: code-mode-benchmark.md
+      - Code Mode in the Wild (Survey): code-mode-landscape.md
       - MCP Client Capability Matrix: mcp-client-capability-matrix.md
       - Agents Don't Find Resources: agents-dont-find-resources.md
       - The Codex Elicitation Title Bug: codex-elicitation-title-bug.md

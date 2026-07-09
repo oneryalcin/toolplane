@@ -161,6 +161,42 @@ measured it. Those are hypotheses, labeled as such.
   products-as-shipped, and its token cost is priced into the toolplane
   column.
 
+## Prior work, and what is actually new here
+
+A full survey lives in [Code Mode in the Wild](code-mode-landscape.md);
+the short version, so this page's claims are positioned rather than
+implied:
+
+- **The pattern is not ours.** CodeAct (Wang et al., ICML 2024,
+  arXiv:2402.01030) established code-actions-beat-JSON-tool-calling (up to
+  20% higher success, ~30% fewer turns), and Anthropic, Cloudflare, Block
+  (goose), fastmcp, and others shipped production implementations through
+  2025–2026. Anthropic's Programmatic Tool Calling reports 37% token
+  reduction with flat accuracy; the AAIF/Port-of-Context case study is the
+  only production A/B we know of (100% vs 56% delivery, half the cost, one
+  workload).
+- **The measurement gap is what this page fills.** Every published number
+  we could find is a static context-size comparison (150K→2K, 1.17M→1K,
+  72K→8.7K) with no task-level cost or latency. CodeAct-lineage baselines
+  predate prompt caching and parallel tool batching — both standard in
+  production clients now, and both accounted for here. The nearest
+  academic neighbor (arXiv:2602.15945, Feb 2026) found qualitatively that
+  code execution's advantage grows with task complexity and can reverse
+  on complex orchestration; goose's team concedes single-tool tasks are
+  slower under code mode. Nobody publishes a numeric crossover.
+- **Three claims we believe are novel** (corrections welcome): the numeric
+  cost/latency crossover in a real client; the mechanism decomposition
+  under modern client economics (output-token scaling + context growth,
+  with the code-mode arm making MORE API round-trips and winning anyway);
+  and the discovery tax priced in model turns. The turn-cost of discovery
+  in particular is engineered around by every vendor (deferred loading,
+  same-response tool search) and measured by none.
+- **What prior work does better**: accuracy evaluation at scale
+  (Anthropic's MCP evals), production evidence (AAIF), tool retrieval at
+  thousand-tool scale (AnyTool, MCP-Zero), security analysis
+  (arXiv:2602.15945's attack catalog), and peer review — this page has
+  none. Treat our envelope as a first measurement in an unmeasured field.
+
 ## Reproduce it
 
 ```bash
