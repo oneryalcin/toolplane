@@ -28,11 +28,24 @@ see the docs piece for the usage-data arithmetic).
 
 ## Tasks (the envelope, not a slogan)
 
-- `loop` — aggregate all 30 orders into per-region totals. Round-trip-heavy;
-  the shape code-mode exists for.
+- `loop` / `loop100` — aggregate all orders into per-region totals.
+  Round-trip-heavy; the shape code-mode exists for.
+- `loop5` / `loop10` / `loop20` — the same task at small N; localizes the
+  crossover (#107 item 1).
 - `filter` — count EMEA orders over 500. Moderate.
 - `single` — one record lookup. The shape where code-mode's discovery
   overhead should LOSE; published anyway.
+- `chain` — follow a 4-hop follow-up thread where each order's prose note
+  names the next order AND a decoy; judgment per hop, so the loop cannot
+  be one snippet (#107 item 2, the shape prior work says code mode
+  loses — it does; see the docs piece).
+- `loop_lat100` — `loop` with 100ms per-call server latency
+  (`BENCH_TOOL_LATENCY_MS`, async so the fixture never serializes);
+  measures monty's sequential awaits, gates #109.
+
+The summary table annotates honesty mechanically: **†** where the two
+arms' per-rep ranges overlap (median gap inside the noise), and
+**cost/pass** = total spend / successful runs (TPS-Bench cost-of-pass).
 
 Correctness is validated programmatically against the shared dataset —
 a cheap wrong answer counts as a loss, not a win.

@@ -236,6 +236,7 @@ cleanly on wall (20.9s vs 30.4s, ranges disjoint), and at N=100 it is
 $0.14, 15.1s vs 9.1s): the floor is one search turn plus one execute turn
 against direct's ToolSearch-plus-call, and the facade schemas still ride
 in context. Where between 1 and 30 the crossover now sits is unmeasured.
+*(Since measured: ~20 — next section.)*
 
 Honesty notes for this section: n=3 per cell, one day, client 2.1.205
 (cost-controlled by the direct arm as above; wall comparisons to the
@@ -255,6 +256,64 @@ edits to the footer and call-shape rendering (a real-allowlist CLI
 example, scoping the rules to capability bindings, `call_tool` fallbacks
 for shapes that cannot render faithfully) landed *after* the measured
 runs — the committed transcripts record the exact text each run saw.
+
+## The envelope, completed: a crossover curve, an adversarial shape, and latency (2026-07-10)
+
+Three remaining #107 axes, measured with the same harness (30 fresh runs,
+30/30 correct, medians of 3, same client version 2.1.205 as the section
+above, adjacent day). The summary table now does two honesty checks
+mechanically: a **†** wherever the two arms' per-rep ranges overlap (the
+review finding that "wins" can hide inside noise, made automatic), and
+**cost-of-pass** (total spend / successful runs — a cheap wrong answer
+prices as a loss).
+
+**The crossover curve.** The two-point "somewhere between 30 and 100"
+from 0.4.0, then "below 30" after the discovery-tax fix, is now a curve:
+
+| records touched | 5 | 10 | 20 | 30 | 100 |
+|---|---|---|---|---|---|
+| direct | **$0.13** | **$0.14** | $0.18† | $0.20 | $0.33 |
+| toolplane | $0.18 | $0.17 | $0.18† | **$0.18** | **$0.18** |
+
+Toolplane is flat ~$0.18 at every N — including N=5, where the loop
+saves almost nothing and the price is pure facade overhead. Direct climbs
+linearly. **They meet at N≈20 (dead heat, ranges overlap); below ~10
+direct is clearly cheaper, above ~30 toolplane is.** The flat line is
+the product thesis in one row: with the discovery tax gone, code-mode
+cost is task-size-independent.
+
+**The adversarial shape (where prior work says code mode loses — it
+does).** The `chain` task follows a 4-hop follow-up thread where each
+order's prose note names the next order *and a decoy* (cancelled
+duplicate, unrelated reference), with template and mention-order varying
+per hop — each hop requires judgment, so the loop cannot be written as
+one snippet. Result: **direct wins, $0.17 vs $0.24 and 22.9s vs 27.9s,
+both arms 3/3 correct.** The committed transcripts show the mechanism
+exactly: every toolplane rep, deterministically, used 5 execute_code
+calls — one per hop, zero errors, all staged — the agent correctly
+refused to one-shot prose judgment and degraded into tool-calling with
+a heavier per-step envelope. This confirms arXiv:2602.15945's
+qualitative finding with a mechanism and a price (+41% cost): **on
+sequentially-adaptive tasks, code mode is direct tool calling with
+extra steps.** Caveat: our notes are template-generated; a
+template-aware agent could regex them and win in one snippet — ours
+never tried, in either arm.
+
+**The latency axis (the #109 gate).** Same loop task, 100ms of
+(server-parallel, verified) latency per tool call. Toolplane's wall
+went 20.9s → 23.6s — **median +2.7s, matching 30 sequential 100ms
+awaits almost exactly**: the microbenchmarked monty sequential-await
+behavior, now confirmed in vivo. Direct's wall *dropped* (30.4s →
+25.6s): its parallel batching absorbs 100ms/call below the day-noise
+floor. At N=30/100ms toolplane still wins wall despite the penalty;
+but the penalty is arithmetic (N × latency), so N=100 at 100ms would
+add ~10s and flip the wall verdict. That product of N × per-call
+latency is the measured terrain where
+[#109](https://github.com/oneryalcin/toolplane/issues/109)'s host-side
+parallel fan-out pays; cost is untouched either way (latency is
+wall-only). n=3 caveat: the toolplane ranges nearly touch (23.5 vs
+22.3), so treat +2.7s as the median estimate of an effect whose
+arithmetic checks out, not a tight measurement.
 
 ## What actually happened (read the usage data, not the folklore)
 
