@@ -236,7 +236,7 @@ cleanly on wall (20.9s vs 30.4s, ranges disjoint), and at N=100 it is
 $0.14, 15.1s vs 9.1s): the floor is one search turn plus one execute turn
 against direct's ToolSearch-plus-call, and the facade schemas still ride
 in context. Where between 1 and 30 the crossover now sits is unmeasured.
-*(Since measured: ~20 — next section.)*
+*(Since measured: parity in the 20–30 region — next section.)*
 
 Honesty notes for this section: n=3 per cell, one day, client 2.1.205
 (cost-controlled by the direct arm as above; wall comparisons to the
@@ -281,11 +281,13 @@ from 0.4.0, then "below 30" after the discovery-tax fix, is now a curve
 
 Toolplane is flat ~$0.18 at every N — including N=5, where the loop
 saves almost nothing and the price is pure facade overhead. Direct climbs
-linearly. **They meet at N≈20; below ~10 direct is clearly cheaper
-(ranges disjoint); at N=20 and N=30 the median favors toolplane's side
-but the per-rep ranges overlap; at N=100 toolplane wins with disjoint
-ranges.** The flat line is the product thesis in one row: with the
-discovery tax gone, code-mode cost is task-size-independent.
+linearly. **Below ~10 direct is clearly cheaper (ranges disjoint). The
+medians cross between 20 and 30 — at N=20 direct is still a hair ahead
+($0.1787 vs $0.1813 unrounded, wall too), at N=30 toolplane is — with
+per-rep ranges overlapping at both, so the region 20–30 is parity within
+this sample. At N=100 toolplane wins with disjoint ranges.** The flat
+line is the product thesis in one row: with the discovery tax gone,
+code-mode cost is task-size-independent.
 
 **The adversarial shape (where prior work says code mode loses — it
 does).** The `chain` task follows a 4-hop follow-up thread where each

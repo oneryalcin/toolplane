@@ -46,8 +46,10 @@ see the docs piece for the usage-data arithmetic).
   measures monty's sequential awaits, gates #109.
 
 The summary table annotates honesty mechanically: **†** where the two
-arms' per-rep ranges overlap (median gap inside the noise), and
-**cost/pass** = total spend / successful runs (TPS-Bench cost-of-pass).
+arms' observed per-rep ranges overlap (the median gap is unresolved at
+that rep count — an observation about the samples, not a noise verdict),
+and **cost/pass** = total spend / successful runs (TPS-Bench
+cost-of-pass; unknown-cost timeouts render n/a).
 
 Correctness is validated programmatically against the shared dataset —
 a cheap wrong answer counts as a loss, not a win.
