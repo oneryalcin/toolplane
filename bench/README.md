@@ -62,6 +62,23 @@ Requires the `claude` CLI on PATH and an authenticated session. Results
 land in `bench/results/run-<stamp>.json`; the summary table prints at the
 end (medians across reps).
 
+## Transcripts and classification (#104)
+
+Every run's full stream-json transcript is persisted under
+`bench/results/transcripts/run-<stamp>/`. Redaction covers the
+init-event client-environment fields (plugins, commands, memory paths)
+only — tool inputs and outputs are verbatim by design (they are the
+evidence), so transcripts can contain local paths and usernames from
+commands the agent chose to run. `bench/classify.py <transcripts-dir>`
+splits extra
+`execute_code` calls into retries-after-error vs staged-after-success
+(snippet failures are *successful* MCP calls carrying a non-null
+`ExecutionResult.error`), extracts the snippet error taxonomy, and
+measures the discovery anatomy — calls before the first execute and
+per-surface result sizes. Its output (`classified.json`) is what turned
+"median 2 executes" folklore into "return-shape probes" and gated the
+#106 fix.
+
 ## Metrics
 
 Per run: correctness, tool-call count (from `stream-json` tool_use events),

@@ -11,21 +11,26 @@ capability. You write small Python snippets against a curated namespace.
 
 ## The flow
 
-1. **Read `toolplane://namespace` first.** It is the live manifest of every
-   binding in the execution namespace — capability functions, CLI bindings
-   with the current allowlist, result store — with exact call shapes. It is
-   generated from runtime state, so it never lies about this server's
-   configuration.
-2. `search_capabilities(query)` — matching is exact-word, not fuzzy or
-   semantic. If nothing matches, try different words; an **empty query lists
-   every capability**. The CLI and result-store surfaces are not registry
-   capabilities: they appear in the manifest, not in search results.
-3. `get_capability_schemas(names)` — names must be canonical, exactly as
-   search returns them (`mcp:<server>/<tool>`, `toolplane:<area>/<op>`).
-   Guessed or abbreviated names will not resolve.
-4. `execute_code(code)` — the snippet body runs inside an async function:
+1. **`search_capabilities(query)` first.** Each hit carries its exact
+   Python call shape (`await orders_get_order(order_id=<string>)`) and
+   the result footer carries the snippet rules — for straightforward
+   tasks, one search is all the discovery you need before
+   `execute_code`. Matching is exact-word, not fuzzy or semantic. If
+   nothing matches, try different words; an **empty query lists every
+   capability**.
+2. `execute_code(code)` — the snippet body runs inside an async function:
    `return` works at the top level, and every Toolplane binding is a
-   coroutine.
+   coroutine. Use the call shapes verbatim: keyword arguments only.
+3. Escalate when search is not enough: `get_capability_schemas(names)`
+   gives full parameter docs. Names must be canonical, exactly as search
+   returns them in `[...]` brackets (`mcp:<server>/<tool>`,
+   `toolplane:<area>/<op>`) — guessed or abbreviated names will not
+   resolve.
+4. `toolplane://namespace` is the live manifest of every binding —
+   capability functions, CLI bindings with the current allowlist, result
+   store. It is generated from runtime state, so it never lies about this
+   server's configuration; read it for the surfaces search does not list
+   (CLI, result store) or when a call shape is unclear.
 
 ## Snippet conventions
 

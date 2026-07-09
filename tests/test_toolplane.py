@@ -29,7 +29,12 @@ def test_register_search_and_get_schema() -> None:
         return x + y
 
     search = run(runtime.search("add numbers"))
-    assert "- add: Add two numbers." in search
+    # one search turn must carry the executable call shape (kwargs only),
+    # the canonical name for schema escalation, and the snippet rules —
+    # this is the #106 short path
+    assert "- `await add(x=<integer>, y=<integer>)` — Add two numbers. [add]" in search
+    assert "every binding is async" in search
+    assert "toolplane://namespace" in search
 
     schema = run(runtime.get_schema(["add"]))
     assert "### add" in schema
@@ -334,3 +339,137 @@ def test_manifest_hides_scoped_sugar_the_default_backend_cannot_bind() -> None:
     local_default = Toolplane(default_backend="local_unsafe", ambient_cli=False)
     local_default.register_python_namespace("helper", {"ask": ask})
     assert "`await helper.ask(...)`" in local_default.describe_namespace()
+
+
+def test_call_shape_orders_required_first_and_marks_optional() -> None:
+    from toolplane.capabilities import Capability
+    from toolplane.discovery import call_shape
+
+    capability = Capability(
+        name="mcp:crm/search_contacts",
+        callable=lambda: None,
+        description="Search contacts.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer"},
+                "query": {"type": "string"},
+            },
+            "required": ["query"],
+        },
+        returns=None,
+        tags=frozenset(),
+        source="mcp:crm",
+        aliases=frozenset({"crm_search_contacts"}),
+    )
+    # a truncated read must still see the mandatory part; optionals carry ?
+    assert call_shape(capability) == (
+        "await crm_search_contacts(query=<string>, limit=<integer>?)"
+    )
+
+
+def test_call_shape_falls_back_to_call_tool_without_safe_binding() -> None:
+    # registry validation makes registered aliases always safe; this state
+    # is defensive — but the fallback must still be an executable shape
+    from toolplane.capabilities import Capability
+    from toolplane.discovery import call_shape, render_capabilities
+
+    capability = Capability(
+        name="mcp:x/1weird-name",
+        callable=lambda: None,
+        description="No safe binding.",
+        parameters={"type": "object", "properties": {}},
+        returns=None,
+        tags=frozenset(),
+        source="mcp:x",
+        aliases=frozenset({"class"}),  # keyword: unsafe as identifier
+    )
+    # call_tool is bound on every backend; canonical names always resolve
+    assert call_shape(capability) == 'await call_tool("mcp:x/1weird-name", {})'
+    assert render_capabilities([capability]) == (
+        '- `await call_tool("mcp:x/1weird-name", {})` — No safe binding. '
+        "[mcp:x/1weird-name]"
+    )
+
+
+def _capability(name, properties, required=(), aliases=(), parameters_override=None):
+    from toolplane.capabilities import Capability
+
+    parameters = (
+        parameters_override
+        if parameters_override is not None
+        else {"type": "object", "properties": properties, "required": list(required)}
+    )
+    return Capability(
+        name=name,
+        callable=lambda: None,
+        description="d",
+        parameters=parameters,
+        returns=None,
+        tags=frozenset(),
+        source="mcp:x",
+        aliases=frozenset(aliases),
+    )
+
+
+def test_call_shape_keyword_and_hyphen_params_render_call_tool_form() -> None:
+    # `from=` / `user-id=` are SyntaxError as Python keywords; a shape the
+    # facade tells agents to use verbatim must stay executable (PR #111
+    # review, both Codex passes)
+    from toolplane.discovery import call_shape
+
+    capability = _capability(
+        "mcp:mail/send",
+        {
+            "from": {"type": "string"},
+            "user-id": {"type": "integer"},
+            "to": {"type": "string"},
+        },
+        required=["from", "to"],
+        aliases=["mail_send"],
+    )
+    shape = call_shape(capability)
+    assert shape == (
+        'await call_tool("mcp:mail/send", '
+        '{"from": <string>, "to": <string>, "user-id": <integer>?})'
+    )
+
+
+def test_call_shape_schema_without_properties_never_claims_zero_args() -> None:
+    from toolplane.discovery import call_shape
+
+    capability = _capability(
+        "mcp:x/opaque", {}, parameters_override={"type": "object"}
+    )
+    assert call_shape(capability) == 'await call_tool("mcp:x/opaque", {...})'
+
+
+def test_call_shape_reserved_binding_not_advertised() -> None:
+    # a sessioned monty backend installs reset_session before capabilities
+    # bind: executing the flat name resets the session instead of calling
+    # the capability (PR #111 adversarial review) — advertise call_tool
+    from toolplane.discovery import call_shape
+
+    capability = _capability("reset_session", {}, aliases=[])
+    assert call_shape(
+        capability, reserved=frozenset({"reset_session"})
+    ) == 'await call_tool("reset_session", {})'
+    # without the reservation the flat form is correct
+    assert call_shape(capability) == "await reset_session()"
+
+
+def test_sessioned_runtime_reserves_reset_session_in_search() -> None:
+    from toolplane.runtime import Toolplane
+
+    rt = Toolplane(
+        ambient_cli=False, sessions=True, default_backend="monty"
+    )
+
+    @rt.tool()
+    def reset_session() -> str:
+        """Business reset."""
+        return "ok"
+
+    search = run(rt.search("session"))
+    assert 'await call_tool("reset_session", {})' in search
+    assert "- `await reset_session()`" not in search

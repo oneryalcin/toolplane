@@ -190,8 +190,33 @@ def mcp_config(arm: str, workdir: Path, orders_n: int, m_servers: int) -> dict:
     raise ValueError(arm)
 
 
+# init-event fields that describe the local client environment, not the
+# measurement; stripped before a transcript is persisted (#104)
+_INIT_ENV_FIELDS = ("slash_commands", "agents", "skills", "plugins", "memory_paths")
+
+
+def _redacted_transcript(stdout: str) -> str:
+    lines = []
+    for line in stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if event.get("type") == "system" and event.get("subtype") == "init":
+            for key in _INIT_ENV_FIELDS:
+                if key in event:
+                    event[key] = "<redacted: local client environment>"
+        lines.append(json.dumps(event))
+    return "\n".join(lines) + "\n"
+
+
 def run_case(
-    arm: str, task: str, model: str, workdir: Path, m_servers: int = 1
+    arm: str,
+    task: str,
+    model: str,
+    workdir: Path,
+    m_servers: int = 1,
+    transcript_path: Path | None = None,
 ) -> dict:
     orders_n = TASKS[task]["orders_n"]
     config_path = workdir / f"mcp-{arm}-{orders_n}-m{m_servers}.json"
@@ -224,6 +249,13 @@ def run_case(
         )
     except subprocess.TimeoutExpired as exc:
         # a hung run must not lose the rows already collected in memory
+        if transcript_path is not None and exc.stdout:
+            partial = exc.stdout
+            if isinstance(partial, bytes):
+                partial = partial.decode("utf-8", errors="replace")
+            transcript_path.write_text(
+                _redacted_transcript(partial), encoding="utf-8"
+            )
         return {
             "arm": arm,
             "task": task,
@@ -243,8 +275,13 @@ def run_case(
             "wall_s": round(time.monotonic() - started, 1),
             "exit_code": -1,
             "error": f"timeout after {exc.timeout}s",
+            "transcript": transcript_path.name if transcript_path else None,
         }
     wall_s = time.monotonic() - started
+    if transcript_path is not None:
+        transcript_path.write_text(
+            _redacted_transcript(proc.stdout), encoding="utf-8"
+        )
 
     tool_calls: list[str] = []
     result_event: dict = {}
@@ -288,6 +325,7 @@ def run_case(
         "api_duration_ms": result_event.get("duration_api_ms"),
         "wall_s": round(wall_s, 1),
         "exit_code": proc.returncode,
+        "transcript": transcript_path.name if transcript_path else None,
     }
 
 
@@ -344,6 +382,9 @@ def main() -> int:
     client_version = subprocess.run(
         ["claude", "--version"], capture_output=True, text=True
     ).stdout.strip()
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    transcripts_dir = BENCH_DIR / "results" / "transcripts" / f"run-{stamp}"
+    transcripts_dir.mkdir(parents=True, exist_ok=True)
     rows = []
     with tempfile.TemporaryDirectory() as td:
         workdir = Path(td)
@@ -355,7 +396,13 @@ def main() -> int:
                             f"[{rep + 1}/{args.reps}] {task}/M={m}/{arm} ...",
                             flush=True,
                         )
-                        row = run_case(arm, task, args.model, workdir, m)
+                        transcript = (
+                            transcripts_dir
+                            / f"{task}-{arm}-m{m}-rep{rep + 1}.jsonl"
+                        )
+                        row = run_case(
+                            arm, task, args.model, workdir, m, transcript
+                        )
                         row["client_version"] = client_version
                         rows.append(row)
                         print(
@@ -365,12 +412,10 @@ def main() -> int:
                             flush=True,
                         )
 
-    results_dir = BENCH_DIR / "results"
-    results_dir.mkdir(exist_ok=True)
-    stamp = time.strftime("%Y%m%d-%H%M%S")
-    out = results_dir / f"run-{stamp}.json"
+    out = BENCH_DIR / "results" / f"run-{stamp}.json"
     out.write_text(json.dumps(rows, indent=2), encoding="utf-8")
-    print(f"\nwrote {out}\n")
+    print(f"\nwrote {out}")
+    print(f"transcripts in {transcripts_dir}\n")
     print(summarize(rows))
     return 0 if all(r["exit_code"] == 0 for r in rows) else 1
 
