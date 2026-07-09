@@ -10,8 +10,13 @@ Same model, same prompts, same data, fresh empty cwd per run (no CLAUDE.md,
 no user MCP servers thanks to --strict-mcp-config). Results are published
 win or lose; the harness exists to state the envelope, not a slogan.
 
+The M axis (--servers, #107 item 8): each run can add distractor MCP servers
+(realistic-but-irrelevant tool surfaces from distractor_server.py) to BOTH
+arms — registered directly alongside orders in arm A, behind the toolplane
+facade in arm B. M counts total configured servers including orders.
+
 Usage:
-    uv run python bench/run.py --reps 3 [--model sonnet] [--tasks loop,single,filter]
+    uv run python bench/run.py --reps 3 [--model sonnet] [--tasks loop,single,filter] [--servers 1,5,15]
 """
 
 from __future__ import annotations
@@ -104,31 +109,64 @@ TASKS = {
 }
 
 
-def mcp_config(arm: str, workdir: Path, orders_n: int) -> dict:
-    server_env = {"BENCH_ORDERS_N": str(orders_n)}
-    server_cmd = {
-        "command": "uv",
-        "args": [
-            "run",
-            "--project",
-            str(REPO_DIR),
-            "python",
-            str(BENCH_DIR / "order_server.py"),
-        ],
-        "env": server_env,
+# distractor rollout order for the M axis; M=15 wraps around with a second
+# "-eu" workspace per profile, mimicking multi-tenant real setups
+_PROFILES = ("crm", "calendar", "tickets", "wiki", "payments", "analytics", "files")
+
+
+def distractors(m_servers: int) -> list[tuple[str, str]]:
+    """(server_name, profile) pairs for M total servers (orders included)."""
+    if m_servers - 1 > 2 * len(_PROFILES):
+        raise ValueError(f"max servers is {2 * len(_PROFILES) + 1}")
+    out = []
+    for i in range(m_servers - 1):
+        profile = _PROFILES[i % len(_PROFILES)]
+        name = profile if i < len(_PROFILES) else f"{profile}-eu"
+        out.append((name, profile))
+    return out
+
+
+def mcp_config(arm: str, workdir: Path, orders_n: int, m_servers: int) -> dict:
+    def uv_cmd(script: str, env: dict) -> dict:
+        return {
+            "command": "uv",
+            "args": [
+                "run",
+                "--project",
+                str(REPO_DIR),
+                "python",
+                str(BENCH_DIR / script),
+            ],
+            "env": env,
+        }
+
+    server_cmd = uv_cmd("order_server.py", {"BENCH_ORDERS_N": str(orders_n)})
+    extra = {
+        name: uv_cmd("distractor_server.py", {"DISTRACTOR_PROFILE": profile})
+        for name, profile in distractors(m_servers)
     }
     if arm == "direct":
-        return {"mcpServers": {"orders": {**server_cmd, "type": "stdio"}}}
+        return {
+            "mcpServers": {
+                "orders": {**server_cmd, "type": "stdio"},
+                **{name: {**cmd, "type": "stdio"} for name, cmd in extra.items()},
+            }
+        }
     if arm == "toolplane":
         # generated with absolute paths: every process here runs from a
         # scratch cwd, so nothing may be cwd-relative
-        toml_path = workdir / f"toolplane-bench-{orders_n}.toml"
-        args_toml = ", ".join(json.dumps(a) for a in server_cmd["args"])
-        toml_path.write_text(
-            f'[mcp.servers.orders]\ncommand = "uv"\nargs = [{args_toml}]\n'
-            f'env = {{ BENCH_ORDERS_N = "{orders_n}" }}\n',
-            encoding="utf-8",
-        )
+        toml_path = workdir / f"toolplane-bench-{orders_n}-m{m_servers}.toml"
+        sections = []
+        for name, cmd in {"orders": server_cmd, **extra}.items():
+            args_toml = ", ".join(json.dumps(a) for a in cmd["args"])
+            env_toml = ", ".join(
+                f'{k} = "{v}"' for k, v in cmd["env"].items()
+            )
+            sections.append(
+                f'[mcp.servers."{name}"]\ncommand = "uv"\n'
+                f"args = [{args_toml}]\nenv = {{ {env_toml} }}\n"
+            )
+        toml_path.write_text("\n".join(sections), encoding="utf-8")
         return {
             "mcpServers": {
                 "toolplane": {
@@ -150,11 +188,14 @@ def mcp_config(arm: str, workdir: Path, orders_n: int) -> dict:
     raise ValueError(arm)
 
 
-def run_case(arm: str, task: str, model: str, workdir: Path) -> dict:
+def run_case(
+    arm: str, task: str, model: str, workdir: Path, m_servers: int = 1
+) -> dict:
     orders_n = TASKS[task]["orders_n"]
-    config_path = workdir / f"mcp-{arm}-{orders_n}.json"
+    config_path = workdir / f"mcp-{arm}-{orders_n}-m{m_servers}.json"
     config_path.write_text(
-        json.dumps(mcp_config(arm, workdir, orders_n)), encoding="utf-8"
+        json.dumps(mcp_config(arm, workdir, orders_n, m_servers)),
+        encoding="utf-8",
     )
     cwd = workdir / f"cwd-{arm}-{task}-{time.time_ns()}"
     cwd.mkdir()
@@ -185,6 +226,7 @@ def run_case(arm: str, task: str, model: str, workdir: Path) -> dict:
             "arm": arm,
             "task": task,
             "orders_n": orders_n,
+            "m_servers": m_servers,
             "model": None,
             "correct": False,
             "answer": None,
@@ -227,6 +269,7 @@ def run_case(arm: str, task: str, model: str, workdir: Path) -> dict:
         "arm": arm,
         "task": task,
         "orders_n": orders_n,
+        "m_servers": m_servers,
         "model": model_used,
         "correct": TASKS[task]["check"](answer or "", orders_n),
         "answer": answer,
@@ -248,26 +291,34 @@ def run_case(arm: str, task: str, model: str, workdir: Path) -> dict:
 
 def summarize(rows: list[dict]) -> str:
     lines = [
-        "| task | arm | ok | tool calls | turns | out tokens | uncached in | cost $ | wall s |",
-        "|---|---|---|---|---|---|---|---|---|",
+        "| task | M | arm | ok | tool calls | turns | out tokens | uncached in | cost $ | wall s |",
+        "|---|---|---|---|---|---|---|---|---|---|",
     ]
+    m_values = sorted({r.get("m_servers", 1) for r in rows})
     for task in TASKS:
-        for arm in ("direct", "toolplane"):
-            group = [r for r in rows if r["task"] == task and r["arm"] == arm]
-            if not group:
-                continue
+        for m in m_values:
+            for arm in ("direct", "toolplane"):
+                group = [
+                    r
+                    for r in rows
+                    if r["task"] == task
+                    and r["arm"] == arm
+                    and r.get("m_servers", 1) == m
+                ]
+                if not group:
+                    continue
 
-            def med(key):
-                vals = [r[key] for r in group if r[key] is not None]
-                return round(statistics.median(vals), 2) if vals else "-"
+                def med(key):
+                    vals = [r[key] for r in group if r[key] is not None]
+                    return round(statistics.median(vals), 2) if vals else "-"
 
-            ok = f"{sum(r['correct'] for r in group)}/{len(group)}"
-            lines.append(
-                f"| {task} | {arm} | {ok} | {med('tool_calls')} | "
-                f"{med('num_turns')} | {med('output_tokens')} | "
-                f"{med('uncached_input_tokens')} | {med('cost_usd')} | "
-                f"{med('wall_s')} |"
-            )
+                ok = f"{sum(r['correct'] for r in group)}/{len(group)}"
+                lines.append(
+                    f"| {task} | {m} | {arm} | {ok} | {med('tool_calls')} | "
+                    f"{med('num_turns')} | {med('output_tokens')} | "
+                    f"{med('uncached_input_tokens')} | {med('cost_usd')} | "
+                    f"{med('wall_s')} |"
+                )
     return "\n".join(lines)
 
 
@@ -277,10 +328,17 @@ def main() -> int:
     parser.add_argument("--model", default="sonnet")
     parser.add_argument("--tasks", default=",".join(TASKS))
     parser.add_argument("--arms", default="direct,toolplane")
+    parser.add_argument(
+        "--servers",
+        default="1",
+        help="comma-separated M values: total configured MCP servers "
+        "(orders + M-1 distractors), e.g. 1,5,15",
+    )
     args = parser.parse_args()
 
     tasks = [t for t in args.tasks.split(",") if t in TASKS]
     arms = args.arms.split(",")
+    m_values = [int(m) for m in args.servers.split(",")]
     client_version = subprocess.run(
         ["claude", "--version"], capture_output=True, text=True
     ).stdout.strip()
@@ -289,20 +347,21 @@ def main() -> int:
         workdir = Path(td)
         for rep in range(args.reps):
             for task in tasks:
-                for arm in arms:
-                    print(
-                        f"[{rep + 1}/{args.reps}] {task}/{arm} ...",
-                        flush=True,
-                    )
-                    row = run_case(arm, task, args.model, workdir)
-                    row["client_version"] = client_version
-                    rows.append(row)
-                    print(
-                        f"  ok={row['correct']} tools={row['tool_calls']} "
-                        f"turns={row['num_turns']} cost=${row['cost_usd']} "
-                        f"wall={row['wall_s']}s",
-                        flush=True,
-                    )
+                for m in m_values:
+                    for arm in arms:
+                        print(
+                            f"[{rep + 1}/{args.reps}] {task}/M={m}/{arm} ...",
+                            flush=True,
+                        )
+                        row = run_case(arm, task, args.model, workdir, m)
+                        row["client_version"] = client_version
+                        rows.append(row)
+                        print(
+                            f"  ok={row['correct']} tools={row['tool_calls']} "
+                            f"turns={row['num_turns']} cost=${row['cost_usd']} "
+                            f"wall={row['wall_s']}s",
+                            flush=True,
+                        )
 
     results_dir = BENCH_DIR / "results"
     results_dir.mkdir(exist_ok=True)
