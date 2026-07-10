@@ -184,3 +184,53 @@ def test_summarize_no_flag_when_ranges_disjoint() -> None:
             row("toolplane", 0.30), row("toolplane", 0.35)]
     table = summarize(rows)
     assert "†" not in table
+
+
+def test_arm_order_counterbalances_deterministically() -> None:
+    # a fixed direct-first order confounded arm with cache warmth (#116);
+    # the alternation must be recomputable from the rep number alone
+    from run import arm_order
+
+    arms = ["direct", "toolplane"]
+    assert arm_order(arms, 0) == ["direct", "toolplane"]
+    assert arm_order(arms, 1) == ["toolplane", "direct"]
+    assert arm_order(arms, 2) == ["direct", "toolplane"]
+    # never mutates the input
+    assert arms == ["direct", "toolplane"]
+
+
+def test_unique_request_ids_counts_model_requests_not_events() -> None:
+    # the metric that exposed client-side double discovery (#115): several
+    # assistant events share one API request; non-assistant events carry
+    # no request_id at all
+    import json
+
+    from run import _unique_request_ids
+
+    events = [
+        {"type": "system", "subtype": "init"},
+        {"type": "assistant", "request_id": "req_A"},
+        {"type": "assistant", "request_id": "req_A"},
+        {"type": "user"},
+        {"type": "assistant", "request_id": "req_B"},
+        {"type": "result", "subtype": "success"},
+    ]
+    stdout = "\n".join(json.dumps(e) for e in events) + "\nnot json\n"
+    assert _unique_request_ids(stdout) == 2
+
+
+def test_unique_request_ids_matches_committed_transcripts() -> None:
+    # pin the metric to the published #111 run the external review counted
+    # by hand: single = 3 direct / 5 toolplane
+    from pathlib import Path
+
+    from run import _unique_request_ids
+
+    transcripts = (
+        Path(__file__).resolve().parent.parent
+        / "bench/results/transcripts/run-20260709-221840"
+    )
+    direct = (transcripts / "single-direct-m1-rep1.jsonl").read_text()
+    toolplane = (transcripts / "single-toolplane-m1-rep1.jsonl").read_text()
+    assert _unique_request_ids(direct) == 3
+    assert _unique_request_ids(toolplane) == 5

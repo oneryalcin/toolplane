@@ -17,14 +17,26 @@ dataset (`orders_data.py`, formula-based — the server and the validator
 cannot drift), fresh empty cwd per run, `--strict-mcp-config` so no other
 MCP servers leak in, permissions bypassed identically for both arms.
 
+Hardening (#116): the code under test is **frozen at matrix start** — the
+toolplane facade is built into a wheel and installed into a scratch venv,
+and the fixture servers are snapshotted beside it, so editing the working
+tree mid-run cannot reach a running measurement (the #111 contamination
+incident). Every result row records the git SHA + dirty flag + wheel and
+fixture sha256s. Arm order is **counterbalanced deterministically** (odd
+reps reverse it — recomputable from the rep number; use even rep counts
+for headline cells, odd counts leave the first-position split uneven by
+one). Each row also records `model_requests`: the count of unique API
+`request_id`s in the transcript — the exact number of model requests,
+not an inference from cache arithmetic.
+
 Known asymmetries and gaps, disclosed: Claude Code's built-in tools (Bash,
 ToolSearch, ...) remain available in BOTH arms and are occasionally used —
-tool names are recorded but inputs are not (transcript persistence is #104),
-so their contents are unauditable in the committed runs. Arm order is fixed
-(direct first), so later runs can hit warmer prompt caches within the 5-min
-TTL. The "tool calls" metric counts every client tool_use block, built-ins
-included — it is NOT API round-trips (clients batch tool calls in parallel;
-see the docs piece for the usage-data arithmetic).
+tool names are recorded, and since #104 the full transcripts make them
+auditable. The "tool calls" metric counts every client tool_use block,
+built-ins included — it is NOT API round-trips (clients batch tool calls
+in parallel; `model_requests` is the round-trip truth). Runs before
+2026-07-10 predate the frozen-code and counterbalancing hardening: they
+served from the working tree and always ran direct first.
 
 ## Tasks (the envelope, not a slogan)
 
