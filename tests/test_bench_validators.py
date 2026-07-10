@@ -122,8 +122,52 @@ def test_summarize_flags_overlapping_ranges_and_prices_failures() -> None:
     line = next(ln for ln in table.splitlines() if "| toolplane |" in ln)
     assert "0.3†" in line  # median cost flagged as overlapping
     assert "| 0.6 |" in line  # cost/pass: (0.20+0.40)/1 success
-    assert "ranges of the two arms overlap" in table
+    assert "overlaps direct" in table
     assert "noise" not in table  # observed overlap, not a noise conclusion
+
+
+def test_summarize_three_arms_flags_against_direct_only() -> None:
+    # #114 adds a hybrid arm; the table must render all three in order and
+    # the † overlap mark is measured against direct (the reference), so
+    # direct itself is never flagged
+    from run import summarize
+
+    def row(arm, cost, wall, task="single"):
+        return {
+            "task": task,
+            "arm": arm,
+            "m_servers": 1,
+            "correct": True,
+            "cost_usd": cost,
+            "wall_s": wall,
+            "model_requests": 3,
+            "tool_calls": 2,
+            "num_turns": 3,
+            "output_tokens": 1,
+            "uncached_input_tokens": 1,
+        }
+
+    rows = [
+        row("direct", 0.10, 10.0),
+        row("direct", 0.20, 11.0),
+        row("toolplane", 0.50, 20.0),  # disjoint from direct on both axes
+        row("toolplane", 0.60, 21.0),
+        row("hybrid", 0.15, 10.5),  # overlaps direct on both axes -> †
+        row("hybrid", 0.18, 10.8),
+    ]
+    table = summarize(rows)
+    arm_lines = [ln for ln in table.splitlines() if ln.startswith("| single |")]
+    assert [ln.split("|")[3].strip() for ln in arm_lines] == [
+        "direct",
+        "toolplane",
+        "hybrid",
+    ]
+    direct_line = next(ln for ln in arm_lines if "| direct |" in ln)
+    toolplane_line = next(ln for ln in arm_lines if "| toolplane |" in ln)
+    hybrid_line = next(ln for ln in arm_lines if "| hybrid |" in ln)
+    assert "†" not in direct_line  # the reference is never flagged
+    assert "†" not in toolplane_line  # disjoint range
+    assert "†" in hybrid_line  # overlaps direct
 
 
 def test_summarize_survives_all_timeout_arm_and_prices_unknown_as_na() -> None:

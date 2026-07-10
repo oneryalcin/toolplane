@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -14,9 +15,11 @@ try:
 except ImportError:  # pragma: no cover - dependency is required
     Context = None  # type: ignore[assignment, misc]
 
+from .capabilities import Capability
 from .config import ConfigSource, ToolplaneConfig, load_toolplane_config
 from .discovery import domain_hint
 from .errors import BackendNotFoundError
+from .registry import _is_safe_python_name
 from .execution import ExecutionError, ExecutionResult
 from .policy import EffectivePolicy, ensure_safe_facade_policy
 from .runtime import Toolplane
@@ -33,6 +36,7 @@ def build_mcp_facade(
     *,
     policy: EffectivePolicy | None = None,
     cli_escalation: bool = True,
+    hybrid: bool = False,
 ) -> "FastMCP":
     """Build the small MCP meta-tool surface for a Toolplane runtime.
 
@@ -49,6 +53,17 @@ def build_mcp_facade(
     registered afterwards stay fully searchable and executable, but are
     invisible to clients' deferred-tool keyword search — register
     everything first (the config-driven path always does).
+
+    ``hybrid`` (#114) additionally re-exports every registered capability as
+    an ordinary MCP tool that dispatches through a single ``call_tool``.
+    On clients with deferred tool loading this lets a single lookup or an
+    adaptive chain use one native tool call (the shapes where the 3-tool
+    facade pays a discovery tax) while loops and joins still use
+    ``execute_code``. On clients WITHOUT deferred loading every re-exported
+    schema lands in context at once, so hybrid is opt-in, not the default.
+    Each re-exported tool is a stateless one-capability dispatch — no monty
+    session, no stores — so it is safe on multi-client transports even
+    where ``execute_code`` is disabled.
     """
     try:
         from fastmcp import FastMCP
@@ -297,7 +312,70 @@ def build_mcp_facade(
                 runtime.cli_policy.escalation_handler = None
         return result.model_dump(mode="json")
 
+    if hybrid:
+        _register_hybrid_tools(mcp, runtime)
+
     return mcp
+
+
+# the three facade meta-tool names a re-exported capability must never
+# shadow; combined with runtime-reserved bindings at call time
+_FACADE_TOOL_NAMES = frozenset(
+    {"search_capabilities", "get_capability_schemas", "execute_code"}
+)
+_MCP_TOOL_NAME_RE = re.compile(r"[^A-Za-z0-9_-]")
+
+
+def _hybrid_tool_name(
+    capability: Capability, taken: set[str]
+) -> str:
+    """A unique, client-safe MCP tool name for a re-exported capability.
+
+    Prefers the flat binding the agent already sees in code-mode call
+    shapes (``orders_get_order``) for one consistent name across both
+    surfaces; falls back to a sanitized canonical name, then numeric
+    suffixing, so distinct capabilities never collide onto one tool.
+    """
+    candidates = [capability.name, *sorted(capability.aliases)]
+    base = next(
+        (c for c in candidates if _is_safe_python_name(c)),
+        _MCP_TOOL_NAME_RE.sub("_", capability.name).strip("_") or "capability",
+    )
+    name = base
+    suffix = 2
+    while name in taken or name in _FACADE_TOOL_NAMES:
+        name = f"{base}_{suffix}"
+        suffix += 1
+    taken.add(name)
+    return name
+
+
+def _register_hybrid_tools(mcp: "FastMCP", runtime: Toolplane) -> None:
+    from fastmcp.tools.function_tool import FunctionTool
+
+    taken: set[str] = set()
+    for capability in runtime.registry.all():
+        tool_name = _hybrid_tool_name(capability, taken)
+
+        def _dispatch(canonical: str = capability.name, **params: Any) -> Any:
+            # one capability, one call_tool — the same audited path
+            # execute_code's bridge uses; no code, no session, no store
+            return runtime.call_tool(canonical, params)
+
+        # no output_schema: fastmcp validates the return against it, but a
+        # capability's DECLARED returns need not match its ACTUAL value
+        # (routinely true for third-party MCP tools), and a mismatch would
+        # turn a successful dispatch into a client-side error. The value
+        # still comes back (dict -> structured, scalar -> text) and the
+        # description summarizes the shape.
+        mcp.add_tool(
+            FunctionTool(
+                name=tool_name,
+                description=capability.description or capability.name,
+                parameters=capability.parameters,
+                fn=_dispatch,
+            )
+        )
 
 
 async def _elicit_cli_grant(ctx: Any, policy: Any, binary: str) -> bool:
@@ -329,6 +407,7 @@ async def build_mcp_facade_from_config(
     *,
     transport: Transport = "stdio",
     allow_unsafe: bool = False,
+    hybrid: bool = False,
 ) -> "FastMCP":
     """Build the facade from config, applying transport-dependent policy.
 
@@ -362,7 +441,10 @@ async def build_mcp_facade_from_config(
     # guarantees one client per process, so a human approval cannot leak to
     # a client that never saw the prompt
     return build_mcp_facade(
-        runtime, policy=policy, cli_escalation=transport == "stdio"
+        runtime,
+        policy=policy,
+        cli_escalation=transport == "stdio",
+        hybrid=hybrid,
     )
 
 
@@ -398,9 +480,10 @@ async def serve_mcp_facade(
     host: str | None = None,
     port: int | None = None,
     allow_unsafe: bool = False,
+    hybrid: bool = False,
 ) -> None:
     app = await build_mcp_facade_from_config(
-        config, transport=transport, allow_unsafe=allow_unsafe
+        config, transport=transport, allow_unsafe=allow_unsafe, hybrid=hybrid
     )
     kwargs: dict[str, Any] = {}
     if host is not None:

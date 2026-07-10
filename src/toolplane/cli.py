@@ -131,6 +131,7 @@ def _cmd_serve_mcp(args: argparse.Namespace) -> int:
                 host=args.host,
                 port=args.port,
                 allow_unsafe=args.unsafe,
+                hybrid=args.hybrid,
             )
         )
     except UnsafeFacadeConfigError as exc:
@@ -490,6 +491,15 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     mcp.add_argument("--host", help="Host for HTTP-based transports")
     mcp.add_argument("--port", type=int, help="Port for HTTP-based transports")
+    mcp.add_argument(
+        "--hybrid",
+        action="store_true",
+        help=(
+            "Also re-export every capability as an ordinary MCP tool "
+            "alongside the meta-tools (#114; best on deferred-loading "
+            "clients like Claude Code)"
+        ),
+    )
     mcp.add_argument(
         "--unsafe",
         action="store_true",

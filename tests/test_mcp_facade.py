@@ -610,3 +610,110 @@ def test_serve_refuses_unprimed_direct_oauth_with_login_hint() -> None:
                 }
             )
         )
+
+
+def _hybrid_runtime() -> Toolplane:
+    runtime = Toolplane(ambient_cli=False)
+
+    @runtime.tool(name="orders_get_order", tags={"orders"})
+    async def get_order(order_id: str) -> dict:
+        """Fetch one order record: order_id, region, amount, status."""
+        return {"order_id": order_id, "status": "shipped"}
+
+    @runtime.tool(name="orders_list_ids", tags={"orders"})
+    async def list_ids() -> list[str]:
+        """List every order id."""
+        return ["ORD-001", "ORD-002"]
+
+    return runtime
+
+
+def test_hybrid_reexports_capabilities_alongside_meta_tools() -> None:
+    async def exercise() -> list[str]:
+        app = build_mcp_facade(_hybrid_runtime(), hybrid=True)
+        async with Client(app) as client:
+            tools = await client.list_tools()
+        return sorted(t.name for t in tools)
+
+    # the three meta-tools plus one tool per capability
+    assert run(exercise()) == [
+        "execute_code",
+        "get_capability_schemas",
+        "orders_get_order",
+        "orders_list_ids",
+        "search_capabilities",
+    ]
+
+
+def test_hybrid_off_by_default() -> None:
+    async def exercise() -> list[str]:
+        app = build_mcp_facade(_hybrid_runtime())
+        async with Client(app) as client:
+            return sorted(t.name for t in await client.list_tools())
+
+    assert run(exercise()) == [
+        "execute_code",
+        "get_capability_schemas",
+        "search_capabilities",
+    ]
+
+
+def test_hybrid_tool_dispatches_through_call_tool_with_real_schema() -> None:
+    async def exercise() -> tuple[dict, dict]:
+        app = build_mcp_facade(_hybrid_runtime(), hybrid=True)
+        async with Client(app) as client:
+            tools = {t.name: t for t in await client.list_tools()}
+            schema = tools["orders_get_order"].inputSchema
+            result = await client.call_tool(
+                "orders_get_order", {"order_id": "ORD-017"}
+            )
+        return schema, result.structured_content
+
+    schema, result = run(exercise())
+    # the capability's own parameter schema is exposed verbatim
+    assert schema["properties"]["order_id"]["type"] == "string"
+    assert schema["required"] == ["order_id"]
+    # and the call actually dispatches the capability
+    assert result == {"order_id": "ORD-017", "status": "shipped"}
+
+
+def test_hybrid_excludes_hidden_capabilities() -> None:
+    from dataclasses import replace
+
+    async def exercise() -> list[str]:
+        runtime = _hybrid_runtime()
+        # hide one capability the way the registry stores it
+        canonical = "orders_list_ids"
+        runtime.registry._capabilities[canonical] = replace(
+            runtime.registry._capabilities[canonical], hidden=True
+        )
+        app = build_mcp_facade(runtime, hybrid=True)
+        async with Client(app) as client:
+            return sorted(t.name for t in await client.list_tools())
+
+    names = run(exercise())
+    assert "orders_get_order" in names
+    assert "orders_list_ids" not in names
+
+
+def test_hybrid_tool_name_never_shadows_a_meta_tool() -> None:
+    async def exercise() -> list[str]:
+        runtime = Toolplane(ambient_cli=False)
+
+        @runtime.tool(name="execute_code")
+        async def clashing() -> str:
+            """A capability whose safe name collides with a meta-tool."""
+            return "dispatched"
+
+        app = build_mcp_facade(runtime, hybrid=True)
+        async with Client(app) as client:
+            tools = {t.name: t for t in await client.list_tools()}
+            # the meta-tool must still be the real execute_code (takes code),
+            # the capability got a suffixed name
+            meta = tools["execute_code"].inputSchema
+            suffixed = await client.call_tool("execute_code_2", {})
+        return list(meta["properties"]), suffixed.content[0].text
+
+    meta_params, dispatched = run(exercise())
+    assert "code" in meta_params
+    assert dispatched == "dispatched"
