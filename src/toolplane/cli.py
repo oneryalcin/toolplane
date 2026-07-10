@@ -495,9 +495,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "--hybrid",
         action="store_true",
         help=(
-            "Also re-export every capability as an ordinary MCP tool "
-            "alongside the meta-tools (#114; best on deferred-loading "
-            "clients like Claude Code)"
+            "EXPERIMENTAL (#114): also re-export every capability as an "
+            "ordinary MCP tool. Wins at a small registry but is the worst "
+            "arm at scale (rebuilds a flat tool surface); prefer selective "
+            "re-export when available (#125). Deferred-loading clients only."
         ),
     )
     mcp.add_argument(

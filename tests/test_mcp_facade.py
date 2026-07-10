@@ -717,3 +717,90 @@ def test_hybrid_tool_name_never_shadows_a_meta_tool() -> None:
     meta_params, dispatched = run(exercise())
     assert "code" in meta_params
     assert dispatched == "dispatched"
+
+
+def test_hybrid_input_cannot_redirect_dispatch_to_another_capability() -> None:
+    # gauntlet critical: the dispatch target was a keyword param with a
+    # default, so a re-exported schema (third-party, verbatim) with a
+    # `canonical` property — or a plain injected key — could silently
+    # rebind the target, including to a HIDDEN capability. The target must
+    # be closure-captured and un-overridable.
+    from dataclasses import replace
+
+    async def exercise() -> tuple[str, list]:
+        runtime = Toolplane(ambient_cli=False)
+
+        @runtime.tool(name="orders_get_order")
+        async def get_order(order_id: str) -> dict:
+            """Fetch one order."""
+            return {"dispatched": "orders_get_order", "order_id": order_id}
+
+        @runtime.tool(name="secret_admin")
+        async def secret_admin(order_id: str) -> str:
+            """A capability the facade hides from re-export."""
+            return f"HIDDEN DISPATCHED: {order_id}"
+
+        runtime.registry._capabilities["secret_admin"] = replace(
+            runtime.registry._capabilities["secret_admin"], hidden=True
+        )
+
+        app = build_mcp_facade(runtime, hybrid=True)
+        async with Client(app) as client:
+            names = sorted(t.name for t in await client.list_tools())
+            # inject canonical pointing at the hidden capability
+            result = await client.call_tool(
+                "orders_get_order",
+                {"order_id": "x", "canonical": "secret_admin"},
+                raise_on_error=False,
+            )
+            text = result.content[0].text if result.content else ""
+        return text, names
+
+    text, names = run(exercise())
+    assert "secret_admin" not in names  # hidden, not re-exported
+    # the security property: the hidden capability's body never runs, no
+    # matter what the client injects — canonical is closure-captured, so
+    # the stray key is only ever an unknown arg to the real target
+    assert "HIDDEN DISPATCHED" not in text
+
+
+def test_hybrid_tool_with_a_canonical_parameter_still_works() -> None:
+    # the closure fix must not break a benign capability whose own schema
+    # legitimately has a parameter named `canonical`
+    async def exercise() -> str:
+        runtime = Toolplane(ambient_cli=False)
+
+        @runtime.tool(name="lookup")
+        async def lookup(canonical: str) -> dict:
+            """Look something up by its canonical id."""
+            return {"looked_up": canonical}
+
+        app = build_mcp_facade(runtime, hybrid=True)
+        async with Client(app) as client:
+            result = await client.call_tool("lookup", {"canonical": "abc"})
+        return result.structured_content
+
+    assert run(exercise()) == {"looked_up": "abc"}
+
+
+def test_hybrid_tool_names_are_ascii_even_for_unicode_identifiers() -> None:
+    # _is_safe_python_name accepts Unicode identifiers; MCP tool names must
+    # be ASCII, so a Unicode canonical/alias must be sanitized (gauntlet)
+    async def exercise() -> list[str]:
+        runtime = Toolplane(ambient_cli=False)
+
+        async def cafe(x: str) -> str:
+            return x
+
+        runtime.register(cafe, name="café_lookup")
+        app = build_mcp_facade(runtime, hybrid=True)
+        async with Client(app) as client:
+            return [t.name for t in await client.list_tools()]
+
+    meta = {"search_capabilities", "get_capability_schemas", "execute_code"}
+    names = run(exercise())
+    reexported = [n for n in names if n not in meta]
+    assert reexported, names
+    for name in reexported:
+        assert name.isascii(), name
+        assert "é" not in name

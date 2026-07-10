@@ -19,7 +19,6 @@ from .capabilities import Capability
 from .config import ConfigSource, ToolplaneConfig, load_toolplane_config
 from .discovery import domain_hint
 from .errors import BackendNotFoundError
-from .registry import _is_safe_python_name
 from .execution import ExecutionError, ExecutionResult
 from .policy import EffectivePolicy, ensure_safe_facade_policy
 from .runtime import Toolplane
@@ -54,16 +53,17 @@ def build_mcp_facade(
     invisible to clients' deferred-tool keyword search — register
     everything first (the config-driven path always does).
 
-    ``hybrid`` (#114) additionally re-exports every registered capability as
-    an ordinary MCP tool that dispatches through a single ``call_tool``.
-    On clients with deferred tool loading this lets a single lookup or an
-    adaptive chain use one native tool call (the shapes where the 3-tool
-    facade pays a discovery tax) while loops and joins still use
-    ``execute_code``. On clients WITHOUT deferred loading every re-exported
-    schema lands in context at once, so hybrid is opt-in, not the default.
-    Each re-exported tool is a stateless one-capability dispatch — no monty
-    session, no stores — so it is safe on multi-client transports even
-    where ``execute_code`` is disabled.
+    ``hybrid`` (#114) is EXPERIMENTAL and re-exports EVERY registered
+    capability as an ordinary MCP tool alongside the meta-tools. Measured
+    envelope (``docs/code-mode-benchmark.md``): a win at a small registry
+    (single/adaptive tasks route to a native tool, loops still use
+    ``execute_code``) but the WORST arm at 15 servers, where re-exporting
+    the whole registry rebuilds the flat tool surface the facade exists to
+    avoid. The general form is selective re-export (#125); this all-or-
+    nothing flag stays experimental. On clients WITHOUT deferred loading
+    every re-exported schema lands in context at once. Each re-exported
+    tool is a stateless one-capability dispatch through the same audited
+    ``call_tool`` path ``execute_code`` uses (no session, no stores).
     """
     try:
         from fastmcp import FastMCP
@@ -324,6 +324,11 @@ _FACADE_TOOL_NAMES = frozenset(
     {"search_capabilities", "get_capability_schemas", "execute_code"}
 )
 _MCP_TOOL_NAME_RE = re.compile(r"[^A-Za-z0-9_-]")
+# a client-safe MCP tool name: ASCII only. _is_safe_python_name accepts
+# Unicode identifiers (str.isidentifier() -> "café", "工具"), which some
+# clients reject and which SEP-986 flags — so a candidate must clear this
+# ASCII gate, not just be a valid Python name (gauntlet finding)
+_MCP_SAFE_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*\Z")
 
 
 def _hybrid_tool_name(
@@ -338,7 +343,7 @@ def _hybrid_tool_name(
     """
     candidates = [capability.name, *sorted(capability.aliases)]
     base = next(
-        (c for c in candidates if _is_safe_python_name(c)),
+        (c for c in candidates if _MCP_SAFE_NAME_RE.match(c)),
         _MCP_TOOL_NAME_RE.sub("_", capability.name).strip("_") or "capability",
     )
     name = base
@@ -350,18 +355,27 @@ def _hybrid_tool_name(
     return name
 
 
+def _make_hybrid_dispatch(runtime: Toolplane, canonical_name: str) -> Any:
+    async def _dispatch(**params: Any) -> Any:
+        # canonical_name is closure-captured, NEVER a parameter: a
+        # re-exported schema is third-party prose verbatim, so if the
+        # dispatch target were a keyword arg an input property named
+        # "canonical" would silently rebind it to any other capability
+        # (gauntlet: confirmed redirect to a hidden capability). One
+        # re-export = one fixed capability, through the same audited
+        # call_tool path execute_code's bridge uses — no code, no session,
+        # no store.
+        return await runtime.call_tool(canonical_name, params)
+
+    return _dispatch
+
+
 def _register_hybrid_tools(mcp: "FastMCP", runtime: Toolplane) -> None:
     from fastmcp.tools.function_tool import FunctionTool
 
     taken: set[str] = set()
     for capability in runtime.registry.all():
         tool_name = _hybrid_tool_name(capability, taken)
-
-        def _dispatch(canonical: str = capability.name, **params: Any) -> Any:
-            # one capability, one call_tool — the same audited path
-            # execute_code's bridge uses; no code, no session, no store
-            return runtime.call_tool(canonical, params)
-
         # no output_schema: fastmcp validates the return against it, but a
         # capability's DECLARED returns need not match its ACTUAL value
         # (routinely true for third-party MCP tools), and a mismatch would
@@ -373,7 +387,7 @@ def _register_hybrid_tools(mcp: "FastMCP", runtime: Toolplane) -> None:
                 name=tool_name,
                 description=capability.description or capability.name,
                 parameters=capability.parameters,
-                fn=_dispatch,
+                fn=_make_hybrid_dispatch(runtime, capability.name),
             )
         )
 
