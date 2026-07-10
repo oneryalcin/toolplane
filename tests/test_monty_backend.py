@@ -67,7 +67,11 @@ def test_monty_reports_snippet_error_with_original_type() -> None:
     assert result.error is not None
     assert result.error.type == "ValueError"
     assert result.error.message == "boom"
-    assert "toolplane_snippet.py" in result.error.traceback
+    # the frame must point at the snippet's own line, not a toolplane
+    # internal; the REPL names snippet frames "<python-input-N>"
+    # (0.0.19's feed_run ignores script_name for frame filenames)
+    assert "line 1" in result.error.traceback
+    assert "toolplane" not in result.error.traceback
 
 
 def test_monty_tool_error_is_catchable_in_snippet() -> None:
@@ -428,3 +432,37 @@ def test_monty_cli_run_rejects_conflicting_flag_sources() -> None:
     assert result.error is not None
     assert "both in the options dict and as keyword arguments" in result.error.message
     assert "oneline" in result.error.message
+
+
+def test_pool_is_created_once_under_concurrent_first_runs() -> None:
+    # concurrent first runs raced _ensure_pool's check-create-enter-assign
+    # and leaked all pools but the last (found by both port reviewers)
+    import toolplane.backends.monty as monty_module
+
+    created = []
+    original = monty_module.AsyncMonty
+
+    def counting_async_monty(*args: Any, **kwargs: Any) -> Any:
+        pool = original(*args, **kwargs)
+        created.append(pool)
+        return pool
+
+    monty_module.AsyncMonty = counting_async_monty  # type: ignore[assignment]
+    try:
+        backend = MontyBackend()
+        bridge = _StubBridge()
+
+        async def three_first_runs() -> Any:
+            return await asyncio.gather(
+                backend.run("1 + 1", bridge=bridge),
+                backend.run("2 + 2", bridge=bridge),
+                backend.run("3 + 3", bridge=bridge),
+            )
+
+        results = run(three_first_runs())
+    finally:
+        monty_module.AsyncMonty = original
+
+    assert [r.error for r in results] == [None, None, None]
+    assert [r.value for r in results] == [2, 4, 6]
+    assert len(created) == 1

@@ -390,3 +390,81 @@ def test_manifest_documents_sessions_only_when_live() -> None:
         default_backend="monty", ambient_cli=False, sessions=False
     ).describe_namespace()
     assert "## Session" not in without
+
+
+def test_cpu_busy_timeout_returns_and_the_session_survives() -> None:
+    # a run cancelled MID-COMPUTATION (not suspended on a host call) leaves
+    # a worker that never finishes its turn; an unbounded close then wedged
+    # run() forever while holding the session lock (found by both port
+    # reviewers — every prior timeout test used a host-suspended run)
+    async def case() -> None:
+        runtime = _session_runtime(timeout_seconds=0.5)
+        await runtime.execute("m = 7\nkeep = ['before']")
+
+        timed_out = await runtime.execute(
+            "keep = ['clobbered']\nn = 0\nwhile True:\n    n = n + 1"
+        )
+        assert timed_out.error is not None
+        assert timed_out.error.type == "TimeoutError"
+        assert "rolled back" in timed_out.error.message
+
+        after = await runtime.execute("return (m, keep)")
+        assert after.error is None
+        assert after.value == (7, ["before"])
+
+    _run(case())
+
+
+def test_timeout_recovery_failure_still_returns_a_structured_error() -> None:
+    # if the pool cannot provide the replacement worker, run() must report
+    # a cleared session structurally, never raise raw (fault-injection
+    # finding from the port review)
+    async def case() -> None:
+        backend = MontyBackend(session=True, timeout_seconds=0.5)
+        runtime = Toolplane(
+            backends=[backend], default_backend="monty", ambient_cli=False
+        )
+        await runtime.execute("seeded = 1")
+
+        original_checkout = backend._checkout
+
+        async def broken_checkout(**kwargs: Any) -> Any:
+            raise RuntimeError("injected: pool cannot provide a worker")
+
+        backend._checkout = broken_checkout  # type: ignore[method-assign]
+        try:
+            timed_out = await runtime.execute(
+                "n = 0\nwhile True:\n    n = n + 1"
+            )
+        finally:
+            backend._checkout = original_checkout  # type: ignore[method-assign]
+
+        assert timed_out.error is not None
+        assert timed_out.error.type == "TimeoutError"
+        assert "could not be restored" in timed_out.error.message
+
+        after = await runtime.execute("return 'alive'")
+        assert after.error is None
+        assert after.value == "alive"
+
+    _run(case())
+
+
+def test_protocol_error_rollback_is_disclosed() -> None:
+    # upstream finishes the checkout on protocol errors, so completed
+    # statements from the failing run are rolled back with the snapshot —
+    # unlike 0.0.18, where they persisted. The message must say so instead
+    # of losing data silently (unbiased-review finding on the port).
+    async def case() -> None:
+        runtime = _session_runtime()
+        first = await runtime.execute(
+            "pending = save_result({'a': 1})"
+        )
+        assert first.error is None
+
+        second = await runtime.execute("x_new = 42\nreturn await pending")
+        assert second.error is not None
+        assert second.error.type == "UnawaitedToolCallError"
+        assert "rolled back" in second.error.message
+
+    _run(case())
