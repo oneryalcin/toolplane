@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import keyword
+import re
 from collections.abc import Sequence
 from typing import Any, Literal
 
@@ -49,6 +50,156 @@ _MISSING_HINT = (
     "with an empty query to list them all, or read the toolplane://namespace "
     "resource."
 )
+
+
+# domain_hint budget mechanics: everything below keeps the rendered hint
+# bounded against a hostile or merely huge registry. Capability names and
+# descriptions are third-party data (upstream MCP servers author them), and
+# the hint lands in toolplane's OWN tool descriptions — a session-persistent
+# surface present before any call — so nothing flows through verbatim: prose
+# becomes a sorted token set and every axis has a hard cap.
+_HINT_TOKENS_PER_ENTRY = 8
+_HINT_TOKEN_MAX_LEN = 24
+_HINT_SHAPE_MAX_LEN = 160
+_HINT_SENTINEL_RESERVE = 60
+_HINT_DOMAIN_RE = re.compile(r"^[A-Za-z0-9_-]{1,48}$")
+_HINT_WORD_RE = re.compile(r"[a-z0-9_]+")
+
+
+def _keyword_tokens(description: str) -> list[str]:
+    """Sorted unique word tokens from an untrusted description.
+
+    Keyword search is order-insensitive, so a sorted token set preserves
+    every match the prose would have made — while destroying the sentence
+    structure an injected instruction needs to mean anything. First-N in
+    appearance order (topic words come early), then sorted for rendering.
+    """
+    seen: list[str] = []
+    for word in _HINT_WORD_RE.findall(description.lower()):
+        token = word[:_HINT_TOKEN_MAX_LEN]
+        if token not in seen:
+            seen.append(token)
+        if len(seen) == _HINT_TOKENS_PER_ENTRY:
+            break
+    return sorted(seen)
+
+
+def _hint_shape(capability: Capability, reserved: frozenset[str]) -> str:
+    """The entry's executable shape, refusing prose-capable renderings.
+
+    call_shape's kwargs form is always safe: it is only chosen when every
+    parameter is a valid Python identifier. Its call_tool fallback, though,
+    quotes schema property names verbatim — a hostile server can name a
+    parameter a whole sentence. So any call_tool form (and any shape that
+    is merely huge) collapses to the schema-less ``call_tool("name", {...})``,
+    which is still executable and carries no attacker-controlled prose.
+    """
+    shape = call_shape(capability, reserved=reserved)
+    schema_less = f'await call_tool("{capability.name}", {{...}})'
+    if "call_tool(" in shape:
+        return schema_less
+    if len(shape) > _HINT_SHAPE_MAX_LEN:
+        return schema_less
+    return shape
+
+
+def domain_hint(
+    capabilities: Sequence[Capability],
+    *,
+    max_chars: int = 1500,
+    reserved: frozenset[str] = frozenset(),
+) -> str:
+    """Domain vocabulary for the facade tool descriptions.
+
+    Clients with deferred tool loading index MCP tools by name and
+    description and load them via keyword search. An agent's first search
+    is for the DOMAIN ("order status"), not for "toolplane" — and a facade
+    that only talks about itself is invisible to that query, costing an
+    extra model request per run (#115, transcript-measured).
+
+    Each entry is the capability's EXACT call shape plus its description
+    reduced to a sorted keyword-token set (see _keyword_tokens — the
+    injection neutralizer). A bare leaf name reads as the binding and
+    teaches a wrong call (measured, attempt 1); verbatim prose republishes
+    third-party text on a privileged surface (both #115 reviewers). The
+    returned hint NEVER exceeds max_chars, domains included.
+    """
+    visible = sorted(
+        (c for c in capabilities if not c.hidden), key=lambda c: c.name
+    )
+    if not visible:
+        return ""
+    # every domain's name up front: at scale the shape budget truncates,
+    # and a domain whose vocabulary is entirely absent is invisible to the
+    # first keyword search — measured at M=15, where an agent concluded no
+    # order tool existed and answered WRONG rather than searching again.
+    # The domain list itself is budgeted: at most half of max_chars.
+    domains = sorted(
+        {
+            domain
+            for capability in visible
+            if _HINT_DOMAIN_RE.fullmatch(domain := _domain(capability))
+        }
+    )
+    # budget arithmetic: fixed framing text + the sentinel reserve come off
+    # the top; the domain list gets at most half of what remains, entries
+    # get the rest. A floor keeps tiny budgets from going negative.
+    max_chars = max(max_chars, 250)
+    _FRAMING = len("Serves capabilities for: ") + len(
+        ". Call them in execute_code exactly as shown: "
+    )
+    domain_budget = (max_chars - _FRAMING - _HINT_SENTINEL_RESERVE - 1) // 2
+    shown_domains: list[str] = []
+    domains_used = 0
+    for domain in domains:
+        if domains_used + len(domain) + 2 > domain_budget:
+            shown_domains.append(f"+{len(domains) - len(shown_domains)} more")
+            break
+        shown_domains.append(domain)
+        domains_used += len(domain) + 2
+    prefix = (
+        f"Serves capabilities for: {', '.join(shown_domains)}. "
+        "Call them in execute_code exactly as shown: "
+    )
+    # round-robin across domains, not alphabetical fill: every domain gets
+    # its first shape into the budget before any domain gets its second
+    by_domain: dict[str, list[Capability]] = {}
+    for capability in visible:
+        by_domain.setdefault(_domain(capability), []).append(capability)
+    interleaved: list[Capability] = []
+    queues = [by_domain[domain] for domain in sorted(by_domain)]
+    while queues:
+        queues = [q for q in queues if q]
+        interleaved.extend(q.pop(0) for q in queues)
+    entries: list[str] = []
+    # the sentinel must always fit: reserve its space up front instead of
+    # appending it past the budget
+    budget = max_chars - len(prefix) - _HINT_SENTINEL_RESERVE
+    used = 0
+    for capability in interleaved:
+        shape = _hint_shape(capability, reserved)
+        tokens = _keyword_tokens(capability.description)
+        entry = f"`{shape}` [{', '.join(tokens)}]" if tokens else f"`{shape}`"
+        # skip oversized entries instead of stopping: one long entry must
+        # not starve every domain behind it (reviewer-reproduced failure)
+        if used + len(entry) + 2 > budget:
+            continue
+        entries.append(entry)
+        used += len(entry) + 2
+    dropped = len(visible) - len(entries)
+    if dropped:
+        entries.append(f"plus {dropped} more — search_capabilities lists all")
+    hint = prefix + "; ".join(entries) + "."
+    # the arithmetic above makes this a no-op; the slice is the guarantee
+    return hint[:max_chars]
+
+
+def _domain(capability: Capability) -> str:
+    """The capability's domain word: 'payments' from 'mcp:payments/refund'."""
+    name = capability.name
+    if "/" in name:
+        return name.rsplit("/", 1)[0].rsplit(":", 1)[-1]
+    return name.rsplit(":", 1)[-1]
 
 
 def _render_brief(
