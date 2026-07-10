@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import re
+import signal
 import time
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -88,7 +90,9 @@ class MontyBackend:
         # first run and left open for the process lifetime (workers die with
         # the host process)
         self._pool: AsyncMonty | None = None
+        self._pool_lock = asyncio.Lock()
         self._session: AsyncMontySession | None = None
+        self._session_pid: int | None = None
         self._pending_reset = False
         # one run at a time per session: a session worker serves one feed at
         # a time and a second feed raises instead of queueing, so overlapping
@@ -170,28 +174,29 @@ class MontyBackend:
             # expression, so raw code goes in unwrapped. The in-sandbox
             # duration cap excludes time suspended on host calls, so the
             # host-side wait_for below is still the wall-clock authority.
-            interpreter = await self._checkout(
+            interpreter, worker_pid = await self._checkout(
                 script_name="toolplane_snippet.py",
                 limits={"max_duration_secs": self.timeout_seconds},
             )
+            interrupted = False
             try:
-                value = await asyncio.wait_for(
-                    interpreter.feed_run(
-                        code,
-                        inputs=input_namespace or None,
-                        external_lookup=external_functions,
-                        print_callback=streams,
-                    ),
-                    timeout=self.timeout_seconds,
-                )
-            finally:
-                # a timed-out worker is wedged and may refuse a clean
-                # shutdown; the error the caller needs is the one already
-                # in flight, never the close failure
                 try:
-                    await interpreter.__aexit__(None, None, None)
-                except Exception:
-                    pass
+                    value = await asyncio.wait_for(
+                        interpreter.feed_run(
+                            code,
+                            inputs=input_namespace or None,
+                            external_lookup=external_functions,
+                            print_callback=streams,
+                        ),
+                        timeout=self.timeout_seconds,
+                    )
+                except TimeoutError:
+                    interrupted = True
+                    raise
+            finally:
+                await _close_worker(
+                    interpreter, worker_pid, interrupted=interrupted
+                )
         except TimeoutError:
             return self._result(
                 started,
@@ -300,23 +305,8 @@ class MontyBackend:
                 # the timed-out run must not fire after "rolled back" was
                 # reported (Codex adversarial finding on #86)
                 self._pending_reset = pending_reset_before
-                await self._discard_session(repl)
-                if snapshot is not None:
-                    fresh = await self._checkout(
-                        script_name="toolplane_session.py",
-                        limits=self._session_limits(),
-                    )
-                    await fresh.load(snapshot)
-                    self._session = fresh
-                    recovery = (
-                        "Session variables were rolled back to the state "
-                        "before this run"
-                    )
-                else:
-                    recovery = (
-                        "The session could not be checkpointed, so its "
-                        "variables were cleared"
-                    )
+                await self._discard_session(repl, interrupted=True)
+                recovery = await self._restore_snapshot(snapshot)
                 return self._result(
                     started,
                     streams,
@@ -358,7 +348,7 @@ class MontyBackend:
                 # session so the next run checks out a fresh worker instead
                 # of feeding a corpse.
                 self._pending_reset = False
-                await self._discard_session(repl)
+                await self._discard_session(repl, interrupted=False)
                 return self._result(
                     started,
                     streams,
@@ -393,14 +383,12 @@ class MontyBackend:
                 # session must be restored from the pre-run snapshot for
                 # its variables to survive — same recovery as a timeout.
                 self._pending_reset = pending_reset_before
-                await self._discard_session(repl)
-                if snapshot is not None:
-                    fresh = await self._checkout(
-                        script_name="toolplane_session.py",
-                        limits=self._session_limits(),
-                    )
-                    await fresh.load(snapshot)
-                    self._session = fresh
+                await self._discard_session(repl, interrupted=False)
+                # the rollback is forced by upstream, so the message must
+                # disclose it: on 0.0.18 statements completed before the
+                # raise persisted, here they do not (unbiased-review
+                # finding on the port)
+                recovery = await self._restore_snapshot(snapshot)
                 if "No pending async tasks" in str(exc):
                     return self._result(
                         started,
@@ -412,7 +400,9 @@ class MontyBackend:
                                 "run that was never awaited — a pending "
                                 "call cannot cross runs. Re-run the call "
                                 "and await it in the same run (e.g. "
-                                "`handle = await save_result(value)`)."
+                                "`handle = await save_result(value)`). "
+                                f"{recovery}; capability calls and saved "
+                                "results or artifacts from this run stand."
                             ),
                         ),
                     )
@@ -421,7 +411,11 @@ class MontyBackend:
                     streams,
                     error=ExecutionError(
                         type=type(exc).__name__,
-                        message=str(exc),
+                        message=(
+                            f"{exc}. {recovery}; capability calls and "
+                            "saved results or artifacts from this run "
+                            "stand."
+                        ),
                     ),
                 )
         if _contains_unawaited_future(value) or _printed_unawaited_future(streams):
@@ -436,31 +430,78 @@ class MontyBackend:
         return self._result(started, streams, value=value)
 
     async def _ensure_pool(self) -> AsyncMonty:
-        if self._pool is None:
-            pool = AsyncMonty()
-            await pool.__aenter__()
-            self._pool = pool
+        # locked: concurrent first one-shot runs would otherwise each spawn
+        # and enter a pool, leaking all but the last (both reviewers)
+        async with self._pool_lock:
+            if self._pool is None:
+                # request_timeout is the in-pool backstop for CPU-bound
+                # overruns: the pool SIGKILLs a worker whose single feed
+                # exceeds it and raises MontyCrashedError. It counts
+                # execution only (host suspensions excluded) and does not
+                # accumulate across feeds, so with a margin over the host
+                # wait_for it can never kill a run the host would allow.
+                pool = AsyncMonty(request_timeout=self.timeout_seconds + 5)
+                await pool.__aenter__()
+                self._pool = pool
         return self._pool
 
     async def _checkout(
         self, *, script_name: str, limits: dict[str, Any] | None
-    ) -> AsyncMontySession:
+    ) -> tuple[AsyncMontySession, int | None]:
         # pool and sessions are async context managers; a long-lived backend
         # enters them manually, discards workers explicitly, and leaves the
-        # pool open for the process lifetime
+        # pool open for the process lifetime. The worker pid is only
+        # readable while the session is idle — capture it now, because a
+        # cancelled feed needs it for the kill and reads None by then.
         pool = await self._ensure_pool()
         checkout = pool.checkout(script_name=script_name, limits=limits)
-        return await checkout.__aenter__()
+        session = await checkout.__aenter__()
+        pid = session.worker_pid
+        return session, (pid if isinstance(pid, int) else None)
 
-    async def _discard_session(self, session: AsyncMontySession) -> None:
+    async def _discard_session(
+        self, session: AsyncMontySession, *, interrupted: bool
+    ) -> None:
+        pid = self._session_pid
         self._session = None
+        self._session_pid = None
+        await _close_worker(session, pid, interrupted=interrupted)
+
+    async def _restore_snapshot(self, snapshot: bytes | None) -> str:
+        """Load the pre-run snapshot into a fresh checkout; report honestly.
+
+        Every failure ends with ``_session = None`` (next run gets a fresh
+        empty session) and a message that says what actually happened —
+        recovery failing must never raise past the structured-error contract
+        (both reviewers, fault-injection confirmed).
+        """
+        if snapshot is None:
+            return (
+                "The session could not be checkpointed, so its variables "
+                "were cleared"
+            )
+        fresh: AsyncMontySession | None = None
+        pid: int | None = None
         try:
-            await session.__aexit__(None, None, None)
+            fresh, pid = await self._checkout(
+                script_name="toolplane_session.py",
+                limits=self._session_limits(),
+            )
+            await fresh.load(snapshot)
         except Exception:
-            # a wedged or crashed worker may refuse a clean shutdown; the
-            # pool has already replaced it, so failing to close is not an
-            # error the caller can act on
-            pass
+            if fresh is not None:
+                await _close_worker(fresh, pid, interrupted=False)
+            self._session = None
+            self._session_pid = None
+            return (
+                "The session could not be restored from its pre-run "
+                "checkpoint, so its variables were cleared"
+            )
+        self._session = fresh
+        self._session_pid = pid
+        return (
+            "Session variables were rolled back to the state before this run"
+        )
 
     def _session_limits(self) -> dict[str, Any] | None:
         if self.session_max_memory_bytes is None:
@@ -475,9 +516,9 @@ class MontyBackend:
 
     async def _ensure_session(self) -> AsyncMontySession:
         if self._pending_reset and self._session is not None:
-            await self._discard_session(self._session)
+            await self._discard_session(self._session, interrupted=False)
         if self._session is None or self._pending_reset:
-            self._session = await self._checkout(
+            self._session, self._session_pid = await self._checkout(
                 script_name="toolplane_session.py",
                 limits=self._session_limits(),
             )
@@ -527,6 +568,56 @@ class MontyBackend:
             backend=self.name,
             error=error,
         )
+
+
+# bound on a worker close: a clean close is instant, so anything slower is
+# a worker that will never come back on its own
+_CLOSE_TIMEOUT_S = 2.0
+
+
+def _kill_worker(pid: int | None) -> None:
+    if pid is None:
+        return
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except OSError:
+        # already dead, or not ours to kill — the close below still runs
+        pass
+
+
+async def _close_worker(
+    session: AsyncMontySession, pid: int | None, *, interrupted: bool
+) -> None:
+    """Shut a checked-out worker down without ever blocking the caller.
+
+    ``__aexit__`` waits for the in-flight turn to finish. A worker whose
+    feed was cancelled while suspended on a host call closes instantly, but
+    one cancelled mid-computation never finishes its turn — the close hangs
+    forever (both reviewers; empirically a hot ``while True`` loop wedged
+    ``run()`` permanently). When the run was interrupted, SIGKILL first:
+    the pool replaces killed workers by contract (MontyCrashedError), so
+    the kill is safe. Otherwise try a clean close, and escalate to the
+    kill only if it stalls.
+    """
+    if interrupted:
+        _kill_worker(pid)
+    try:
+        await asyncio.wait_for(
+            session.__aexit__(None, None, None), timeout=_CLOSE_TIMEOUT_S
+        )
+    except TimeoutError:
+        _kill_worker(pid)
+        try:
+            await asyncio.wait_for(
+                session.__aexit__(None, None, None), timeout=_CLOSE_TIMEOUT_S
+            )
+        except Exception:
+            pass
+    except Exception:
+        # a wedged or crashed worker may refuse a clean shutdown; the pool
+        # has already replaced it, so failing to close is not an error the
+        # caller can act on
+        pass
 
 
 def _printed_unawaited_future(streams: CollectStreams) -> bool:
