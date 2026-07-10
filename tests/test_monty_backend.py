@@ -67,7 +67,11 @@ def test_monty_reports_snippet_error_with_original_type() -> None:
     assert result.error is not None
     assert result.error.type == "ValueError"
     assert result.error.message == "boom"
-    assert "toolplane_snippet.py" in result.error.traceback
+    # the frame must point at the snippet's own line, not a toolplane
+    # internal; the REPL names snippet frames "<python-input-N>"
+    # (0.0.19's feed_run ignores script_name for frame filenames)
+    assert "line 1" in result.error.traceback
+    assert "toolplane" not in result.error.traceback
 
 
 def test_monty_tool_error_is_catchable_in_snippet() -> None:

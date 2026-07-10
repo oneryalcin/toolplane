@@ -9,12 +9,12 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from pydantic_monty import (
+    AsyncMonty,
+    AsyncMontySession,
     CollectStreams,
-    Monty,
+    MontyCrashedError,
     MontyError,
-    MontyRepl,
     MontyRuntimeError,
-    ResourceLimits,
 )
 
 from ..adapters.ambient_cli import (
@@ -32,7 +32,6 @@ from ._python import (
     UNAWAITED_CALL_MESSAGE,
     find_reserved_rebindings,
     find_unawaited_calls,
-    wrap_async_main,
 )
 
 # Monty stringifies an un-awaited external-function future to this exact repr
@@ -85,10 +84,14 @@ class MontyBackend:
             self.capabilities = self.capabilities.model_copy(
                 update={"persistence": "session"}
             )
-        self._repl: MontyRepl | None = None
+        # one pool of subprocess workers per backend, entered lazily on the
+        # first run and left open for the process lifetime (workers die with
+        # the host process)
+        self._pool: AsyncMonty | None = None
+        self._session: AsyncMontySession | None = None
         self._pending_reset = False
-        # one run at a time per session: MontyRepl holds an internal mutex
-        # and a second feed raises instead of queueing, so overlapping
+        # one run at a time per session: a session worker serves one feed at
+        # a time and a second feed raises instead of queueing, so overlapping
         # execute_code calls serialize here in arrival order
         self._session_lock = asyncio.Lock()
 
@@ -162,20 +165,33 @@ class MontyBackend:
                 code, started, streams, input_namespace, external_functions
             )
         try:
-            interpreter = await Monty.acreate(
-                wrap_async_main(code) + "\n\nawait __toolplane_main__()",
+            # one-shot = a session worker used for exactly one feed. The
+            # REPL accepts top-level await/return and yields the trailing
+            # expression, so raw code goes in unwrapped. The in-sandbox
+            # duration cap excludes time suspended on host calls, so the
+            # host-side wait_for below is still the wall-clock authority.
+            interpreter = await self._checkout(
                 script_name="toolplane_snippet.py",
-                inputs=sorted(input_namespace) or None,
+                limits={"max_duration_secs": self.timeout_seconds},
             )
-            value = await asyncio.wait_for(
-                interpreter.run_async(
-                    inputs=input_namespace or None,
-                    limits=ResourceLimits(max_duration_secs=self.timeout_seconds),
-                    external_functions=external_functions,
-                    print_callback=streams,
-                ),
-                timeout=self.timeout_seconds,
-            )
+            try:
+                value = await asyncio.wait_for(
+                    interpreter.feed_run(
+                        code,
+                        inputs=input_namespace or None,
+                        external_lookup=external_functions,
+                        print_callback=streams,
+                    ),
+                    timeout=self.timeout_seconds,
+                )
+            finally:
+                # a timed-out worker is wedged and may refuse a clean
+                # shutdown; the error the caller needs is the one already
+                # in flight, never the close failure
+                try:
+                    await interpreter.__aexit__(None, None, None)
+                except Exception:
+                    pass
         except TimeoutError:
             return self._result(
                 started,
@@ -252,10 +268,10 @@ class MontyBackend:
                 ),
             )
         async with self._session_lock:
-            repl = self._ensure_repl()
+            repl = await self._ensure_session()
             pending_reset_before = self._pending_reset
             try:
-                snapshot: bytes | None = repl.dump()
+                snapshot: bytes | None = await repl.dump()
             except Exception:
                 # rollback protection is best-effort; a run that cannot be
                 # checkpointed still executes, and a timeout then resets the
@@ -263,33 +279,40 @@ class MontyBackend:
                 snapshot = None
             try:
                 value = await asyncio.wait_for(
-                    repl.feed_run_async(
+                    repl.feed_run(
                         code,
                         inputs=input_namespace or None,
-                        external_functions=external_functions,
+                        external_lookup=external_functions,
                         print_callback=streams,
                     ),
                     timeout=self.timeout_seconds,
                 )
             except TimeoutError:
-                # a cancelled feed leaves partial mutations in the heap and —
-                # whenever the run interned a new string — permanently
-                # poisons the interpreter (pydantic/monty#533). Restoring the
-                # pre-run snapshot fixes both: the namespace is as if the run
-                # never happened. Host-side effects are NOT rolled back; the
-                # message must say so instead of promising a transaction.
+                # a cancelled feed wedges the worker: every later feed on it
+                # raises "feed called while a suspension is awaiting an
+                # answer" (pydantic/monty#533's successor behavior). The
+                # worker is discarded and the pre-run snapshot is loaded into
+                # a FRESH checkout — load() is only valid before the first
+                # feed — so the namespace is as if the run never happened.
+                # Host-side effects are NOT rolled back; the message must say
+                # so instead of promising a transaction.
                 # The reset flag is namespace state too: a reset requested by
                 # the timed-out run must not fire after "rolled back" was
                 # reported (Codex adversarial finding on #86)
                 self._pending_reset = pending_reset_before
+                await self._discard_session(repl)
                 if snapshot is not None:
-                    self._repl = MontyRepl.load(snapshot)
+                    fresh = await self._checkout(
+                        script_name="toolplane_session.py",
+                        limits=self._session_limits(),
+                    )
+                    await fresh.load(snapshot)
+                    self._session = fresh
                     recovery = (
                         "Session variables were rolled back to the state "
                         "before this run"
                     )
                 else:
-                    self._repl = None
                     recovery = (
                         "The session could not be checkpointed, so its "
                         "variables were cleared"
@@ -329,6 +352,26 @@ class MontyBackend:
                         traceback=_format_frames(exc),
                     ),
                 )
+            except MontyCrashedError as exc:
+                # the dedicated worker process died mid-run (OOM-kill, crash,
+                # external signal). Its namespace died with it — drop the
+                # session so the next run checks out a fresh worker instead
+                # of feeding a corpse.
+                self._pending_reset = False
+                await self._discard_session(repl)
+                return self._result(
+                    started,
+                    streams,
+                    error=ExecutionError(
+                        type=type(exc).__name__,
+                        message=(
+                            f"{exc}. The session worker process died and "
+                            "its variables were lost; a fresh session "
+                            "starts on the next run. Saved results and "
+                            "artifacts are unaffected."
+                        ),
+                    ),
+                )
             except MontyError as exc:
                 return self._result(
                     started,
@@ -344,6 +387,20 @@ class MontyBackend:
                 # RuntimeError("No pending async tasks but ResolveFutures
                 # requested"). Every failure mode here must come back as a
                 # structured error, never crash the caller.
+                # Unlike user-code errors, these protocol-level failures
+                # FINISH the checkout on the subprocess API (a later feed
+                # raises "this checkout has already been finished"), so the
+                # session must be restored from the pre-run snapshot for
+                # its variables to survive — same recovery as a timeout.
+                self._pending_reset = pending_reset_before
+                await self._discard_session(repl)
+                if snapshot is not None:
+                    fresh = await self._checkout(
+                        script_name="toolplane_session.py",
+                        limits=self._session_limits(),
+                    )
+                    await fresh.load(snapshot)
+                    self._session = fresh
                 if "No pending async tasks" in str(exc):
                     return self._result(
                         started,
@@ -378,24 +435,54 @@ class MontyBackend:
             )
         return self._result(started, streams, value=value)
 
-    def _ensure_repl(self) -> MontyRepl:
-        if self._repl is None or self._pending_reset:
-            limits: ResourceLimits | None = None
-            if self.session_max_memory_bytes is not None:
-                # literal key only: ResourceLimits silently ignores unknown
-                # keys (pydantic/monty#534), so the cap is also asserted
-                # empirically in tests, not trusted from construction
-                limits = ResourceLimits(
-                    max_memory=self.session_max_memory_bytes
-                )
-            # no max_duration_secs: the REPL clock runs from construction,
-            # not per feed (pydantic/monty#483) — per-run timeouts are the
-            # host's asyncio.wait_for
-            self._repl = MontyRepl(
-                script_name="toolplane_session.py", limits=limits
+    async def _ensure_pool(self) -> AsyncMonty:
+        if self._pool is None:
+            pool = AsyncMonty()
+            await pool.__aenter__()
+            self._pool = pool
+        return self._pool
+
+    async def _checkout(
+        self, *, script_name: str, limits: dict[str, Any] | None
+    ) -> AsyncMontySession:
+        # pool and sessions are async context managers; a long-lived backend
+        # enters them manually, discards workers explicitly, and leaves the
+        # pool open for the process lifetime
+        pool = await self._ensure_pool()
+        checkout = pool.checkout(script_name=script_name, limits=limits)
+        return await checkout.__aenter__()
+
+    async def _discard_session(self, session: AsyncMontySession) -> None:
+        self._session = None
+        try:
+            await session.__aexit__(None, None, None)
+        except Exception:
+            # a wedged or crashed worker may refuse a clean shutdown; the
+            # pool has already replaced it, so failing to close is not an
+            # error the caller can act on
+            pass
+
+    def _session_limits(self) -> dict[str, Any] | None:
+        if self.session_max_memory_bytes is None:
+            return None
+        # literal key only: the limits dict silently ignores unknown keys
+        # (pydantic/monty#534), so the cap is also asserted empirically in
+        # tests, not trusted from construction.
+        # no max_duration_secs: the cap accumulates across feeds, not per
+        # feed (pydantic/monty#483 behavior persists on the subprocess
+        # API) — per-run timeouts are the host's asyncio.wait_for
+        return {"max_memory": self.session_max_memory_bytes}
+
+    async def _ensure_session(self) -> AsyncMontySession:
+        if self._pending_reset and self._session is not None:
+            await self._discard_session(self._session)
+        if self._session is None or self._pending_reset:
+            self._session = await self._checkout(
+                script_name="toolplane_session.py",
+                limits=self._session_limits(),
             )
             self._pending_reset = False
-        return self._repl
+        return self._session
 
     def _make_reset_session(self) -> Any:
         async def reset_session() -> str:

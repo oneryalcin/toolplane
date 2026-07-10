@@ -28,12 +28,10 @@ dependencies = [
     # transitively via fastmcp's storage stack
     "keyring>=25",
     "pydantic>=2.0",
-    # HARD pin: monty main (post-0.0.18) deletes MontyRepl for an AsyncMonty
-    # subprocess-pool API — 0.0.19 will break our import. Port tracked in the
-    # sessions-port issue; on upgrade re-run tests/test_monty_session.py and
-    # revisit the snapshot/limit guards (pydantic/monty#533 wedges differently
-    # on main, #534 still reproduces there)
-    "pydantic-monty>=0.0.18,<0.0.19",
+    # SPIKE BRANCH pin (do not release): the AsyncMonty subprocess-pool port
+    # (#88) needs the 0.0.19 beta. Move to >=0.0.19,<0.0.20 when upstream
+    # ships stable. The prerelease specifier lets uv resolve the beta.
+    "pydantic-monty>=0.0.19b2,<0.0.20",
     "tomlkit>=0.15.0",
 ]
 
@@ -48,6 +46,17 @@ docs = [
     "mkdocs>=1.6",
     "mkdocs-material>=9.5,<9.7",
 ]
+
+[tool.uv]
+# SPIKE BRANCH (#88): the beta's split-out worker package is a transitive
+# dep; naming it here with a prerelease specifier lets uv resolve it
+constraint-dependencies = ["pydantic-monty-runtime>=0.0.19b2"]
+
+# the beta (2026-07-09) postdates this machine's global exclude-newer
+# cutoff; scope the override to the two monty packages
+[tool.uv.exclude-newer-package]
+pydantic-monty = "2026-07-10T00:00:00Z"
+pydantic-monty-runtime = "2026-07-10T00:00:00Z"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/toolplane"]
