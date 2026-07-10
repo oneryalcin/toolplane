@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -14,6 +15,7 @@ except ImportError:  # pragma: no cover - dependency is required
     Context = None  # type: ignore[assignment, misc]
 
 from .config import ConfigSource, ToolplaneConfig, load_toolplane_config
+from .discovery import domain_hint
 from .errors import BackendNotFoundError
 from .execution import ExecutionError, ExecutionResult
 from .policy import EffectivePolicy, ensure_safe_facade_policy
@@ -69,11 +71,13 @@ def build_mcp_facade(
     mcp = FastMCP(
         "Toolplane",
         instructions=(
-            "One search_capabilities call (an empty query lists everything) "
-            "returns each hit's exact Python call shape plus the snippet "
-            "rules — for straightforward tasks, go straight from one search "
-            "to execute_code. Escalate only when that is not enough: "
-            "get_capability_schemas for full parameter docs, the "
+            "The search_capabilities and execute_code tool descriptions "
+            "list exact Python call shapes for the capabilities served "
+            "here — when the shape you need is already shown, go straight "
+            "to execute_code. Otherwise one search_capabilities call (an "
+            "empty query lists everything) returns each hit's exact call "
+            "shape plus the snippet rules. Escalate only when that is not "
+            "enough: get_capability_schemas for full parameter docs, the "
             "toolplane://namespace resource for the complete namespace "
             "(CLI bindings, result store), and "
             "skill://driving-toolplane/SKILL.md for conventions in depth."
@@ -133,23 +137,38 @@ def build_mcp_facade(
         def artifact_resource(handle: str) -> bytes:
             return runtime.artifact_store.load(handle)
 
-    @mcp.tool
+    # deferred-loading clients index tools by name+description and load
+    # them via keyword search; an agent's first search names the DOMAIN,
+    # not "toolplane", so the descriptions must carry the vocabulary of
+    # what is behind the facade or every run pays an extra failed-search
+    # model request (#115). Computed at build time: from_config registers
+    # all capabilities before the facade is built.
+    hint = domain_hint(
+        runtime.registry.all(), reserved=runtime._reserved_binding_names()
+    )
+
+    def _described(doc: str) -> str:
+        base = inspect.cleandoc(doc)
+        return f"{base}\n\n{hint}" if hint else base
+
+    _SEARCH_DOC = """Search the Toolplane capability registry by keyword.
+
+    Results carry each hit's exact Python call shape and the snippet
+    rules — for straightforward tasks, write execute_code directly
+    from one search. Matching is exact-word, not fuzzy: if nothing
+    matches, retry with different words, or pass an empty query to
+    list every capability. The namespace surfaces search does not
+    cover (CLI bindings, result store) are summarized in the result
+    footer and documented fully in the toolplane://namespace resource.
+    """
+
+    @mcp.tool(description=_described(_SEARCH_DOC))
     async def search_capabilities(
         query: str,
         tags: list[str] | None = None,
         detail: SchemaDetail = "brief",
         limit: int | None = None,
     ) -> str:
-        """Search the Toolplane capability registry by keyword.
-
-        Results carry each hit's exact Python call shape and the snippet
-        rules — for straightforward tasks, write execute_code directly
-        from one search. Matching is exact-word, not fuzzy: if nothing
-        matches, retry with different words, or pass an empty query to
-        list every capability. The namespace surfaces search does not
-        cover (CLI bindings, result store) are summarized in the result
-        footer and documented fully in the toolplane://namespace resource.
-        """
         return await runtime.search(
             query,
             tags=frozenset(tags or ()),
@@ -170,7 +189,18 @@ def build_mcp_facade(
         """
         return await runtime.get_schema(names, detail=detail)
 
-    @mcp.tool
+    _EXECUTE_DOC = """Execute Python against the configured Toolplane namespace.
+
+    Use the call shapes exactly as search_capabilities returned them —
+    guessed binding names or positional arguments fail. Every binding
+    is async — always `await` it — and the snippet should `return` a
+    JSON-shaped value. Beyond capability functions the namespace binds
+    flat CLI functions for allowed binaries and
+    save_result/load_result; the toolplane://namespace resource is the
+    full manifest when a shape is unclear.
+    """
+
+    @mcp.tool(description=_described(_EXECUTE_DOC))
     async def execute_code(
         code: str,
         backend: str | None = None,
@@ -178,16 +208,6 @@ def build_mcp_facade(
         packages: list[str] | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Execute Python against the configured Toolplane namespace.
-
-        Use the call shapes exactly as search_capabilities returned them —
-        guessed binding names or positional arguments fail. Every binding
-        is async — always `await` it — and the snippet should `return` a
-        JSON-shaped value. Beyond capability functions the namespace binds
-        flat CLI functions for allowed binaries and
-        save_result/load_result; the toolplane://namespace resource is the
-        full manifest when a shape is unclear.
-        """
         if (
             policy is not None
             and backend is not None

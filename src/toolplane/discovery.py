@@ -51,6 +51,80 @@ _MISSING_HINT = (
 )
 
 
+def domain_hint(
+    capabilities: Sequence[Capability],
+    *,
+    max_chars: int = 1500,
+    reserved: frozenset[str] = frozenset(),
+) -> str:
+    """Domain vocabulary for the facade tool descriptions.
+
+    Clients with deferred tool loading index MCP tools by name and
+    description and load them via keyword search. An agent's first search
+    is for the DOMAIN ("order status"), not for "toolplane" — and a facade
+    that only talks about itself is invisible to that query, costing an
+    extra model request per run (#115, transcript-measured). This renders
+    what is BEHIND the facade, bounded and deterministic.
+
+    Each entry is the capability's EXACT call shape, not its leaf name: a
+    bare name reads as the binding, the agent skips search and guesses
+    `await get_order(...)`, and the NameError retry costs back the request
+    the hint saved (measured on the first attempt of this fix). With the
+    real shape in the description, going straight to execute_code is
+    correct rather than a trap.
+    """
+    visible = sorted(
+        (c for c in capabilities if not c.hidden), key=lambda c: c.name
+    )
+    if not visible:
+        return ""
+    # every domain's name up front, unconditionally: at scale the shape
+    # budget truncates, and a domain whose vocabulary is entirely absent is
+    # invisible to the first keyword search — measured at M=15, where an
+    # agent concluded no order tool existed and answered WRONG rather than
+    # searching again
+    domains = sorted({_domain(capability) for capability in visible})
+    prefix = (
+        f"Serves capabilities for: {', '.join(domains)}. "
+        "Call them in execute_code exactly as shown: "
+    )
+    # round-robin across domains, not alphabetical fill: every domain gets
+    # its first shape into the budget before any domain gets its second
+    by_domain: dict[str, list[Capability]] = {}
+    for capability in visible:
+        by_domain.setdefault(_domain(capability), []).append(capability)
+    interleaved: list[Capability] = []
+    queues = [by_domain[domain] for domain in domains]
+    while queues:
+        queues = [q for q in queues if q]
+        interleaved.extend(q.pop(0) for q in queues)
+    entries = []
+    used = len(prefix)
+    for capability in interleaved:
+        shape = call_shape(capability, reserved=reserved)
+        desc = capability.description.strip().rstrip(".")
+        entry = f"`{shape}` ({desc})" if desc else f"`{shape}`"
+        # +2 for the "; " separator; truncation is per-capability so the
+        # hint never ends mid-sentence
+        if used + len(entry) + 2 > max_chars:
+            remaining = len(visible) - len(entries)
+            entries.append(
+                f"plus {remaining} more — search_capabilities lists all"
+            )
+            break
+        entries.append(entry)
+        used += len(entry) + 2
+    return prefix + "; ".join(entries) + "."
+
+
+def _domain(capability: Capability) -> str:
+    """The capability's domain word: 'payments' from 'mcp:payments/refund'."""
+    name = capability.name
+    if "/" in name:
+        return name.rsplit("/", 1)[0].rsplit(":", 1)[-1]
+    return name.rsplit(":", 1)[-1]
+
+
 def _render_brief(
     capability: Capability, reserved: frozenset[str] = frozenset()
 ) -> str:

@@ -473,3 +473,120 @@ def test_sessioned_runtime_reserves_reset_session_in_search() -> None:
     search = run(rt.search("session"))
     assert 'await call_tool("reset_session", {})' in search
     assert "- `await reset_session()`" not in search
+
+
+def _hint_capability(name: str, description: str = "") -> object:
+    from toolplane.capabilities import Capability
+
+    return Capability(
+        name=name,
+        callable=lambda: None,
+        description=description,
+        parameters={"type": "object", "properties": {}},
+        returns=None,
+        tags=frozenset(),
+        source="mcp:test",
+    )
+
+
+def test_domain_hint_carries_call_shapes_not_leaf_names() -> None:
+    # deferred-loading clients find the facade by keyword; a hint without
+    # the domain words costs a failed-search model request per run (#115).
+    # It must render the EXACT call shape: a bare leaf name reads as the
+    # binding, the agent guesses `await get_order(...)` in execute_code,
+    # and the NameError retry costs back the request the hint saved
+    # (transcript-measured on the first attempt of this fix,
+    # run-20260710-211534)
+    from toolplane.capabilities import Capability
+    from toolplane.discovery import domain_hint
+
+    get_order = Capability(
+        name="mcp:orders/get_order",
+        callable=lambda: None,
+        description="Fetch one order record: order_id, region, amount, status.",
+        parameters={
+            "type": "object",
+            "properties": {"order_id": {"type": "string"}},
+            "required": ["order_id"],
+        },
+        returns=None,
+        tags=frozenset(),
+        source="mcp:orders",
+        aliases=frozenset({"orders_get_order"}),
+    )
+    hint = domain_hint(
+        [
+            get_order,
+            _hint_capability(
+                "mcp:orders/list_order_ids", "List every order id in the store."
+            ),
+        ]
+    )
+    assert "`await orders_get_order(order_id=<string>)`" in hint
+    assert "status" in hint
+    assert "list_order_ids" in hint
+    # the trap that cost the retry: the leaf name must only ever appear
+    # inside a real executable shape, never as a bare callable-looking token
+    assert "get_order (" not in hint
+
+
+def test_domain_hint_is_bounded_and_names_the_dropped_domains() -> None:
+    # truncation must not silently reopen #115 for servers past the
+    # budget: their domain words stay searchable even when their shapes
+    # do not fit
+    from toolplane.discovery import domain_hint
+
+    capabilities = [
+        _hint_capability(f"mcp:aardvark/tool_{i:03d}", "Does a specific thing")
+        for i in range(50)
+    ] + [
+        _hint_capability("mcp:payments/refund_invoice", "Refund an invoice."),
+        _hint_capability("mcp:wiki/search_pages", "Search wiki pages."),
+    ]
+    hint = domain_hint(capabilities, max_chars=400)
+    assert len(hint) < 600
+    assert "more" in hint and "search_capabilities" in hint
+    # alphabetical fill means aardvark shapes ate the budget; payments and
+    # wiki must still be named
+    assert "payments" in hint
+    assert "wiki" in hint
+
+
+def test_domain_hint_skips_hidden_and_survives_empty_registry() -> None:
+    from dataclasses import replace
+
+    from toolplane.discovery import domain_hint
+
+    hidden = replace(_hint_capability("mcp:x/secret_tool"), hidden=True)
+    assert "secret_tool" not in domain_hint([hidden])
+    assert domain_hint([]) == ""
+
+
+def test_facade_tool_descriptions_carry_the_domain_vocabulary() -> None:
+    # the transcript-measured failure (#115): ToolSearch("order status ORD")
+    # matched zero facade tools because the descriptions only talked about
+    # toolplane itself
+    from fastmcp import Client
+
+    from toolplane.mcp_facade import build_mcp_facade
+
+    async def get_order(order_id: str) -> dict:
+        """Fetch one order record: order_id, region, amount, status."""
+        return {"order_id": order_id}
+
+    async def exercise() -> dict[str, str]:
+        runtime = Toolplane(ambient_cli=False)
+        runtime.register(get_order)
+        app = build_mcp_facade(runtime)
+        async with Client(app) as client:
+            tools = await client.list_tools()
+        return {t.name: t.description or "" for t in tools}
+
+    descriptions = asyncio.run(exercise())
+    for tool in ("search_capabilities", "execute_code"):
+        # the executable shape, so skipping search is correct, not a trap
+        assert "await get_order(order_id=<string>)" in descriptions[tool]
+        assert "status" in descriptions[tool]
+        # the base contract text survives the injection
+    assert "call shape" in descriptions["search_capabilities"]
+    assert "JSON-shaped" in descriptions["execute_code"]

@@ -1,0 +1,142 @@
+[
+  {
+    "arm": "direct",
+    "task": "single",
+    "orders_n": 30,
+    "m_servers": 15,
+    "model": "claude-sonnet-5",
+    "correct": true,
+    "answer": "shipped",
+    "tool_calls": 2,
+    "tool_call_names": [
+      "ToolSearch",
+      "mcp__orders__get_order"
+    ],
+    "model_requests": 3,
+    "num_turns": 3,
+    "input_tokens": 120890,
+    "uncached_input_tokens": 31622,
+    "output_tokens": 172,
+    "cost_usd": 0.14407365,
+    "api_duration_ms": 7795,
+    "wall_s": 9.4,
+    "exit_code": 0,
+    "transcript": "single-direct-m15-rep1.jsonl",
+    "client_version": "2.1.205 (Claude Code)",
+    "arm_order": "direct->toolplane",
+    "git_sha": "a7fbb2b3053e4c4b49c701c67130b89ab3b82b52",
+    "git_dirty": true,
+    "wheel_sha256": "6ab4fdd620ddff7d307427a5d2a0f7662308eb61452f7c0eb989919cdec6c3f5",
+    "fixtures_sha256": {
+      "order_server.py": "d6e3b0d35076014dc3545e634d822795c1d29827151abd44291a2a1d14842929",
+      "distractor_server.py": "434aa008f65d64769dd30e90bd8eddf98c0328007674ab9bcee215744ae10bad",
+      "orders_data.py": "8ed84942828bf49605a8f6ce6a2371d81823a66db695192daf94949dc09cbf62"
+    }
+  },
+  {
+    "arm": "toolplane",
+    "task": "single",
+    "orders_n": 30,
+    "m_servers": 15,
+    "model": "claude-sonnet-5",
+    "correct": true,
+    "answer": "shipped",
+    "tool_calls": 5,
+    "tool_call_names": [
+      "ToolSearch",
+      "ToolSearch",
+      "ToolSearch",
+      "mcp__toolplane__search_capabilities",
+      "mcp__toolplane__execute_code"
+    ],
+    "model_requests": 6,
+    "num_turns": 6,
+    "input_tokens": 258532,
+    "uncached_input_tokens": 35381,
+    "output_tokens": 482,
+    "cost_usd": 0.2031288,
+    "api_duration_ms": 18962,
+    "wall_s": 21.1,
+    "exit_code": 0,
+    "transcript": "single-toolplane-m15-rep1.jsonl",
+    "client_version": "2.1.205 (Claude Code)",
+    "arm_order": "direct->toolplane",
+    "git_sha": "a7fbb2b3053e4c4b49c701c67130b89ab3b82b52",
+    "git_dirty": true,
+    "wheel_sha256": "6ab4fdd620ddff7d307427a5d2a0f7662308eb61452f7c0eb989919cdec6c3f5",
+    "fixtures_sha256": {
+      "order_server.py": "d6e3b0d35076014dc3545e634d822795c1d29827151abd44291a2a1d14842929",
+      "distractor_server.py": "434aa008f65d64769dd30e90bd8eddf98c0328007674ab9bcee215744ae10bad",
+      "orders_data.py": "8ed84942828bf49605a8f6ce6a2371d81823a66db695192daf94949dc09cbf62"
+    }
+  },
+  {
+    "arm": "toolplane",
+    "task": "single",
+    "orders_n": 30,
+    "m_servers": 15,
+    "model": "claude-sonnet-5",
+    "correct": false,
+    "answer": "unknown",
+    "tool_calls": 3,
+    "tool_call_names": [
+      "ToolSearch",
+      "ToolSearch",
+      "ToolSearch"
+    ],
+    "model_requests": 4,
+    "num_turns": 4,
+    "input_tokens": 165070,
+    "uncached_input_tokens": 32882,
+    "output_tokens": 394,
+    "cost_usd": 0.16544414999999998,
+    "api_duration_ms": 12649,
+    "wall_s": 14.9,
+    "exit_code": 0,
+    "transcript": "single-toolplane-m15-rep2.jsonl",
+    "client_version": "2.1.205 (Claude Code)",
+    "arm_order": "toolplane->direct",
+    "git_sha": "a7fbb2b3053e4c4b49c701c67130b89ab3b82b52",
+    "git_dirty": true,
+    "wheel_sha256": "6ab4fdd620ddff7d307427a5d2a0f7662308eb61452f7c0eb989919cdec6c3f5",
+    "fixtures_sha256": {
+      "order_server.py": "d6e3b0d35076014dc3545e634d822795c1d29827151abd44291a2a1d14842929",
+      "distractor_server.py": "434aa008f65d64769dd30e90bd8eddf98c0328007674ab9bcee215744ae10bad",
+      "orders_data.py": "8ed84942828bf49605a8f6ce6a2371d81823a66db695192daf94949dc09cbf62"
+    }
+  },
+  {
+    "arm": "direct",
+    "task": "single",
+    "orders_n": 30,
+    "m_servers": 15,
+    "model": "claude-sonnet-5",
+    "correct": true,
+    "answer": "shipped",
+    "tool_calls": 2,
+    "tool_call_names": [
+      "ToolSearch",
+      "mcp__orders__get_order"
+    ],
+    "model_requests": 3,
+    "num_turns": 3,
+    "input_tokens": 121722,
+    "uncached_input_tokens": 32449,
+    "output_tokens": 177,
+    "cost_usd": 0.1466349,
+    "api_duration_ms": 8808,
+    "wall_s": 10.4,
+    "exit_code": 0,
+    "transcript": "single-direct-m15-rep2.jsonl",
+    "client_version": "2.1.205 (Claude Code)",
+    "arm_order": "toolplane->direct",
+    "git_sha": "a7fbb2b3053e4c4b49c701c67130b89ab3b82b52",
+    "git_dirty": true,
+    "wheel_sha256": "6ab4fdd620ddff7d307427a5d2a0f7662308eb61452f7c0eb989919cdec6c3f5",
+    "fixtures_sha256": {
+      "order_server.py": "d6e3b0d35076014dc3545e634d822795c1d29827151abd44291a2a1d14842929",
+      "distractor_server.py": "434aa008f65d64769dd30e90bd8eddf98c0328007674ab9bcee215744ae10bad",
+      "orders_data.py": "8ed84942828bf49605a8f6ce6a2371d81823a66db695192daf94949dc09cbf62"
+    }
+  }
+]
