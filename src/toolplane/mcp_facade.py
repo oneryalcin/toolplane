@@ -59,8 +59,9 @@ def build_mcp_facade(
     (single/adaptive tasks route to a native tool, loops still use
     ``execute_code``) but the WORST arm at 15 servers, where re-exporting
     the whole registry rebuilds the flat tool surface the facade exists to
-    avoid. The general form is selective re-export (#125); this all-or-
-    nothing flag stays experimental. On clients WITHOUT deferred loading
+    avoid. The general form is selective re-export (#125); the all-or-
+    nothing form is unpublished (the CLI flag is hidden) and kept only for
+    the benchmark. On clients WITHOUT deferred loading
     every re-exported schema lands in context at once. Each re-exported
     tool is a stateless one-capability dispatch through the same audited
     ``call_tool`` path ``execute_code`` uses (no session, no stores).

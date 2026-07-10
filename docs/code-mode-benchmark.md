@@ -477,7 +477,9 @@ capabilities it is the worst arm on both tasks measured, because it
 rebuilds the flat surface without fixing the ranking dilution that made
 the flat surface lose in the first place. The actionable design is
 **selective re-export** (a curated allowlist or the hot capabilities),
-filed as #125; the all-or-nothing `--hybrid` flag stays experimental. Like
+filed as #125. The all-or-nothing `--hybrid` flag is therefore **not
+shipped as a public feature** — it is unpublished (hidden from `--help`),
+kept only so this benchmark stays reproducible; #125 supersedes it. Like
 every result here it only helps deferred-loading clients — and note the
 flag is not itself client-aware: it re-exports unconditionally, so on a
 client without deferral (Codex) it would push all 84 schemas into context
