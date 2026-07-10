@@ -43,6 +43,12 @@ def build_mcp_facade(
     construct ``Toolplane(sessions=False)`` (and disabled stores) and pass
     ``cli_escalation=False``, or one client's variables, handles, and
     grants become every client's.
+
+    Registration order matters: the domain hint baked into the tool
+    descriptions is a snapshot of the registry AT BUILD TIME. Capabilities
+    registered afterwards stay fully searchable and executable, but are
+    invisible to clients' deferred-tool keyword search — register
+    everything first (the config-driven path always does).
     """
     try:
         from fastmcp import FastMCP
