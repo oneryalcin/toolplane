@@ -22,8 +22,10 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
+import shutil
 import statistics
 import subprocess
 import sys
@@ -196,23 +198,100 @@ def task_server_env(task: str) -> dict[str, str]:
     }
 
 
-def mcp_config(arm: str, workdir: Path, task: str, m_servers: int) -> dict:
-    def uv_cmd(script: str, env: dict) -> dict:
+# every file whose bytes are part of the measurement: the fixtures are
+# snapshotted into the run's scratch dir and served from there, so an edit
+# to the working tree mid-matrix cannot reach a running measurement (the
+# #111 contamination incident; #116 item 2)
+_FIXTURE_FILES = ("order_server.py", "distractor_server.py", "orders_data.py")
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def build_code_under_test(workdir: Path) -> dict:
+    """Freeze the code under test and return its provenance.
+
+    The toolplane facade is built into a wheel and installed into a scratch
+    venv; the bench fixture scripts are copied next to it. Every server the
+    matrix spawns runs from these frozen copies. The returned dict carries
+    both the execution paths and the provenance recorded on every result
+    row (git SHA + dirty flag + wheel/fixture hashes) so any published
+    number can be traced to exact bytes.
+    """
+    git_sha = subprocess.run(
+        ["git", "-C", str(REPO_DIR), "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    git_dirty = bool(
+        subprocess.run(
+            ["git", "-C", str(REPO_DIR), "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    )
+    dist = workdir / "dist"
+    subprocess.run(
+        ["uv", "build", "--wheel", "-o", str(dist), "--project", str(REPO_DIR)],
+        check=True,
+        capture_output=True,
+    )
+    wheels = sorted(dist.glob("toolplane-*.whl"))
+    if len(wheels) != 1:
+        raise RuntimeError(f"expected exactly one wheel in {dist}, got {wheels}")
+    wheel = wheels[0]
+    venv = workdir / "venv"
+    python = venv / "bin" / "python"
+    subprocess.run(["uv", "venv", str(venv)], check=True, capture_output=True)
+    subprocess.run(
+        ["uv", "pip", "install", "--python", str(python), str(wheel)],
+        check=True,
+        capture_output=True,
+    )
+    fixtures = workdir / "fixtures"
+    fixtures.mkdir()
+    fixture_hashes = {}
+    for name in _FIXTURE_FILES:
+        shutil.copy2(BENCH_DIR / name, fixtures / name)
+        fixture_hashes[name] = _sha256(fixtures / name)
+    return {
+        "git_sha": git_sha,
+        "git_dirty": git_dirty,
+        "wheel": wheel.name,
+        "wheel_sha256": _sha256(wheel),
+        "fixtures_sha256": fixture_hashes,
+        "python": str(python),
+        "toolplane_bin": str(venv / "bin" / "toolplane"),
+        "fixtures_dir": str(fixtures),
+    }
+
+
+def provenance_row(code: dict) -> dict:
+    """The provenance subset stamped onto every result row."""
+    return {
+        "git_sha": code["git_sha"],
+        "git_dirty": code["git_dirty"],
+        "wheel_sha256": code["wheel_sha256"],
+        "fixtures_sha256": code["fixtures_sha256"],
+    }
+
+
+def mcp_config(
+    arm: str, workdir: Path, task: str, m_servers: int, code: dict
+) -> dict:
+    fixtures_dir = Path(code["fixtures_dir"])
+
+    def frozen_cmd(script: str, env: dict) -> dict:
         return {
-            "command": "uv",
-            "args": [
-                "run",
-                "--project",
-                str(REPO_DIR),
-                "python",
-                str(BENCH_DIR / script),
-            ],
+            "command": code["python"],
+            "args": [str(fixtures_dir / script)],
             "env": env,
         }
 
-    server_cmd = uv_cmd("order_server.py", task_server_env(task))
+    server_cmd = frozen_cmd("order_server.py", task_server_env(task))
     extra = {
-        name: uv_cmd("distractor_server.py", {"DISTRACTOR_PROFILE": profile})
+        name: frozen_cmd("distractor_server.py", {"DISTRACTOR_PROFILE": profile})
         for name, profile in distractors(m_servers)
     }
     if arm == "direct":
@@ -228,12 +307,13 @@ def mcp_config(arm: str, workdir: Path, task: str, m_servers: int) -> dict:
         toml_path = workdir / f"toolplane-bench-{task}-m{m_servers}.toml"
         sections = []
         for name, cmd in {"orders": server_cmd, **extra}.items():
+            command_toml = json.dumps(cmd["command"])
             args_toml = ", ".join(json.dumps(a) for a in cmd["args"])
             env_toml = ", ".join(
                 f'{k} = "{v}"' for k, v in cmd["env"].items()
             )
             sections.append(
-                f'[mcp.servers."{name}"]\ncommand = "uv"\n'
+                f'[mcp.servers."{name}"]\ncommand = {command_toml}\n'
                 f"args = [{args_toml}]\nenv = {{ {env_toml} }}\n"
             )
         toml_path.write_text("\n".join(sections), encoding="utf-8")
@@ -241,12 +321,8 @@ def mcp_config(arm: str, workdir: Path, task: str, m_servers: int) -> dict:
             "mcpServers": {
                 "toolplane": {
                     "type": "stdio",
-                    "command": "uv",
+                    "command": code["toolplane_bin"],
                     "args": [
-                        "run",
-                        "--project",
-                        str(REPO_DIR),
-                        "toolplane",
                         "serve",
                         "mcp",
                         "--config",
@@ -278,18 +354,51 @@ def _redacted_transcript(stdout: str) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _unique_request_ids(stdout: str) -> int:
+    """Exact model-request count from the transcript.
+
+    Every assistant event carries the API request_id it arrived on; the
+    unique count is the run's real number of model requests — stronger
+    than inferring round-trips from cache-read arithmetic, and the metric
+    that exposed the client-side double-discovery gap (#115).
+    """
+    ids = set()
+    for line in stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        request_id = event.get("request_id")
+        if request_id:
+            ids.add(request_id)
+    return len(ids)
+
+
+def arm_order(arms: list[str], rep: int) -> list[str]:
+    """Deterministic counterbalance: odd reps reverse the arm order.
+
+    A fixed order confounds arm with prompt-cache warmth and time drift
+    (direct always ran first through #112). Alternation is deterministic
+    on purpose — anyone can recompute which order a rep ran in from its
+    rep number. With an odd rep count the first-position split is uneven
+    by one; use even reps for headline cells.
+    """
+    return list(arms) if rep % 2 == 0 else list(reversed(arms))
+
+
 def run_case(
     arm: str,
     task: str,
     model: str,
     workdir: Path,
+    code: dict,
     m_servers: int = 1,
     transcript_path: Path | None = None,
 ) -> dict:
     orders_n = TASKS[task]["orders_n"]
     config_path = workdir / f"mcp-{arm}-{task}-m{m_servers}.json"
     config_path.write_text(
-        json.dumps(mcp_config(arm, workdir, task, m_servers)),
+        json.dumps(mcp_config(arm, workdir, task, m_servers, code)),
         encoding="utf-8",
     )
     cwd = workdir / f"cwd-{arm}-{task}-{time.time_ns()}"
@@ -334,6 +443,7 @@ def run_case(
             "answer": None,
             "tool_calls": None,
             "tool_call_names": [],
+            "model_requests": None,
             "num_turns": None,
             "input_tokens": 0,
             "uncached_input_tokens": 0,
@@ -382,6 +492,7 @@ def run_case(
         "answer": answer,
         "tool_calls": len(tool_calls),
         "tool_call_names": tool_calls,
+        "model_requests": _unique_request_ids(proc.stdout),
         "num_turns": result_event.get("num_turns"),
         "input_tokens": usage.get("input_tokens", 0)
         + usage.get("cache_creation_input_tokens", 0)
@@ -398,7 +509,8 @@ def run_case(
 
 
 def _cell_stats(group: list[dict], key: str) -> tuple:
-    vals = [r[key] for r in group if r[key] is not None]
+    # .get: rows from pre-#116 result files lack newer keys (model_requests)
+    vals = [r.get(key) for r in group if r.get(key) is not None]
     if not vals:
         return None, None, None
     return statistics.median(vals), min(vals), max(vals)
@@ -416,9 +528,9 @@ def summarize(rows: list[dict]) -> str:
     (timeout) makes the cell "n/a" rather than silently pricing as free.
     """
     lines = [
-        "| task | M | arm | ok | tool calls | turns | out tokens "
+        "| task | M | arm | ok | tool calls | reqs | turns | out tokens "
         "| uncached in | cost $ | cost/pass | wall s |",
-        "|---|---|---|---|---|---|---|---|---|---|---|",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     m_values = sorted({r.get("m_servers", 1) for r in rows})
     overlap_seen = False
@@ -474,6 +586,7 @@ def summarize(rows: list[dict]) -> str:
                 ok = f"{successes}/{len(group)}"
                 lines.append(
                     f"| {task} | {m} | {arm} | {ok} | {med('tool_calls')} | "
+                    f"{med('model_requests')} | "
                     f"{med('num_turns')} | {med('output_tokens')} | "
                     f"{med('uncached_input_tokens')} | {flagged('cost_usd')} | "
                     f"{cost_of_pass} | {flagged('wall_s')} |"
@@ -512,10 +625,26 @@ def main() -> int:
     rows = []
     with tempfile.TemporaryDirectory() as td:
         workdir = Path(td)
+        code = build_code_under_test(workdir)
+        print(
+            f"code under test: {code['git_sha'][:12]}"
+            f"{' DIRTY' if code['git_dirty'] else ''} "
+            f"wheel {code['wheel_sha256'][:12]}",
+            flush=True,
+        )
+        if code["git_dirty"]:
+            print(
+                "WARNING: working tree is dirty — the frozen wheel/fixtures "
+                "are still immutable for this run, but the recorded git SHA "
+                "does not describe the measured bytes",
+                flush=True,
+            )
+        prov = provenance_row(code)
         for rep in range(args.reps):
+            ordered_arms = arm_order(arms, rep)
             for task in tasks:
                 for m in m_values:
-                    for arm in arms:
+                    for arm in ordered_arms:
                         print(
                             f"[{rep + 1}/{args.reps}] {task}/M={m}/{arm} ...",
                             flush=True,
@@ -525,12 +654,15 @@ def main() -> int:
                             / f"{task}-{arm}-m{m}-rep{rep + 1}.jsonl"
                         )
                         row = run_case(
-                            arm, task, args.model, workdir, m, transcript
+                            arm, task, args.model, workdir, code, m, transcript
                         )
                         row["client_version"] = client_version
+                        row["arm_order"] = "->".join(ordered_arms)
+                        row.update(prov)
                         rows.append(row)
                         print(
                             f"  ok={row['correct']} tools={row['tool_calls']} "
+                            f"reqs={row['model_requests']} "
                             f"turns={row['num_turns']} cost=${row['cost_usd']} "
                             f"wall={row['wall_s']}s",
                             flush=True,

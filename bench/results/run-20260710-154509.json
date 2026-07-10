@@ -1,0 +1,72 @@
+[
+  {
+    "arm": "direct",
+    "task": "single",
+    "orders_n": 30,
+    "m_servers": 1,
+    "model": "claude-sonnet-5",
+    "correct": true,
+    "answer": "shipped",
+    "tool_calls": 2,
+    "tool_call_names": [
+      "ToolSearch",
+      "mcp__orders__get_order"
+    ],
+    "model_requests": 3,
+    "num_turns": 3,
+    "input_tokens": 39300,
+    "uncached_input_tokens": 266,
+    "output_tokens": 13,
+    "cost_usd": 0.1275294,
+    "api_duration_ms": 126388,
+    "wall_s": 128.1,
+    "exit_code": 0,
+    "transcript": "single-direct-m1-rep1.jsonl",
+    "client_version": "2.1.205 (Claude Code)",
+    "arm_order": "direct->toolplane",
+    "git_sha": "2be7d4250b816f96ff5c4a9b28876ce8db392358",
+    "git_dirty": true,
+    "wheel_sha256": "3737d7bf8326cb93160bf9782897b553f4d47966f5027f8280548c49b6c19305",
+    "fixtures_sha256": {
+      "order_server.py": "d6e3b0d35076014dc3545e634d822795c1d29827151abd44291a2a1d14842929",
+      "distractor_server.py": "434aa008f65d64769dd30e90bd8eddf98c0328007674ab9bcee215744ae10bad",
+      "orders_data.py": "8ed84942828bf49605a8f6ce6a2371d81823a66db695192daf94949dc09cbf62"
+    }
+  },
+  {
+    "arm": "toolplane",
+    "task": "single",
+    "orders_n": 30,
+    "m_servers": 1,
+    "model": "claude-sonnet-5",
+    "correct": true,
+    "answer": "shipped",
+    "tool_calls": 4,
+    "tool_call_names": [
+      "ToolSearch",
+      "ToolSearch",
+      "mcp__toolplane__search_capabilities",
+      "mcp__toolplane__execute_code"
+    ],
+    "model_requests": 5,
+    "num_turns": 5,
+    "input_tokens": 202427,
+    "uncached_input_tokens": 31287,
+    "output_tokens": 333,
+    "cost_usd": 0.1699395,
+    "api_duration_ms": 45398,
+    "wall_s": 46.9,
+    "exit_code": 0,
+    "transcript": "single-toolplane-m1-rep1.jsonl",
+    "client_version": "2.1.205 (Claude Code)",
+    "arm_order": "direct->toolplane",
+    "git_sha": "2be7d4250b816f96ff5c4a9b28876ce8db392358",
+    "git_dirty": true,
+    "wheel_sha256": "3737d7bf8326cb93160bf9782897b553f4d47966f5027f8280548c49b6c19305",
+    "fixtures_sha256": {
+      "order_server.py": "d6e3b0d35076014dc3545e634d822795c1d29827151abd44291a2a1d14842929",
+      "distractor_server.py": "434aa008f65d64769dd30e90bd8eddf98c0328007674ab9bcee215744ae10bad",
+      "orders_data.py": "8ed84942828bf49605a8f6ce6a2371d81823a66db695192daf94949dc09cbf62"
+    }
+  }
+]
