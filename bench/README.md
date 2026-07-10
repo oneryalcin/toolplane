@@ -11,6 +11,10 @@ it lose?
 - **toolplane**: the same server behind the toolplane facade
   (`search_capabilities` / `get_capability_schemas` / `execute_code`).
   The agent discovers the namespace and writes snippets.
+- **hybrid** (`--arms ...,hybrid`, #114): the toolplane facade served with
+  `--hybrid`, which additionally re-exports every capability as an ordinary
+  MCP tool. The agent can call a native tool for single/adaptive tasks or
+  `execute_code` for loops — the harness measures which it chooses.
 
 Fairness constraints: same model, byte-identical prompts, same deterministic
 dataset (`orders_data.py`, formula-based — the server and the validator

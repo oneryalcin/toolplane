@@ -360,6 +360,102 @@ arguments for code mode are stale where clients parallelize tool calls.
 The durable arguments are **output-token scaling and context growth** —
 which is what these numbers actually show.
 
+## The hybrid facade: route natively or run code, per task (2026-07-11)
+
+#110 showed deferred-loading clients do not pay a schema tax for many
+tools, which undercuts the reason to hide everything behind three
+meta-tools. So the **hybrid facade** (`serve mcp --hybrid`, #114)
+re-exports every capability as an ordinary MCP tool *alongside*
+`search_capabilities` / `execute_code`. The bet: the model calls a native
+tool for a single lookup or an adaptive chain (where the pure facade pays
+a discovery tax) and reaches for `execute_code` only when the work is a
+loop or a join. Third arm, same harness, Sonnet 5, M=1, n=2, frozen wheel
+(`run-20260711-001559`):
+
+| task | direct | toolplane | hybrid | hybrid routed to |
+|---|---|---|---|---|
+| single | 3 reqs, $0.13 | 3 reqs, $0.15 | 3 reqs, $0.14† | native `orders_get_order` |
+| chain | 6 tools, $0.17 | $0.18 | 7.5 tools, **$0.23** | native tool per hop |
+| loop (N=30) | $0.20 | $0.18 | **$0.15** | `execute_code` |
+| loop100 | 103 tools, $0.33 | $0.18 | **$0.15** | `execute_code` |
+
+**Routing was reliable** — identical across both reps, no failures. The
+loop tasks went to `execute_code` every time (the routing-failure risk the
+issue named — tool-calling a 100-item loop — never fired); single and
+chain went to native tool calls every time. The transcripts show the tool
+sequence directly: `loop100` hybrid is `ToolSearch → execute_code` (3 tool
+uses total), `single` is `ToolSearch → orders_get_order`.
+
+**Hybrid wins the loops outright** — cheaper than *both* other arms,
+because the re-exported tools' descriptions double as the #115 domain
+hint, so the model finds the namespace on the first search and skips
+`search_capabilities` entirely (ToolSearch → execute_code, not
+ToolSearch → search → execute). It gets code-mode economics with less
+discovery than the pure facade.
+
+**Hybrid loses the chain** ($0.23 vs direct's $0.17). It routes correctly
+— per-hop native calls, exactly what direct does — but pays a ToolSearch
+to load the tools on top, and ran heavier (7.5 vs 6 tool uses, ~1.9x the
+output tokens). On an adaptive task with no bulk step to amortize
+discovery, "direct's approach plus a discovery step" is strictly direct
+plus overhead. This is the mild form of the "worst of both" the issue
+warned about: not a routing failure, a discovery surcharge on the one
+task shape that cannot pay it back.
+
+### …until you add servers: hybrid is the worst arm at M=15
+
+The M=1 win does not survive scale. Same three arms, 15 configured
+servers (86 capabilities behind the facade), single and chain
+(`run-20260711-002646`):
+
+| task | direct | toolplane | hybrid |
+|---|---|---|---|
+| single | 3 reqs, $0.13 | 5 reqs, $0.19 | **6.5 reqs, $0.26** |
+| chain | 7 reqs, $0.19 | 8 reqs, $0.23 | **10 reqs, $0.28** |
+
+Hybrid is now the **most expensive arm on both tasks**. The mechanism,
+confirmed by tool count: the facade exposes 3 tools at any M; the hybrid
+facade at M=15 exposes **87** — the 3 meta-tools plus one re-export per
+capability, distractors included (`--hybrid` re-exports `registry.all()`,
+and at M=15 the registry holds every distractor server's tools too). So
+hybrid recreates exactly the flat tool surface the facade exists to
+avoid. Two costs follow, both in the transcripts:
+
+1. **Re-export does not fix domain discovery.** For `single`, the M=15
+   hybrid run searched `order status ORD`, then `order tracking database
+   query shop ecommerce`, missed both (the client's ranking buries
+   `orders_get_order` under built-ins and 83 sibling tools — the #115
+   ranking-dilution problem, unmoved), fell back to a `toolplane` search,
+   and used `execute_code` anyway. The native tool it was supposed to
+   route to was never found.
+2. **The re-exports inflate context.** When the `toolplane` search finally
+   loads the facade tools, the 84 re-exported schemas load with them:
+   hybrid's uncached input is ~46.8k tokens vs the facade's ~34.3k for the
+   identical task.
+
+So hybrid degenerates to the facade's discovery path *plus* tool-surface
+bloat. The crossover is the capability count itself — the same M axis
+#110 and #115 turned on.
+
+Caveats, disclosed: n=2, one model (Sonnet 5); **routing reliability is a
+per-model behavior** — a hybrid facade's value rests on the model choosing
+code-vs-tool correctly, which shifts across models, so this is a Sonnet-5
+result. Bash-exploration turns appear in every arm and inflate `chain`/
+`loop` counts; `reqs` is the cleaner comparison. M=1 single/chain cells
+carry † (ranges overlap direct at n=2).
+
+Verdict: **hybrid is a small- or curated-registry optimization, not a
+general one.** With a handful of capabilities it dominates the loops
+(beating even pure code mode) and ties single; the only M=1 loss is the
+pure adaptive chain, which pays a fixed discovery surcharge. But
+re-exporting `registry.all()` is wrong at scale — at 86 capabilities it is
+the worst arm on every task measured, because it rebuilds the flat
+surface without fixing the ranking dilution that made the flat surface
+lose in the first place. The actionable design is **selective re-export**
+(a curated allowlist or the hot capabilities), not all-or-nothing; and
+like every result here it is gated to deferred-loading clients (Codex,
+without deferral, would eat all 84 schemas into context up front).
+
 ## The envelope
 
 Two measured points; nothing measured between them:
