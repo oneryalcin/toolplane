@@ -74,3 +74,113 @@ def test_distractors_boundary_counts() -> None:
 
     with pytest.raises(ValueError):
         distractors(16)
+
+
+def test_chain_validator_accepts_exact_and_case_insensitive() -> None:
+    from run import _check_chain
+
+    assert _check_chain("ORD-011,shipped", 30)
+    assert _check_chain(" ord-011 , Shipped ", 30)
+
+
+def test_chain_validator_rejects_decoy_endpoints() -> None:
+    # the ids a template-guessing agent would land on must score as losses
+    from run import _check_chain
+
+    assert not _check_chain("ORD-019,shipped", 30)  # last hop's decoy
+    assert not _check_chain("ORD-023,shipped", 30)  # one hop short
+    assert not _check_chain("ORD-011,pending", 30)  # right id, wrong status
+    assert not _check_chain("garbage", 30)
+
+
+def test_summarize_flags_overlapping_ranges_and_prices_failures() -> None:
+    from run import summarize
+
+    def row(arm, cost, correct, task="loop"):
+        return {
+            "task": task,
+            "arm": arm,
+            "m_servers": 1,
+            "correct": correct,
+            "cost_usd": cost,
+            "wall_s": 10.0,
+            "tool_calls": 1,
+            "num_turns": 1,
+            "output_tokens": 1,
+            "uncached_input_tokens": 1,
+        }
+
+    # overlapping cost ranges -> † on cost; one failure -> cost/pass above
+    # median (total spend / successes)
+    rows = [
+        row("direct", 0.10, True),
+        row("direct", 0.30, True),
+        row("toolplane", 0.20, True),
+        row("toolplane", 0.40, False),
+    ]
+    table = summarize(rows)
+    line = next(ln for ln in table.splitlines() if "| toolplane |" in ln)
+    assert "0.3†" in line  # median cost flagged as overlapping
+    assert "| 0.6 |" in line  # cost/pass: (0.20+0.40)/1 success
+    assert "ranges of the two arms overlap" in table
+    assert "noise" not in table  # observed overlap, not a noise conclusion
+
+
+def test_summarize_survives_all_timeout_arm_and_prices_unknown_as_na() -> None:
+    # an arm whose reps all timed out has cost_usd=None everywhere; the
+    # table must not crash (data is already on disk, but losing the
+    # printed summary loses the run report) and a mixed cell with one
+    # unknown cost must say n/a, not price the timeout as free
+    from run import summarize
+
+    def row(arm, cost, correct):
+        return {
+            "task": "loop",
+            "arm": arm,
+            "m_servers": 1,
+            "correct": correct,
+            "cost_usd": cost,
+            "wall_s": None if cost is None else 10.0,
+            "tool_calls": None if cost is None else 1,
+            "num_turns": None,
+            "output_tokens": 0,
+            "uncached_input_tokens": 0,
+        }
+
+    all_timeout = summarize(
+        [row("direct", 0.10, True), row("toolplane", None, False)]
+    )
+    assert "| inf |" in all_timeout or "| n/a |" in all_timeout
+
+    mixed = summarize(
+        [
+            row("direct", 0.10, True),
+            row("toolplane", 0.20, True),
+            row("toolplane", None, False),
+        ]
+    )
+    line = next(ln for ln in mixed.splitlines() if "| toolplane |" in ln)
+    assert "| n/a |" in line
+
+
+def test_summarize_no_flag_when_ranges_disjoint() -> None:
+    from run import summarize
+
+    def row(arm, cost):
+        return {
+            "task": "loop",
+            "arm": arm,
+            "m_servers": 1,
+            "correct": True,
+            "cost_usd": cost,
+            "wall_s": 5.0 if arm == "direct" else 50.0,
+            "tool_calls": 1,
+            "num_turns": 1,
+            "output_tokens": 1,
+            "uncached_input_tokens": 1,
+        }
+
+    rows = [row("direct", 0.10), row("direct", 0.12),
+            row("toolplane", 0.30), row("toolplane", 0.35)]
+    table = summarize(rows)
+    assert "†" not in table

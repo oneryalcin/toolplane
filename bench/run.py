@@ -35,7 +35,12 @@ BENCH_DIR = Path(__file__).resolve().parent
 REPO_DIR = BENCH_DIR.parent
 sys.path.insert(0, str(BENCH_DIR))
 
-from orders_data import emea_over_500, orders, totals_by_region  # noqa: E402
+from orders_data import (  # noqa: E402
+    chain_answer,
+    emea_over_500,
+    orders,
+    totals_by_region,
+)
 
 ANSWER_RE = re.compile(r"<answer>\s*(.*?)\s*</answer>", re.DOTALL)
 
@@ -77,6 +82,27 @@ def _check_filter(answer: str, n: int) -> bool:
         return False
 
 
+def _check_chain(answer: str, n: int) -> bool:
+    want = chain_answer(n)
+    try:
+        order_id, status = (part.strip() for part in answer.strip().split(","))
+    except (ValueError, AttributeError):
+        return False
+    return (
+        order_id.upper() == want["order_id"]
+        and status.lower() == want["status"]
+    )
+
+
+_CHAIN_PROMPT = (
+    "Using the available tools, start at order ORD-001 and follow the "
+    "follow-up chain for exactly 4 hops. Each order's note says which "
+    "order continues the case — and also mentions an unrelated or "
+    "cancelled order that does NOT. Reply with the final order's id and "
+    "status formatted exactly as order_id,status wrapped in "
+    "<answer></answer> tags."
+)
+
 TASKS = {
     "loop": {
         "prompt": _LOOP_PROMPT,
@@ -87,6 +113,41 @@ TASKS = {
         "prompt": _LOOP_PROMPT,
         "check": _check_region_totals,
         "orders_n": 100,
+    },
+    # crossover localization under N=30 (#107 item 1, post-#111 envelope)
+    "loop5": {
+        "prompt": _LOOP_PROMPT,
+        "check": _check_region_totals,
+        "orders_n": 5,
+    },
+    "loop10": {
+        "prompt": _LOOP_PROMPT,
+        "check": _check_region_totals,
+        "orders_n": 10,
+    },
+    "loop20": {
+        "prompt": _LOOP_PROMPT,
+        "check": _check_region_totals,
+        "orders_n": 20,
+    },
+    # the shape prior work says code mode loses (#107 item 2): each note
+    # names the next order plus a decoy, inviting judgment per hop. The
+    # templated prose IS heuristically separable (a keyword regex walks
+    # the chain — review-verified), so this measures what agents choose
+    # to do with an adaptive-looking task, not impossibility.
+    "chain": {
+        "prompt": _CHAIN_PROMPT,
+        "check": _check_chain,
+        "orders_n": 30,
+        "server_env": {"BENCH_NOTES": "chain"},
+    },
+    # latency axis (#107 item 10 / #109 gate): 100ms per tool call —
+    # direct batches in parallel, monty awaits sequentially
+    "loop_lat100": {
+        "prompt": _LOOP_PROMPT,
+        "check": _check_region_totals,
+        "orders_n": 30,
+        "server_env": {"BENCH_TOOL_LATENCY_MS": "100"},
     },
     "single": {
         "prompt": (
@@ -128,7 +189,14 @@ def distractors(m_servers: int) -> list[tuple[str, str]]:
     return out
 
 
-def mcp_config(arm: str, workdir: Path, orders_n: int, m_servers: int) -> dict:
+def task_server_env(task: str) -> dict[str, str]:
+    return {
+        "BENCH_ORDERS_N": str(TASKS[task]["orders_n"]),
+        **TASKS[task].get("server_env", {}),
+    }
+
+
+def mcp_config(arm: str, workdir: Path, task: str, m_servers: int) -> dict:
     def uv_cmd(script: str, env: dict) -> dict:
         return {
             "command": "uv",
@@ -142,7 +210,7 @@ def mcp_config(arm: str, workdir: Path, orders_n: int, m_servers: int) -> dict:
             "env": env,
         }
 
-    server_cmd = uv_cmd("order_server.py", {"BENCH_ORDERS_N": str(orders_n)})
+    server_cmd = uv_cmd("order_server.py", task_server_env(task))
     extra = {
         name: uv_cmd("distractor_server.py", {"DISTRACTOR_PROFILE": profile})
         for name, profile in distractors(m_servers)
@@ -157,7 +225,7 @@ def mcp_config(arm: str, workdir: Path, orders_n: int, m_servers: int) -> dict:
     if arm == "toolplane":
         # generated with absolute paths: every process here runs from a
         # scratch cwd, so nothing may be cwd-relative
-        toml_path = workdir / f"toolplane-bench-{orders_n}-m{m_servers}.toml"
+        toml_path = workdir / f"toolplane-bench-{task}-m{m_servers}.toml"
         sections = []
         for name, cmd in {"orders": server_cmd, **extra}.items():
             args_toml = ", ".join(json.dumps(a) for a in cmd["args"])
@@ -219,9 +287,9 @@ def run_case(
     transcript_path: Path | None = None,
 ) -> dict:
     orders_n = TASKS[task]["orders_n"]
-    config_path = workdir / f"mcp-{arm}-{orders_n}-m{m_servers}.json"
+    config_path = workdir / f"mcp-{arm}-{task}-m{m_servers}.json"
     config_path.write_text(
-        json.dumps(mcp_config(arm, workdir, orders_n, m_servers)),
+        json.dumps(mcp_config(arm, workdir, task, m_servers)),
         encoding="utf-8",
     )
     cwd = workdir / f"cwd-{arm}-{task}-{time.time_ns()}"
@@ -329,36 +397,92 @@ def run_case(
     }
 
 
+def _cell_stats(group: list[dict], key: str) -> tuple:
+    vals = [r[key] for r in group if r[key] is not None]
+    if not vals:
+        return None, None, None
+    return statistics.median(vals), min(vals), max(vals)
+
+
 def summarize(rows: list[dict]) -> str:
+    """Median table with mechanical honesty annotations (#107 items 3-4).
+
+    † on cost/wall: the OBSERVED per-rep ranges of the two arms overlap
+    for this task. That is a statement about the samples, not a noise
+    conclusion — at these rep counts it means the median gap is
+    unresolved; do not publish it as a win without more reps.
+    cost/pass = total spend / successful runs (TPS-Bench cost-of-pass):
+    a cheap wrong answer prices in as a loss; a run with unknown spend
+    (timeout) makes the cell "n/a" rather than silently pricing as free.
+    """
     lines = [
-        "| task | M | arm | ok | tool calls | turns | out tokens | uncached in | cost $ | wall s |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "| task | M | arm | ok | tool calls | turns | out tokens "
+        "| uncached in | cost $ | cost/pass | wall s |",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     m_values = sorted({r.get("m_servers", 1) for r in rows})
+    overlap_seen = False
     for task in TASKS:
         for m in m_values:
-            for arm in ("direct", "toolplane"):
-                group = [
+            groups = {
+                arm: [
                     r
                     for r in rows
                     if r["task"] == task
                     and r["arm"] == arm
                     and r.get("m_servers", 1) == m
                 ]
+                for arm in ("direct", "toolplane")
+            }
+            overlaps = {}
+            for key in ("cost_usd", "wall_s"):
+                spans = {
+                    arm: _cell_stats(g, key) for arm, g in groups.items() if g
+                }
+                direct_span = spans.get("direct")
+                toolplane_span = spans.get("toolplane")
+                if direct_span and toolplane_span:
+                    _, lo_a, hi_a = direct_span
+                    _, lo_b, hi_b = toolplane_span
+                    # an all-timeout arm has no numeric bounds; no claim
+                    # to annotate either way
+                    if None not in (lo_a, hi_a, lo_b, hi_b):
+                        overlaps[key] = lo_a <= hi_b and lo_b <= hi_a
+            for arm, group in groups.items():
                 if not group:
                     continue
 
                 def med(key):
-                    vals = [r[key] for r in group if r[key] is not None]
-                    return round(statistics.median(vals), 2) if vals else "-"
+                    value = _cell_stats(group, key)[0]
+                    return round(value, 2) if value is not None else "-"
 
-                ok = f"{sum(r['correct'] for r in group)}/{len(group)}"
+                def flagged(key):
+                    mark = "†" if overlaps.get(key) else ""
+                    return f"{med(key)}{mark}"
+
+                successes = sum(r["correct"] for r in group)
+                costs = [r["cost_usd"] for r in group]
+                if any(c is None for c in costs):
+                    # a timed-out run billed an unknown amount; pricing it
+                    # as zero would make unreliable arms look cheaper
+                    cost_of_pass = "n/a"
+                elif successes:
+                    cost_of_pass = round(sum(costs) / successes, 2)
+                else:
+                    cost_of_pass = "inf"
+                overlap_seen = overlap_seen or any(overlaps.values())
+                ok = f"{successes}/{len(group)}"
                 lines.append(
                     f"| {task} | {m} | {arm} | {ok} | {med('tool_calls')} | "
                     f"{med('num_turns')} | {med('output_tokens')} | "
-                    f"{med('uncached_input_tokens')} | {med('cost_usd')} | "
-                    f"{med('wall_s')} |"
+                    f"{med('uncached_input_tokens')} | {flagged('cost_usd')} | "
+                    f"{cost_of_pass} | {flagged('wall_s')} |"
                 )
+    if overlap_seen:
+        lines.append(
+            "\n† observed per-rep ranges of the two arms overlap for this "
+            "task — the median gap is unresolved at this rep count."
+        )
     return "\n".join(lines)
 
 

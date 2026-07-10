@@ -236,6 +236,7 @@ cleanly on wall (20.9s vs 30.4s, ranges disjoint), and at N=100 it is
 $0.14, 15.1s vs 9.1s): the floor is one search turn plus one execute turn
 against direct's ToolSearch-plus-call, and the facade schemas still ride
 in context. Where between 1 and 30 the crossover now sits is unmeasured.
+*(Since measured: parity in the 20–30 region — next section.)*
 
 Honesty notes for this section: n=3 per cell, one day, client 2.1.205
 (cost-controlled by the direct arm as above; wall comparisons to the
@@ -255,6 +256,84 @@ edits to the footer and call-shape rendering (a real-allowlist CLI
 example, scoping the rules to capability bindings, `call_tool` fallbacks
 for shapes that cannot render faithfully) landed *after* the measured
 runs — the committed transcripts record the exact text each run saw.
+
+## The envelope, completed: a crossover curve, an adversarial shape, and latency (2026-07-10)
+
+Three remaining #107 axes, measured with the same harness (30 fresh runs,
+30/30 correct, medians of 3, same client version 2.1.205 as the section
+above, same evening — roughly 90 minutes after the discovery-tax matrix,
+whose N=30 and N=100 cells this section reuses). The summary table now
+does two honesty checks mechanically: a **†** wherever the two arms'
+observed per-rep ranges overlap — a statement about the samples, not a
+noise verdict; it means the median gap is unresolved at this rep count —
+and **cost-of-pass** (total spend / successful runs; a cheap wrong
+answer prices as a loss, an unknown-cost timeout renders "n/a" rather
+than pricing as free).
+
+**The crossover curve.** The two-point "somewhere between 30 and 100"
+from 0.4.0, then "below 30" after the discovery-tax fix, is now a curve
+(N=5/10/20 from this run; N=30/100 from the discovery-tax matrix):
+
+| records touched | 5 | 10 | 20 | 30 | 100 |
+|---|---|---|---|---|---|
+| direct | **$0.13** | **$0.14** | $0.18† | $0.20† | $0.33 |
+| toolplane | $0.18 | $0.17 | $0.18† | $0.18† | **$0.18** |
+
+Toolplane is flat ~$0.18 at every N — including N=5, where the loop
+saves almost nothing and the price is pure facade overhead. Direct climbs
+linearly. **Below ~10 direct is clearly cheaper (ranges disjoint). The
+medians cross between 20 and 30 — at N=20 direct is still a hair ahead
+($0.1787 vs $0.1813 unrounded, wall too), at N=30 toolplane is — with
+per-rep ranges overlapping at both, so the region 20–30 is parity within
+this sample. At N=100 toolplane wins with disjoint ranges.** The flat
+line is the product thesis in one row: with the discovery tax gone,
+code-mode cost is task-size-independent.
+
+**The adversarial shape (where prior work says code mode loses — it
+does).** The `chain` task follows a 4-hop follow-up thread where each
+order's prose note names the next order *and a decoy* (cancelled
+duplicate, unrelated reference), with template and mention-order varying
+per hop — a task that *invites* judgment per hop. Result: **direct wins,
+$0.17 vs $0.24 (+38% on unrounded medians) and 22.9s vs 27.9s, ranges
+disjoint, both arms 3/3 correct.** The committed transcripts show the
+mechanism exactly: every toolplane rep, deterministically, used 5
+execute_code calls — one per node (the start plus 4 hops), zero errors,
+all staged — the agent treated each hop as a judgment step and degraded
+into tool-calling with a heavier per-step envelope. This confirms
+arXiv:2602.15945's qualitative finding with a mechanism and a price:
+**on sequentially-adaptive tasks, code mode is direct tool calling with
+extra steps.** Design honesty: the notes are template-generated, and the
+fixture is *heuristically separable* — a keyword regex over the
+committed templates walks the whole chain in one snippet
+(review-verified), and the hop-2 note even names the just-visited order
+as its decoy. Neither arm's agent attempted anything of the sort, so
+what this task measures is what agents *choose* to do with an
+adaptive-looking thread — the realistic behavior — not impossibility. A
+fixture whose judgment steps genuinely resist code (free-form prose,
+contradictory phrasing) is future work.
+
+**The latency axis (the #109 gate).** Same loop task, 100ms of
+(server-parallel, verified) latency per tool call. Toolplane's wall
+went 20.9s → 23.6s against the same-evening baseline — **median +2.7s,
+consistent with the 31 sequential awaits in the committed snippets
+(one list plus 30 gets → +3.1s expected)**: the microbenchmarked monty
+sequential-await behavior, now visible in vivo. Direct's wall *dropped*
+(30.4s → 25.6s): its parallel batching absorbs 100ms/call below the
+between-run noise floor. At N=30/100ms toolplane still wins wall
+despite the penalty (same-run ranges disjoint: 22.3–23.7 vs
+24.3–27.0). The penalty scales as N × per-call latency — but be
+careful with extrapolation in the other direction too: at N=100
+toolplane's baseline lead is so large (20.2s vs 57.3s) that even +10s
+of sequential awaits leaves it ~27s ahead; flipping the N=100 wall
+verdict would take roughly 370ms per call. What
+[#109](https://github.com/oneryalcin/toolplane/issues/109)'s host-side
+parallel fan-out buys is therefore the N × latency term itself — real
+seconds, not (at these scales) a verdict change; cost is untouched
+either way (latency is wall-only). n=3 caveat: the baseline and
+lat100 toolplane ranges overlap by 1.2s (20.7–23.5 vs 22.3–23.7,
+cross-run within one evening), so by this page's own † standard the
++2.7s is a median estimate whose arithmetic checks out, not a
+resolved measurement.
 
 ## What actually happened (read the usage data, not the folklore)
 
