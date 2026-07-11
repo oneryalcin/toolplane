@@ -778,3 +778,32 @@ def test_select_capabilities_never_selects_hidden() -> None:
     # a glob or tag that would match the hidden capability still excludes it
     selected = select_capabilities(caps, ["mcp:*", "tag:orders"])
     assert [c.name for c in selected] == ["mcp:orders/get_order"]
+
+
+def test_select_capabilities_is_case_stable_across_platforms() -> None:
+    # canonical names are a config contract; matching must be case-sensitive
+    # and identical on every OS (plain fnmatch case-normalizes per-OS)
+    from toolplane.discovery import select_capabilities
+
+    caps = [_sel_capability("mcp:orders/get_order", {"orders"})]
+    assert len(select_capabilities(caps, ["mcp:orders/*"])) == 1
+    # an upper-case pattern must NOT match a lower-case canonical name on
+    # any platform
+    assert select_capabilities(caps, ["MCP:ORDERS/*"]) == []
+    assert select_capabilities(caps, ["MCP:orders/get_order"]) == []
+
+
+def test_hybrid_config_rejects_blank_and_bare_wildcard_include() -> None:
+    import pytest as _pytest
+
+    from toolplane.config import load_toolplane_config
+
+    for bad in ([""], ["   "], ["*"], ["**"]):
+        with _pytest.raises(Exception):
+            load_toolplane_config({"hybrid": {"enabled": True, "include": bad}})
+
+    # a real curated pattern is fine
+    ok = load_toolplane_config(
+        {"hybrid": {"enabled": True, "include": ["mcp:orders/*"]}}
+    )
+    assert ok.hybrid.include == ["mcp:orders/*"]

@@ -211,8 +211,12 @@ def select_capabilities(
     glob on that name (``mcp:orders/*``), or ``tag:<name>`` against its
     tags. Hidden capabilities are never selectable. Order and de-dup follow
     the input capability order, so the result is deterministic.
+
+    Matching is case-sensitive and platform-stable: canonical names are a
+    config contract, so ``fnmatchcase`` is used (plain ``fnmatch`` case-
+    normalizes per-OS, selecting different sets on Windows vs POSIX).
     """
-    import fnmatch
+    from fnmatch import fnmatchcase
 
     tag_tokens = {t[4:] for t in include if t.startswith("tag:")}
     name_tokens = [t for t in include if not t.startswith("tag:")]
@@ -221,7 +225,7 @@ def select_capabilities(
         if capability.hidden:
             continue
         if capability.tags & tag_tokens or any(
-            fnmatch.fnmatch(capability.name, pat) for pat in name_tokens
+            fnmatchcase(capability.name, pat) for pat in name_tokens
         ):
             selected.append(capability)
     return selected

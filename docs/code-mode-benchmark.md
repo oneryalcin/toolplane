@@ -513,24 +513,37 @@ dilution" framing this doc used for #115:
    `PushNotification` — *not* the domain tool. The competition for a
    natural domain query is the client's built-in vocabulary, not the other
    MCP servers, so curating the servers away is inert.
-2. **Namespace flattening (strong n=2 observation).** Direct's tool is
-   `mcp__orders__get_order`, and the agent recovers from the first miss by
-   searching the server name (`mcp__orders`) — the qualified name carries
-   the domain. Every re-exported tool instead collapses to
-   `mcp__toolplane__<leaf>`, so that server-name recovery path is gone and
-   the agent flails with more domain queries (curated single took 3–4
-   searches vs direct's 1–2). The re-export also still carries the fat
+2. **Namespace flattening (n=1 observation, hypothesis).** In one
+   transcript (`single-direct-rep1`) direct recovers from the first miss by
+   searching the server name (`mcp__orders`) — the qualified name
+   `mcp__orders__get_order` carries the domain, whereas every re-exported
+   tool collapses to `mcp__toolplane__<leaf>` and loses that signal. This
+   is a single-transcript observation, not established: the other direct
+   rep found the tool on its first query, and one of curated's "extra"
+   searches was a startup-timing artifact (the tool_result said the
+   toolplane server was *still connecting*, not that the tool was
+   unranked). So curated single took 2–3 searches vs direct's 1–2, and the
+   flattening mechanism is a plausible contributor, not a proven one — it
+   awaits #127's A/B. The re-export also carries the fat
    `search_capabilities`/`execute_code` domain-hint context.
 
 So the binding constraint at scale is **client-side ranking** — a domain
-tool competing against built-ins on leaf-name and description alone, having
-lost its server-name signal — not the number of sibling tools. Selective
-re-export is a correct, safe primitive (no all-or-nothing scale footgun),
-but on Claude Code it does not deliver the M=1 economics at M=15. The M=1
-win was real; it does not survive a realistic client tool population. The
-sharper open question this leaves is not "curate better" but "can a
-re-exported tool be named/described so it outranks the client's built-ins
-for a natural query" — or whether that ceiling is simply client-owned.
+tool competing against the client's built-in vocabulary — established by
+the confirmed built-in collision plus the null result (curation changed
+nothing), *not* by the flattening hypothesis alone. It is **not** the
+number of sibling tools. Selective re-export is a correct, safe primitive,
+and the config validator rejects a bare-wildcard *implicit* export-all —
+but note an explicit broad glob (`mcp:*`) can still re-export most of a
+catalog, so "curated" is a discipline the operator keeps, not a guarantee
+the config enforces. On Claude Code it does not deliver the M=1 economics
+at M=15 — and on the two adaptive tasks measured it is modestly *worse*
+than the plain facade (single $0.21 vs $0.19; note chain's raw counts are
+inflated by hybrid/curated-only Bash-exploration turns — 2 per rep vs 0 for
+direct/toolplane — a disclosed covariate). The M=1 win was real; it does
+not survive a realistic client tool population. The sharper open question
+(#127) is not "curate better" but "can a re-exported tool be named so it
+keeps a server-name signal and outranks the client's built-ins" — or
+whether that ceiling is simply client-owned.
 
 ## The envelope
 

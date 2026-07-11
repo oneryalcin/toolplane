@@ -123,6 +123,28 @@ class HybridSettings(BaseModel):
     enabled: bool = False
     include: list[str] = Field(default_factory=list)
 
+    @field_validator("include")
+    @classmethod
+    def _validate_include(cls, value: list[str]) -> list[str]:
+        for token in value:
+            if not token or not token.strip():
+                raise ValueError(
+                    "hybrid.include entries must be non-empty, non-whitespace "
+                    "patterns (a capability name, a glob like 'mcp:orders/*', "
+                    "or 'tag:<name>')"
+                )
+            # a bare "*" (or "**") re-exports the WHOLE registry — the
+            # measured worst arm at scale (#114). Curation means a subset;
+            # reject the unambiguous export-all pattern at the contract edge.
+            if token.strip("* \t") == "" and "*" in token:
+                raise ValueError(
+                    "hybrid.include may not be a bare wildcard "
+                    f"({token!r}) — that re-exports every capability, the "
+                    "measured worst arm at 15 servers (#114). Curate the "
+                    "single/adaptive capabilities explicitly."
+                )
+        return value
+
     @model_validator(mode="after")
     def _require_include_when_enabled(self) -> "HybridSettings":
         if self.enabled and not self.include:

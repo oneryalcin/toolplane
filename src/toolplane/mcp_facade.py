@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 import re
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -322,6 +323,17 @@ def build_mcp_facade(
             reexport = select_capabilities(
                 runtime.registry.all(), hybrid_include
             )
+            if not reexport:
+                # a typo'd glob passes validation but selects nothing; hybrid
+                # would silently degrade to the plain facade while the
+                # operator believes native re-export is active
+                print(
+                    "toolplane: warning — hybrid.include matched no "
+                    f"capabilities ({list(hybrid_include)}); no tools were "
+                    "re-exported. Check the patterns against canonical "
+                    "names (search_capabilities lists them).",
+                    file=sys.stderr,
+                )
         else:
             # #114 baseline: re-export everything (held/experimental — the
             # worst arm at scale, kept for the benchmark)

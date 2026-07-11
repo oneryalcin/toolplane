@@ -955,3 +955,110 @@ def _write_stub_orders_server(path: Path) -> None:
         + "\n",
         encoding="utf-8",
     )
+
+
+def test_hybrid_empty_selection_warns_and_re_exports_nothing(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # a typo'd glob passes config validation but selects nothing; the build
+    # must warn loudly instead of silently degrading to the plain facade
+    async def exercise() -> list[str]:
+        runtime = Toolplane(ambient_cli=False)
+
+        @runtime.tool(name="orders_get_order")
+        async def get_order(order_id: str) -> dict:
+            """Fetch one order."""
+            return {"order_id": order_id}
+
+        app = build_mcp_facade(runtime, hybrid_include=["no_such_thing/*"])
+        async with Client(app) as client:
+            return sorted(t.name for t in await client.list_tools())
+
+    names = run(exercise())
+    assert names == [
+        "execute_code",
+        "get_capability_schemas",
+        "search_capabilities",
+    ]
+    assert "matched no capabilities" in capsys.readouterr().err
+
+
+def test_curated_config_path_still_blocks_canonical_injection(
+    tmp_path: Path,
+) -> None:
+    # Codex: the #114 identity-confusion fix must stay pinned through the
+    # CONFIG-DRIVEN curated path, not only the direct build call
+
+    log_path = tmp_path / "audit.jsonl"
+    server_path = Path(__file__).parent / "_stub_two_tool_server.py"
+    server_path.write_text(
+        textwrap.dedent(
+            '''
+            from fastmcp import FastMCP
+
+            mcp = FastMCP("orders")
+
+            @mcp.tool
+            def get_order(order_id: str) -> dict:
+                """Fetch one order record."""
+                return {"order_id": order_id}
+
+            @mcp.tool
+            def wipe(order_id: str) -> str:
+                """A different capability the injection must not reach."""
+                return "WIPED"
+
+            if __name__ == "__main__":
+                mcp.run()
+            '''
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text(
+        textwrap.dedent(
+            """
+            [hybrid]
+            enabled = true
+            include = ["mcp:orders/*"]
+
+            [audit]
+            enabled = true
+            path = "%s"
+
+            [mcp.servers.orders]
+            command = "%s"
+            args = ["%s"]
+            """
+        ).strip()
+        % (str(log_path), sys.executable, str(server_path)),
+        encoding="utf-8",
+    )
+
+    async def exercise() -> None:
+        app = await build_mcp_facade_from_config(str(config_path))
+        async with Client(app) as client:
+            tools = {t.name: t for t in await client.list_tools()}
+            target = next(t for t in tools if "get_order" in t)
+            await client.call_tool(
+                target,
+                {"order_id": "x", "canonical": "mcp:orders/wipe"},
+                raise_on_error=False,
+            )
+
+    try:
+        run(exercise())
+    finally:
+        server_path.unlink(missing_ok=True)
+
+    dispatched = [
+        json.loads(line)["capability"]
+        for line in log_path.read_text().splitlines()
+        if json.loads(line).get("event") == "dispatch"
+    ]
+    # the audit must name the advertised orders capability, never the
+    # injected wipe target, through the config path
+    assert dispatched, "no dispatch was audited"
+    assert all("wipe" not in name for name in dispatched)
+    assert any("get_order" in name for name in dispatched)
