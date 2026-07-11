@@ -236,6 +236,42 @@ jq 'select(.event == "run_end" and .duration_ms > 5000)' ~/.toolplane/audit.json
 A write failure (unwritable path, full disk) disables the log with one
 stderr warning; it never breaks a run.
 
+## Hybrid Re-Export (experimental)
+
+By default the facade exposes three meta-tools; the agent discovers
+capabilities and writes `execute_code` snippets. Hybrid mode additionally
+re-exports the capabilities you name as ordinary MCP tools, so a
+deferred-loading client (Claude Code) can call one natively for a single
+lookup or an adaptive chain while loops and joins still use `execute_code`.
+
+```toml
+[hybrid]
+enabled = true
+# Each pattern matches by exact canonical name, an fnmatch glob on that
+# name, or "tag:<name>" against a capability's tags. Curate deliberately.
+include = ["mcp:orders/*", "tag:lookup", "py:repo/read_text"]
+```
+
+Rules and caveats:
+
+- **`include` is required when `enabled`, and curation is the point.** A
+  bare wildcard (`"*"`) is rejected — re-exporting the whole registry is
+  the measured *worst* arm at scale (it rebuilds the flat tool surface the
+  facade exists to avoid). A broad glob like `"mcp:*"` is allowed but
+  defeats the purpose; keep the list to the single/adaptive capabilities.
+- **A pattern that matches nothing is a loud warning, not an error** — a
+  typo'd glob starts the facade with no re-exports (plain-facade behavior)
+  and prints a stderr warning naming the unmatched patterns.
+- Matching is **case-sensitive and platform-stable** (canonical names are
+  a contract). Hidden capabilities are never re-exported.
+- **This is measured, not a free win.** On Claude Code at 15 servers,
+  curated re-export was *worse* than the plain facade — a re-exported tool
+  competes against the client's built-in tools for a natural query and
+  loses its server-name discovery signal (see the benchmark report). It
+  helps on small tool sets; measure before enabling it on a large catalog.
+- Deferred-loading clients only: a client without deferral loads every
+  re-exported schema into context at once.
+
 ## MCP Servers
 
 MCP server tables are preserved and passed through to FastMCP. Toolplane

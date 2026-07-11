@@ -723,3 +723,87 @@ def test_facade_hint_is_a_build_time_snapshot() -> None:
     description, search_result = asyncio.run(exercise())
     assert "late_tool" not in description
     assert "late_tool" in search_result
+
+
+def _sel_capability(name, tags=frozenset(), hidden=False):
+    from dataclasses import replace
+
+    from toolplane.capabilities import Capability
+
+    cap = Capability(
+        name=name,
+        callable=lambda: None,
+        description="x",
+        parameters={"type": "object", "properties": {}},
+        returns=None,
+        tags=frozenset(tags),
+        source="mcp:test",
+    )
+    return replace(cap, hidden=True) if hidden else cap
+
+
+def test_select_capabilities_matches_name_glob_and_tag() -> None:
+    from toolplane.discovery import select_capabilities
+
+    caps = [
+        _sel_capability("mcp:orders/get_order", {"orders"}),
+        _sel_capability("mcp:orders/list_ids", {"orders"}),
+        _sel_capability("mcp:crm/search", {"crm"}),
+        _sel_capability("add"),
+    ]
+
+    def names(include):
+        return [c.name for c in select_capabilities(caps, include)]
+
+    assert names(["mcp:orders/*"]) == [
+        "mcp:orders/get_order",
+        "mcp:orders/list_ids",
+    ]
+    assert names(["add"]) == ["add"]  # exact
+    assert names(["tag:crm"]) == ["mcp:crm/search"]
+    assert names(["mcp:orders/get_order", "tag:crm"]) == [
+        "mcp:orders/get_order",
+        "mcp:crm/search",
+    ]
+    assert names(["nope/*"]) == []
+
+
+def test_select_capabilities_never_selects_hidden() -> None:
+    from toolplane.discovery import select_capabilities
+
+    caps = [
+        _sel_capability("mcp:orders/get_order", {"orders"}),
+        _sel_capability("mcp:cli/run", {"orders"}, hidden=True),
+    ]
+    # a glob or tag that would match the hidden capability still excludes it
+    selected = select_capabilities(caps, ["mcp:*", "tag:orders"])
+    assert [c.name for c in selected] == ["mcp:orders/get_order"]
+
+
+def test_select_capabilities_is_case_stable_across_platforms() -> None:
+    # canonical names are a config contract; matching must be case-sensitive
+    # and identical on every OS (plain fnmatch case-normalizes per-OS)
+    from toolplane.discovery import select_capabilities
+
+    caps = [_sel_capability("mcp:orders/get_order", {"orders"})]
+    assert len(select_capabilities(caps, ["mcp:orders/*"])) == 1
+    # an upper-case pattern must NOT match a lower-case canonical name on
+    # any platform
+    assert select_capabilities(caps, ["MCP:ORDERS/*"]) == []
+    assert select_capabilities(caps, ["MCP:orders/get_order"]) == []
+
+
+def test_hybrid_config_rejects_blank_and_bare_wildcard_include() -> None:
+    import pytest as _pytest
+
+    from toolplane.config import load_toolplane_config
+
+    for bad in ([""], ["   "], ["*"], ["**"]):
+        with _pytest.raises(Exception):
+            load_toolplane_config({"hybrid": {"enabled": True, "include": bad}})
+
+    # a real curated pattern is fine
+    ok = load_toolplane_config(
+        {"hybrid": {"enabled": True, "include": ["mcp:orders/*"]}}
+    )
+    assert ok.hybrid.include == ["mcp:orders/*"]

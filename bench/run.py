@@ -301,14 +301,22 @@ def mcp_config(
                 **{name: {**cmd, "type": "stdio"} for name, cmd in extra.items()},
             }
         }
-    # both toolplane arms serve the SAME config through the SAME facade;
-    # "hybrid" only adds --hybrid, which re-exports capabilities as
-    # individual MCP tools alongside the meta-tools (#114)
-    if arm in ("toolplane", "hybrid"):
+    # all three toolplane arms serve the SAME servers through the SAME
+    # facade. "hybrid" adds --hybrid (re-export the WHOLE registry, #114's
+    # held baseline); "curated" adds a [hybrid] config section that
+    # re-exports ONLY the orders tools (#125 — the selective form).
+    if arm in ("toolplane", "hybrid", "curated"):
         # generated with absolute paths: every process here runs from a
         # scratch cwd, so nothing may be cwd-relative
         toml_path = workdir / f"toolplane-bench-{arm}-{task}-m{m_servers}.toml"
         sections = []
+        if arm == "curated":
+            # curate the single/adaptive capabilities: the orders server's
+            # tools, by canonical-name glob. Distractors stay behind the
+            # facade — the whole #125 hypothesis.
+            sections.append(
+                '[hybrid]\nenabled = true\ninclude = ["mcp:orders/*"]\n'
+            )
         for name, cmd in {"orders": server_cmd, **extra}.items():
             command_toml = json.dumps(cmd["command"])
             args_toml = ", ".join(json.dumps(a) for a in cmd["args"])
@@ -535,7 +543,7 @@ def summarize(rows: list[dict]) -> str:
     ]
     m_values = sorted({r.get("m_servers", 1) for r in rows})
     # arms in a stable, meaningful order; only those actually present render
-    arm_order_display = ["direct", "toolplane", "hybrid"]
+    arm_order_display = ["direct", "toolplane", "hybrid", "curated"]
     present = {r["arm"] for r in rows}
     arms = [a for a in arm_order_display if a in present] + sorted(
         present - set(arm_order_display)
