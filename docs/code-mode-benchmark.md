@@ -487,6 +487,51 @@ flag is not itself client-aware: it re-exports unconditionally, so on a
 client without deferral (Codex) it would push all 84 schemas into context
 up front. Curated re-export and client-awareness are both #125's job.
 
+### Curated re-export does not rescue it either (2026-07-11, #125)
+
+The obvious fix to the M=15 bloat is to re-export a *curated* subset —
+only the single/adaptive tools — instead of the whole registry. #125 built
+that (a `[hybrid] include = ["mcp:orders/*"]` config section, verified to
+expose exactly the 2 orders tools at M=15, not 87). It did **not** restore
+the win. Four arms, M=15, single and chain (`run-20260711-014100`):
+
+| task | direct | toolplane | hybrid | curated |
+|---|---|---|---|---|
+| single | 3.5 reqs, $0.14 | 5 reqs, $0.19 | 6 reqs, $0.23 | 5 reqs, **$0.21** |
+| chain | 7.5 reqs, $0.21 | 8.5 reqs, $0.24 | 9.5 reqs, $0.28 | 10 reqs, **$0.28** |
+
+Curated beats hybrid-all (fewer tools, less context) but is **worse than
+the plain facade** on single ($0.21 vs $0.19) and ties hybrid as the worst
+arm on chain. Cutting the 82 distractors off the counter bought nothing —
+because the distractors were never what buried the native tool. The
+transcripts isolate two real causes, and both correct the "sibling
+dilution" framing this doc used for #115:
+
+1. **Built-in collision (confirmed, both curated reps and a direct rep).**
+   The client's `ToolSearch("order status")` returns Claude Code's own
+   built-in task tools — `TaskList`, `TaskCreate`, `Monitor`,
+   `PushNotification` — *not* the domain tool. The competition for a
+   natural domain query is the client's built-in vocabulary, not the other
+   MCP servers, so curating the servers away is inert.
+2. **Namespace flattening (strong n=2 observation).** Direct's tool is
+   `mcp__orders__get_order`, and the agent recovers from the first miss by
+   searching the server name (`mcp__orders`) — the qualified name carries
+   the domain. Every re-exported tool instead collapses to
+   `mcp__toolplane__<leaf>`, so that server-name recovery path is gone and
+   the agent flails with more domain queries (curated single took 3–4
+   searches vs direct's 1–2). The re-export also still carries the fat
+   `search_capabilities`/`execute_code` domain-hint context.
+
+So the binding constraint at scale is **client-side ranking** — a domain
+tool competing against built-ins on leaf-name and description alone, having
+lost its server-name signal — not the number of sibling tools. Selective
+re-export is a correct, safe primitive (no all-or-nothing scale footgun),
+but on Claude Code it does not deliver the M=1 economics at M=15. The M=1
+win was real; it does not survive a realistic client tool population. The
+sharper open question this leaves is not "curate better" but "can a
+re-exported tool be named/described so it outranks the client's built-ins
+for a natural query" — or whether that ceiling is simply client-owned.
+
 ## The envelope
 
 Two measured points; nothing measured between them:
