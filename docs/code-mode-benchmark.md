@@ -465,8 +465,10 @@ result. Bash-exploration turns are **not** arm-neutral on the losing task:
 on `chain` they are hybrid-only (2/1 turns vs 0 for direct and toolplane
 at both M values), so the raw chain tool-count gap overstates hybrid's
 overhead — the `reqs` and output-token columns are the like-for-like
-comparison and still carry the verdict. M=1 single/chain cells carry †
-(ranges overlap direct at n=2).
+comparison and still carry the verdict. (No † in the hybrid table: every
+hybrid cost range is disjoint from direct's at n=2 — single $0.141 vs
+$0.128, chain $0.23 vs $0.17 — so these are small measured gaps, not
+overlaps, modest reps notwithstanding.)
 
 Verdict: **hybrid is a small- or curated-registry optimization, not a
 general one.** With a handful of capabilities it wins the loops (beating
