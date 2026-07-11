@@ -863,3 +863,95 @@ def test_hybrid_tool_names_are_ascii_even_for_unicode_identifiers() -> None:
     for name in reexported:
         assert name.isascii(), name
         assert "é" not in name
+
+
+def test_hybrid_curated_reexports_only_the_selected_capabilities() -> None:
+    # #125: the whole point — at scale, re-export ONLY the curated
+    # single/adaptive capabilities, not registry.all() (which is the worst
+    # arm, #114)
+    async def exercise() -> tuple[list[str], dict]:
+        runtime = Toolplane(ambient_cli=False)
+
+        @runtime.tool(name="orders_get_order", tags={"orders"})
+        async def get_order(order_id: str) -> dict:
+            """Fetch one order."""
+            return {"order_id": order_id}
+
+        @runtime.tool(name="crm_search", tags={"crm"})
+        async def crm_search(q: str) -> list:
+            """Search CRM."""
+            return []
+
+        app = build_mcp_facade(runtime, hybrid_include=["tag:orders"])
+        async with Client(app) as client:
+            names = sorted(t.name for t in await client.list_tools())
+            result = await client.call_tool(
+                "orders_get_order", {"order_id": "X"}
+            )
+        return names, result.structured_content
+
+    names, dispatched = run(exercise())
+    assert "orders_get_order" in names  # curated in
+    assert "crm_search" not in names  # not selected
+    assert "execute_code" in names  # meta-tools stay
+    assert dispatched == {"order_id": "X"}
+
+
+def test_hybrid_include_from_config_drives_curated_reexport(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "toolplane.toml"
+    config_path.write_text(
+        textwrap.dedent(
+            """
+            [hybrid]
+            enabled = true
+            include = ["mcp:orders/*"]
+
+            [mcp.servers.orders]
+            command = "%s"
+            args = ["%s"]
+            """
+        ).strip()
+        % (sys.executable, str(Path(__file__).parent / "_stub_orders_server.py")),
+        encoding="utf-8",
+    )
+    # the stub server file is created by the shared helper below
+    _write_stub_orders_server(Path(__file__).parent / "_stub_orders_server.py")
+
+    async def exercise() -> list[str]:
+        app = await build_mcp_facade_from_config(str(config_path))
+        async with Client(app) as client:
+            return sorted(t.name for t in await client.list_tools())
+
+    try:
+        names = run(exercise())
+    finally:
+        (Path(__file__).parent / "_stub_orders_server.py").unlink(missing_ok=True)
+
+    # the orders tools are re-exported natively, plus the meta-tools
+    assert "search_capabilities" in names
+    assert "execute_code" in names
+    assert any(n.startswith("orders") or "get_order" in n for n in names)
+
+
+def _write_stub_orders_server(path: Path) -> None:
+    path.write_text(
+        textwrap.dedent(
+            '''
+            from fastmcp import FastMCP
+
+            mcp = FastMCP("orders")
+
+            @mcp.tool
+            def get_order(order_id: str) -> dict:
+                """Fetch one order record."""
+                return {"order_id": order_id, "status": "shipped"}
+
+            if __name__ == "__main__":
+                mcp.run()
+            '''
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 import re
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -17,7 +18,7 @@ except ImportError:  # pragma: no cover - dependency is required
 
 from .capabilities import Capability
 from .config import ConfigSource, ToolplaneConfig, load_toolplane_config
-from .discovery import domain_hint
+from .discovery import domain_hint, select_capabilities
 from .errors import BackendNotFoundError
 from .execution import ExecutionError, ExecutionResult
 from .policy import EffectivePolicy, ensure_safe_facade_policy
@@ -36,6 +37,7 @@ def build_mcp_facade(
     policy: EffectivePolicy | None = None,
     cli_escalation: bool = True,
     hybrid: bool = False,
+    hybrid_include: Sequence[str] = (),
 ) -> "FastMCP":
     """Build the small MCP meta-tool surface for a Toolplane runtime.
 
@@ -313,8 +315,18 @@ def build_mcp_facade(
                 runtime.cli_policy.escalation_handler = None
         return result.model_dump(mode="json")
 
-    if hybrid:
-        _register_hybrid_tools(mcp, runtime)
+    if hybrid or hybrid_include:
+        if hybrid_include:
+            # #125: curated re-export — only the single/adaptive capabilities
+            # the operator named, so scale does not rebuild the flat surface
+            reexport = select_capabilities(
+                runtime.registry.all(), hybrid_include
+            )
+        else:
+            # #114 baseline: re-export everything (held/experimental — the
+            # worst arm at scale, kept for the benchmark)
+            reexport = list(runtime.registry.all())
+        _register_hybrid_tools(mcp, runtime, reexport)
 
     return mcp
 
@@ -374,11 +386,13 @@ def _make_hybrid_dispatch(runtime: Toolplane, canonical_name: str) -> Any:
     return _dispatch
 
 
-def _register_hybrid_tools(mcp: "FastMCP", runtime: Toolplane) -> None:
+def _register_hybrid_tools(
+    mcp: "FastMCP", runtime: Toolplane, capabilities: Sequence[Capability]
+) -> None:
     from fastmcp.tools.function_tool import FunctionTool
 
     taken: set[str] = set()
-    for capability in runtime.registry.all():
+    for capability in capabilities:
         tool_name = _hybrid_tool_name(capability, taken)
         # no output_schema: fastmcp validates the return against it, but a
         # capability's DECLARED returns need not match its ACTUAL value
@@ -455,6 +469,10 @@ async def build_mcp_facade_from_config(
                 f"toolplane mcp login {server_name}"
             )
     runtime = await Toolplane.from_config(parsed)
+    # curated re-export is config-driven (#125); the CLI --hybrid flag is
+    # the held all-or-nothing baseline. A config include list takes
+    # precedence and is the real public surface.
+    hybrid_include = tuple(parsed.hybrid.include) if parsed.hybrid.enabled else ()
     # escalation grants are session-scoped state like the stores: only stdio
     # guarantees one client per process, so a human approval cannot leak to
     # a client that never saw the prompt
@@ -463,6 +481,7 @@ async def build_mcp_facade_from_config(
         policy=policy,
         cli_escalation=transport == "stdio",
         hybrid=hybrid,
+        hybrid_include=hybrid_include,
     )
 
 

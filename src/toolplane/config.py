@@ -100,6 +100,42 @@ class SessionSettings(BaseModel):
     max_memory_mb: int = Field(default=512, gt=0)
 
 
+class HybridSettings(BaseModel):
+    """Selective hybrid re-export policy (#125).
+
+    When enabled, the capabilities matched by ``include`` are re-exported as
+    ordinary MCP tools alongside the meta-tools, so a deferred-loading
+    client can call them natively for single/adaptive tasks while loops and
+    joins still use ``execute_code``. Re-exporting the WHOLE registry is the
+    worst arm at scale (#114) — this is deliberately a curated allowlist, so
+    ``include`` must be non-empty when enabled.
+
+    Each ``include`` token matches a capability by: its exact canonical name
+    (``mcp:orders/get_order``), an fnmatch glob on that name
+    (``mcp:orders/*``), or ``tag:<name>`` against the capability's tags.
+    Choose capabilities whose typical use is a single or adaptive call
+    (lookups, actions, per-hop chains); leave bulk/loop/join work behind
+    ``execute_code``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    include: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _require_include_when_enabled(self) -> "HybridSettings":
+        if self.enabled and not self.include:
+            raise ValueError(
+                "hybrid.include must list at least one capability pattern "
+                "when hybrid.enabled is true — re-exporting everything is a "
+                "measured regression (#114); curate the single/adaptive "
+                "capabilities (names, globs like 'mcp:orders/*', or "
+                "'tag:<name>')"
+            )
+        return self
+
+
 class AuditSettings(BaseModel):
     """Audit log policy: opt-in JSONL event stream, metadata only.
 
@@ -143,6 +179,7 @@ class ToolplaneConfig(BaseModel):
     artifacts: ArtifactsSettings = Field(default_factory=ArtifactsSettings)
     session: SessionSettings = Field(default_factory=SessionSettings)
     audit: AuditSettings = Field(default_factory=AuditSettings)
+    hybrid: HybridSettings = Field(default_factory=HybridSettings)
     mcp: McpSettings = Field(default_factory=McpSettings)
 
 
