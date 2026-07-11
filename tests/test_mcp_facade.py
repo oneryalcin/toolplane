@@ -719,26 +719,41 @@ def test_hybrid_tool_name_never_shadows_a_meta_tool() -> None:
     assert dispatched == "dispatched"
 
 
-def test_hybrid_input_cannot_redirect_dispatch_to_another_capability() -> None:
-    # gauntlet critical: the dispatch target was a keyword param with a
-    # default, so a re-exported schema (third-party, verbatim) with a
-    # `canonical` property — or a plain injected key — could silently
-    # rebind the target, including to a HIDDEN capability. The target must
-    # be closure-captured and un-overridable.
+def test_hybrid_input_cannot_change_the_dispatched_capability(
+    tmp_path: Path,
+) -> None:
+    # gauntlet critical, precise severity: the real hazard is tool-IDENTITY
+    # confusion — the client approves/displays `orders_get_order` while the
+    # server runs a different capability, defeating per-tool approval and
+    # audit expectations (NOT a policy bypass: call_tool still audits and
+    # enforces the allowlist). The advertised capability is what must
+    # dispatch and what the audit must name, no matter what is injected.
     from dataclasses import replace
 
-    async def exercise() -> tuple[str, list]:
-        runtime = Toolplane(ambient_cli=False)
+    from toolplane.audit import AuditLog
+
+    log_path = tmp_path / "audit.jsonl"
+
+    async def exercise() -> list[str]:
+        runtime = Toolplane(
+            ambient_cli=False, audit_log=AuditLog(log_path, enabled=True)
+        )
 
         @runtime.tool(name="orders_get_order")
         async def get_order(order_id: str) -> dict:
             """Fetch one order."""
-            return {"dispatched": "orders_get_order", "order_id": order_id}
+            return {"order_id": order_id}
 
+        @runtime.tool(name="other_capability")
+        async def other(order_id: str) -> str:
+            """A different, legitimately visible capability."""
+            return "WRONG CAPABILITY RAN"
+
+        # also a hidden one, to prove injection cannot reach it either
         @runtime.tool(name="secret_admin")
         async def secret_admin(order_id: str) -> str:
-            """A capability the facade hides from re-export."""
-            return f"HIDDEN DISPATCHED: {order_id}"
+            """Hidden from re-export."""
+            return "HIDDEN RAN"
 
         runtime.registry._capabilities["secret_admin"] = replace(
             runtime.registry._capabilities["secret_admin"], hidden=True
@@ -746,22 +761,66 @@ def test_hybrid_input_cannot_redirect_dispatch_to_another_capability() -> None:
 
         app = build_mcp_facade(runtime, hybrid=True)
         async with Client(app) as client:
+            # inject canonical at both a visible sibling and the hidden cap
+            for target in ("other_capability", "secret_admin"):
+                await client.call_tool(
+                    "orders_get_order",
+                    {"order_id": "x", "canonical": target},
+                    raise_on_error=False,
+                )
+            return sorted(t.name for t in await client.list_tools())
+
+    names = run(exercise())
+    assert "secret_admin" not in names  # hidden, not re-exported
+
+    dispatched = [
+        json.loads(line)["capability"]
+        for line in log_path.read_text().splitlines()
+        if json.loads(line)["event"] == "dispatch"
+    ]
+    # every injection dispatched the ADVERTISED capability, never the
+    # injected target — audit proves identity is un-hijackable
+    assert dispatched == ["orders_get_order", "orders_get_order"]
+    assert "other_capability" not in dispatched
+    assert "secret_admin" not in dispatched
+
+
+def test_hybrid_reexport_cannot_invoke_a_disallowed_cli_binary() -> None:
+    # re-export must not become a hole in the CLI allowlist: the ambient
+    # CLI capability is hidden (not re-exported), and even a canonical
+    # injection at it cannot run a binary the policy forbids
+    async def exercise() -> tuple[list[str], bool]:
+        runtime = await Toolplane.from_config(
+            {"cli": {"mode": "allowlist", "allow": ["git"]}}
+        )
+
+        @runtime.tool(name="orders_get_order")
+        async def get_order(order_id: str) -> dict:
+            """Fetch one order."""
+            return {"order_id": order_id}
+
+        app = build_mcp_facade(runtime, hybrid=True, cli_escalation=False)
+        async with Client(app) as client:
             names = sorted(t.name for t in await client.list_tools())
-            # inject canonical pointing at the hidden capability
+            # try to reach the ambient CLI capability by injection and run
+            # a forbidden binary
             result = await client.call_tool(
                 "orders_get_order",
-                {"order_id": "x", "canonical": "secret_admin"},
+                {
+                    "order_id": "x",
+                    "canonical": "toolplane:cli/run",
+                    "binary": "curl",
+                },
                 raise_on_error=False,
             )
             text = result.content[0].text if result.content else ""
-        return text, names
+        return names, ("curl" in text and "not allowed" in text)
 
-    text, names = run(exercise())
-    assert "secret_admin" not in names  # hidden, not re-exported
-    # the security property: the hidden capability's body never runs, no
-    # matter what the client injects — canonical is closure-captured, so
-    # the stray key is only ever an unknown arg to the real target
-    assert "HIDDEN DISPATCHED" not in text
+    names, allowlist_error_leaked = run(exercise())
+    # the CLI capability is not a re-exported tool at all
+    assert not any("cli" in n and "run" in n for n in names)
+    # and the injection neither ran curl nor reached the allowlist path
+    assert not allowlist_error_leaked
 
 
 def test_hybrid_tool_with_a_canonical_parameter_still_works() -> None:

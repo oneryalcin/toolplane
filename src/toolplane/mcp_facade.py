@@ -358,14 +358,17 @@ def _hybrid_tool_name(
 
 def _make_hybrid_dispatch(runtime: Toolplane, canonical_name: str) -> Any:
     async def _dispatch(**params: Any) -> Any:
-        # canonical_name is closure-captured, NEVER a parameter: a
-        # re-exported schema is third-party prose verbatim, so if the
-        # dispatch target were a keyword arg an input property named
-        # "canonical" would silently rebind it to any other capability
-        # (gauntlet: confirmed redirect to a hidden capability). One
-        # re-export = one fixed capability, through the same audited
-        # call_tool path execute_code's bridge uses — no code, no session,
-        # no store.
+        # canonical_name is closure-captured, NEVER a parameter. If the
+        # dispatch target were a keyword arg with a default, an input
+        # property named "canonical" (re-exported schemas are third-party
+        # verbatim, so this is author-reachable) would rebind it — the
+        # client approves and displays `orders_get_order` while the server
+        # runs something else. That is the hazard: tool-IDENTITY confusion
+        # defeating per-tool approval and audit, NOT a policy bypass
+        # (call_tool still audits and enforces the CLI allowlist below, and
+        # execute_code can already reach hidden canonicals — hidden is a
+        # discovery boundary, not a security one). One re-export = one fixed
+        # capability, through the same audited call_tool path.
         return await runtime.call_tool(canonical_name, params)
 
     return _dispatch
