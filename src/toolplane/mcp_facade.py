@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -14,6 +15,7 @@ try:
 except ImportError:  # pragma: no cover - dependency is required
     Context = None  # type: ignore[assignment, misc]
 
+from .capabilities import Capability
 from .config import ConfigSource, ToolplaneConfig, load_toolplane_config
 from .discovery import domain_hint
 from .errors import BackendNotFoundError
@@ -33,6 +35,7 @@ def build_mcp_facade(
     *,
     policy: EffectivePolicy | None = None,
     cli_escalation: bool = True,
+    hybrid: bool = False,
 ) -> "FastMCP":
     """Build the small MCP meta-tool surface for a Toolplane runtime.
 
@@ -49,6 +52,19 @@ def build_mcp_facade(
     registered afterwards stay fully searchable and executable, but are
     invisible to clients' deferred-tool keyword search — register
     everything first (the config-driven path always does).
+
+    ``hybrid`` (#114) is EXPERIMENTAL and re-exports EVERY registered
+    capability as an ordinary MCP tool alongside the meta-tools. Measured
+    envelope (``docs/code-mode-benchmark.md``): a win at a small registry
+    (single/adaptive tasks route to a native tool, loops still use
+    ``execute_code``) but the WORST arm at 15 servers, where re-exporting
+    the whole registry rebuilds the flat tool surface the facade exists to
+    avoid. The general form is selective re-export (#125); the all-or-
+    nothing form is unpublished (the CLI flag is hidden) and kept only for
+    the benchmark. On clients WITHOUT deferred loading
+    every re-exported schema lands in context at once. Each re-exported
+    tool is a stateless one-capability dispatch through the same audited
+    ``call_tool`` path ``execute_code`` uses (no session, no stores).
     """
     try:
         from fastmcp import FastMCP
@@ -297,7 +313,87 @@ def build_mcp_facade(
                 runtime.cli_policy.escalation_handler = None
         return result.model_dump(mode="json")
 
+    if hybrid:
+        _register_hybrid_tools(mcp, runtime)
+
     return mcp
+
+
+# the three facade meta-tool names a re-exported capability must never
+# shadow; combined with runtime-reserved bindings at call time
+_FACADE_TOOL_NAMES = frozenset(
+    {"search_capabilities", "get_capability_schemas", "execute_code"}
+)
+_MCP_TOOL_NAME_RE = re.compile(r"[^A-Za-z0-9_-]")
+# a client-safe MCP tool name: ASCII only. _is_safe_python_name accepts
+# Unicode identifiers (str.isidentifier() -> "café", "工具"), which some
+# clients reject and which SEP-986 flags — so a candidate must clear this
+# ASCII gate, not just be a valid Python name (gauntlet finding)
+_MCP_SAFE_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*\Z")
+
+
+def _hybrid_tool_name(
+    capability: Capability, taken: set[str]
+) -> str:
+    """A unique, client-safe MCP tool name for a re-exported capability.
+
+    Prefers the flat binding the agent already sees in code-mode call
+    shapes (``orders_get_order``) for one consistent name across both
+    surfaces; falls back to a sanitized canonical name, then numeric
+    suffixing, so distinct capabilities never collide onto one tool.
+    """
+    candidates = [capability.name, *sorted(capability.aliases)]
+    base = next(
+        (c for c in candidates if _MCP_SAFE_NAME_RE.match(c)),
+        _MCP_TOOL_NAME_RE.sub("_", capability.name).strip("_") or "capability",
+    )
+    name = base
+    suffix = 2
+    while name in taken or name in _FACADE_TOOL_NAMES:
+        name = f"{base}_{suffix}"
+        suffix += 1
+    taken.add(name)
+    return name
+
+
+def _make_hybrid_dispatch(runtime: Toolplane, canonical_name: str) -> Any:
+    async def _dispatch(**params: Any) -> Any:
+        # canonical_name is closure-captured, NEVER a parameter. If the
+        # dispatch target were a keyword arg with a default, an input
+        # property named "canonical" (re-exported schemas are third-party
+        # verbatim, so this is author-reachable) would rebind it — the
+        # client approves and displays `orders_get_order` while the server
+        # runs something else. That is the hazard: tool-IDENTITY confusion
+        # defeating per-tool approval and audit, NOT a policy bypass
+        # (call_tool still audits and enforces the CLI allowlist below, and
+        # execute_code can already reach hidden canonicals — hidden is a
+        # discovery boundary, not a security one). One re-export = one fixed
+        # capability, through the same audited call_tool path.
+        return await runtime.call_tool(canonical_name, params)
+
+    return _dispatch
+
+
+def _register_hybrid_tools(mcp: "FastMCP", runtime: Toolplane) -> None:
+    from fastmcp.tools.function_tool import FunctionTool
+
+    taken: set[str] = set()
+    for capability in runtime.registry.all():
+        tool_name = _hybrid_tool_name(capability, taken)
+        # no output_schema: fastmcp validates the return against it, but a
+        # capability's DECLARED returns need not match its ACTUAL value
+        # (routinely true for third-party MCP tools), and a mismatch would
+        # turn a successful dispatch into a client-side error. The value
+        # still comes back (dict -> structured, scalar -> text) and the
+        # description summarizes the shape.
+        mcp.add_tool(
+            FunctionTool(
+                name=tool_name,
+                description=capability.description or capability.name,
+                parameters=capability.parameters,
+                fn=_make_hybrid_dispatch(runtime, capability.name),
+            )
+        )
 
 
 async def _elicit_cli_grant(ctx: Any, policy: Any, binary: str) -> bool:
@@ -329,6 +425,7 @@ async def build_mcp_facade_from_config(
     *,
     transport: Transport = "stdio",
     allow_unsafe: bool = False,
+    hybrid: bool = False,
 ) -> "FastMCP":
     """Build the facade from config, applying transport-dependent policy.
 
@@ -362,7 +459,10 @@ async def build_mcp_facade_from_config(
     # guarantees one client per process, so a human approval cannot leak to
     # a client that never saw the prompt
     return build_mcp_facade(
-        runtime, policy=policy, cli_escalation=transport == "stdio"
+        runtime,
+        policy=policy,
+        cli_escalation=transport == "stdio",
+        hybrid=hybrid,
     )
 
 
@@ -398,9 +498,10 @@ async def serve_mcp_facade(
     host: str | None = None,
     port: int | None = None,
     allow_unsafe: bool = False,
+    hybrid: bool = False,
 ) -> None:
     app = await build_mcp_facade_from_config(
-        config, transport=transport, allow_unsafe=allow_unsafe
+        config, transport=transport, allow_unsafe=allow_unsafe, hybrid=hybrid
     )
     kwargs: dict[str, Any] = {}
     if host is not None:

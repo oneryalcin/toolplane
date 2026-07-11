@@ -301,10 +301,13 @@ def mcp_config(
                 **{name: {**cmd, "type": "stdio"} for name, cmd in extra.items()},
             }
         }
-    if arm == "toolplane":
+    # both toolplane arms serve the SAME config through the SAME facade;
+    # "hybrid" only adds --hybrid, which re-exports capabilities as
+    # individual MCP tools alongside the meta-tools (#114)
+    if arm in ("toolplane", "hybrid"):
         # generated with absolute paths: every process here runs from a
         # scratch cwd, so nothing may be cwd-relative
-        toml_path = workdir / f"toolplane-bench-{task}-m{m_servers}.toml"
+        toml_path = workdir / f"toolplane-bench-{arm}-{task}-m{m_servers}.toml"
         sections = []
         for name, cmd in {"orders": server_cmd, **extra}.items():
             command_toml = json.dumps(cmd["command"])
@@ -317,17 +320,15 @@ def mcp_config(
                 f"args = [{args_toml}]\nenv = {{ {env_toml} }}\n"
             )
         toml_path.write_text("\n".join(sections), encoding="utf-8")
+        serve_args = ["serve", "mcp", "--config", str(toml_path)]
+        if arm == "hybrid":
+            serve_args.append("--hybrid")
         return {
             "mcpServers": {
                 "toolplane": {
                     "type": "stdio",
                     "command": code["toolplane_bin"],
-                    "args": [
-                        "serve",
-                        "mcp",
-                        "--config",
-                        str(toml_path),
-                    ],
+                    "args": serve_args,
                 }
             }
         }
@@ -533,6 +534,12 @@ def summarize(rows: list[dict]) -> str:
         "|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     m_values = sorted({r.get("m_servers", 1) for r in rows})
+    # arms in a stable, meaningful order; only those actually present render
+    arm_order_display = ["direct", "toolplane", "hybrid"]
+    present = {r["arm"] for r in rows}
+    arms = [a for a in arm_order_display if a in present] + sorted(
+        present - set(arm_order_display)
+    )
     overlap_seen = False
     for task in TASKS:
         for m in m_values:
@@ -544,32 +551,35 @@ def summarize(rows: list[dict]) -> str:
                     and r["arm"] == arm
                     and r.get("m_servers", 1) == m
                 ]
-                for arm in ("direct", "toolplane")
+                for arm in arms
             }
-            overlaps = {}
+            # † marks an arm whose per-rep range overlaps direct's (the
+            # reference) for this task — direct itself never gets the mark
+            overlaps = {arm: {} for arm in arms}
+            direct_group = groups.get("direct")
             for key in ("cost_usd", "wall_s"):
-                spans = {
-                    arm: _cell_stats(g, key) for arm, g in groups.items() if g
-                }
-                direct_span = spans.get("direct")
-                toolplane_span = spans.get("toolplane")
-                if direct_span and toolplane_span:
-                    _, lo_a, hi_a = direct_span
-                    _, lo_b, hi_b = toolplane_span
-                    # an all-timeout arm has no numeric bounds; no claim
-                    # to annotate either way
-                    if None not in (lo_a, hi_a, lo_b, hi_b):
-                        overlaps[key] = lo_a <= hi_b and lo_b <= hi_a
+                direct_span = (
+                    _cell_stats(direct_group, key) if direct_group else None
+                )
+                if not direct_span or None in direct_span[1:]:
+                    continue
+                _, lo_a, hi_a = direct_span
+                for arm, g in groups.items():
+                    if arm == "direct" or not g:
+                        continue
+                    _, lo_b, hi_b = _cell_stats(g, key)
+                    if None not in (lo_b, hi_b):
+                        overlaps[arm][key] = lo_a <= hi_b and lo_b <= hi_a
             for arm, group in groups.items():
                 if not group:
                     continue
 
-                def med(key):
+                def med(key, group=group):
                     value = _cell_stats(group, key)[0]
                     return round(value, 2) if value is not None else "-"
 
-                def flagged(key):
-                    mark = "†" if overlaps.get(key) else ""
+                def flagged(key, arm=arm):
+                    mark = "†" if overlaps[arm].get(key) else ""
                     return f"{med(key)}{mark}"
 
                 successes = sum(r["correct"] for r in group)
@@ -582,7 +592,7 @@ def summarize(rows: list[dict]) -> str:
                     cost_of_pass = round(sum(costs) / successes, 2)
                 else:
                     cost_of_pass = "inf"
-                overlap_seen = overlap_seen or any(overlaps.values())
+                overlap_seen = overlap_seen or any(overlaps[arm].values())
                 ok = f"{successes}/{len(group)}"
                 lines.append(
                     f"| {task} | {m} | {arm} | {ok} | {med('tool_calls')} | "
@@ -593,8 +603,8 @@ def summarize(rows: list[dict]) -> str:
                 )
     if overlap_seen:
         lines.append(
-            "\n† observed per-rep ranges of the two arms overlap for this "
-            "task — the median gap is unresolved at this rep count."
+            "\n† this arm's observed per-rep range overlaps direct's for "
+            "this task — the median gap is unresolved at this rep count."
         )
     return "\n".join(lines)
 
