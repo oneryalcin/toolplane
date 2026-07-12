@@ -207,7 +207,8 @@ _PROFILES = ("crm", "calendar", "tickets", "wiki", "payments", "analytics", "fil
 # domain of the task under test: which fixture server carries the answer,
 # what the client sees it named, and the token that identifies its tool in
 # a ToolSearch result. Tasks default to "orders"; #127's second-domain
-# validation adds "tickets".
+# validation adds "shipments" (a name with no distractor-profile collision —
+# unlike "tickets", which _PROFILES already uses).
 _DOMAINS = {
     "orders": {
         "server": "order_server.py",
@@ -320,6 +321,12 @@ def build_code_under_test(workdir: Path) -> dict:
         "wheel": wheel.name,
         "wheel_sha256": _sha256(wheel),
         "fixtures_sha256": fixture_hashes,
+        # the harness itself (prompts, tasks, metric, mcp wiring) is not in
+        # the wheel and runs from the repo, not a frozen copy — hash it so a
+        # dirty run.py is provable from the row, not only from git_dirty
+        # (which snapshots before result files are written and cannot tell
+        # an uncommitted harness edit from an untracked result file, #127)
+        "harness_sha256": _sha256(BENCH_DIR / "run.py"),
         "python": str(python),
         "toolplane_bin": str(venv / "bin" / "toolplane"),
         "fixtures_dir": str(fixtures),
@@ -332,6 +339,7 @@ def provenance_row(code: dict) -> dict:
         "git_sha": code["git_sha"],
         "git_dirty": code["git_dirty"],
         "wheel_sha256": code["wheel_sha256"],
+        "harness_sha256": code["harness_sha256"],
         "fixtures_sha256": code["fixtures_sha256"],
     }
 
