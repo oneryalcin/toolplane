@@ -865,6 +865,84 @@ def test_hybrid_tool_names_are_ascii_even_for_unicode_identifiers() -> None:
         assert "é" not in name
 
 
+def _signal_capability(name: str, description: str, alias: str | None):
+    from toolplane.capabilities import Capability
+
+    return Capability(
+        name=name,
+        callable=lambda **k: None,
+        description=description,
+        parameters={"type": "object", "properties": {}},
+        returns=None,
+        tags=frozenset(),
+        aliases=frozenset({alias}) if alias else frozenset(),
+    )
+
+
+def test_hybrid_name_signal_embeds_domain_and_query_vocabulary() -> None:
+    # #127 variant A: the query-shaped leaf carries the domain plus the
+    # description terms (incl. "status") the flat binding omits.
+    from toolplane.mcp_facade import _MCP_SAFE_NAME_RE, _hybrid_tool_name
+
+    cap = _signal_capability(
+        "mcp:orders/get_order",
+        "Fetch one order record: order_id, region, amount, status.",
+        "orders_get_order",
+    )
+    name = _hybrid_tool_name(cap, set(), signal="name")
+    assert name.startswith("orders_")
+    assert "status" in name
+    assert name.isascii()
+    assert _MCP_SAFE_NAME_RE.match(name)
+
+
+def test_hybrid_description_signal_frontloads_domain_and_leaf() -> None:
+    # #127 variant B: lead with the server/domain word and leaf verbs.
+    from toolplane.mcp_facade import _hybrid_tool_description
+
+    cap = _signal_capability(
+        "mcp:orders/get_order", "Fetch one order record.", "orders_get_order"
+    )
+    desc = _hybrid_tool_description(cap, signal="description")
+    assert desc.startswith("orders: get order.")
+    assert "Fetch one order record." in desc  # original preserved, not replaced
+
+
+def test_hybrid_control_signal_leaves_name_and_description_unchanged() -> None:
+    from toolplane.mcp_facade import _hybrid_tool_description, _hybrid_tool_name
+
+    cap = _signal_capability(
+        "mcp:orders/get_order", "Fetch one order record.", "orders_get_order"
+    )
+    assert _hybrid_tool_name(cap, set(), signal="control") == "orders_get_order"
+    assert (
+        _hybrid_tool_description(cap, signal="control")
+        == "Fetch one order record."
+    )
+
+
+def test_hybrid_name_signal_stays_ascii_for_unicode_capability() -> None:
+    from toolplane.mcp_facade import _MCP_SAFE_NAME_RE, _hybrid_tool_name
+
+    cap = _signal_capability("mcp:wéird/dö", "ünïcode ☃ description", None)
+    name = _hybrid_tool_name(cap, set(), signal="name")
+    assert name.isascii()
+    assert _MCP_SAFE_NAME_RE.match(name)
+
+
+def test_hybrid_signal_env_falls_back_to_control_on_unknown_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from toolplane.mcp_facade import _hybrid_signal
+
+    monkeypatch.setenv("TOOLPLANE_HYBRID_SIGNAL", "bogus")
+    assert _hybrid_signal() == "control"
+    monkeypatch.setenv("TOOLPLANE_HYBRID_SIGNAL", "NAME")
+    assert _hybrid_signal() == "name"
+    monkeypatch.delenv("TOOLPLANE_HYBRID_SIGNAL")
+    assert _hybrid_signal() == "control"
+
+
 def test_hybrid_curated_reexports_only_the_selected_capabilities() -> None:
     # #125: the whole point — at scale, re-export ONLY the curated
     # single/adaptive capabilities, not registry.all() (which is the worst
