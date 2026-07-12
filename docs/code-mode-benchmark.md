@@ -543,7 +543,99 @@ direct/toolplane — a disclosed covariate). The M=1 win was real; it does
 not survive a realistic client tool population. The sharper open question
 (#127) is not "curate better" but "can a re-exported tool be named so it
 keeps a server-name signal and outranks the client's built-ins" — or
-whether that ceiling is simply client-owned.
+whether that ceiling is simply client-owned. **That A/B is the next
+section; the answer is client-owned.**
+
+### Naming the re-export does not lift the ceiling (2026-07-12, #127)
+
+#125 left one lever untried: the re-export inherits the client-set
+`mcp__toolplane__` prefix (nothing server-side changes that), but its
+*leaf name* and *description* are ours. #127 pre-registered an A/B to test
+whether pumping either with domain/query vocabulary lets a re-export reach
+the first-search discovery a direct tool gets — or whether the ceiling is
+client-owned. Three re-export arms, all curated to the same target tools,
+differing only in a private `TOOLPLANE_HYBRID_SIGNAL` env knob (bench-only,
+never public config):
+
+- **control** — `orders_get_order`, description as-is;
+- **name** — a query-shaped leaf carrying the domain + the full
+  description vocabulary (`orders_fetch_one_order_record_..._status`);
+- **description** — the domain word and leaf verbs front-loaded.
+
+Primary outcome: the target tool is returned by the **first valid**
+`ToolSearch` — a search that is not the "server still connecting"
+cold-start artifact, which is counted separately and never scored as a
+ranking miss. Because the built-in collision is nondeterministic (the same
+query can hit or miss run to run), the **first-hit rate over reps** is the
+unit of evidence, not any single transcript.
+
+**Orders, M=15, n=11 per arm** (pooled over wheel `974e578`; the query the
+agent chose varies, so a query-controlled column isolates the reps whose
+first search was exactly `"order status"`):
+
+| arm | first-hit | first-hit \| q=`order status` | searches→tool | cost |
+|---|---|---|---|---|
+| direct | **11/11** | **6/6** | 1.0 | **$0.15** |
+| control | 4/11 | 2/6 | 2.0 | $0.19 |
+| name | 6/11 | 5/6 | 1.0 | $0.19 |
+| description | 4/11 | 3/5 | 2.0 | $0.19 |
+
+On orders the name signal looks like it helps — query-controlled 5/6 vs
+control's 2/6, and it reaches the tool in one search like direct. But it is
+not significant overall (6/11 vs 4/11, Fisher p>0.6), and the mechanism is
+suspicious: its leaf `orders_..._order_..._status` literally contains the
+query word "status", which `orders_get_order` lacks. So the pre-registered
+second domain deliberately breaks that coincidence.
+
+**Shipments, M=15, n=9 per arm** — same single-lookup shape, but the tool
+exposes the field as `state` while the task asks for a shipment's
+`status`. "status" is a synonym **absent from the description** (so the
+name-signal leaf cannot carry it) yet **still collides with the client's
+built-in Task tools** (`ToolSearch("shipment status …")` →
+`[TaskCreate, Monitor, PushNotification, TaskGet, TaskList]`, transcript-
+confirmed), so the discovery *difficulty* is identical to orders:
+
+| arm | first-hit | first-hit \| q=`shipment status` | searches→tool | cost |
+|---|---|---|---|---|
+| direct | **9/9** | **9/9** | 1.0 | **$0.15** |
+| control | 2/9 | 0/2 | 2.0 | $0.18 |
+| name | 3/9 | 0/2 | 2.0 | $0.20 |
+| description | 3/9 | 0/5 | 2.0 | $0.17 |
+
+The name signal's advantage **vanishes**: 3/9 ≈ control 2/9 ≈ description
+3/9, searches→tool back to 2.0, query-controlled 0/2 = control 0/2. It only
+ever helped on orders because the query word happened to be in that
+description. Direct, meanwhile, is robust in **both** domains (11/11, 9/9,
+one search) — its `mcp__<server>__` qualifier surfaces the tool regardless
+of whether the query word is in the leaf, and that qualifier is exactly
+what a re-export structurally loses to the flat `mcp__toolplane__` prefix.
+
+Three conclusions, now on two-domain evidence:
+
+1. **The naming bump does not generalize.** It was a lexical coincidence of
+   "status" appearing in the orders description, not a naming rule — the
+   overfitting risk #125 flagged, now measured. The description signal does
+   nothing in either domain.
+2. **The ceiling is client-owned.** No server-side leaf name or description
+   recovers the `mcp__<server>__` qualifier the client weights and the
+   re-export flattens; and the built-in collision (a domain tool losing to
+   `TaskList`/`Monitor` for a generic query) is the client ranking its own
+   vocabulary, which no server-side value touches.
+3. **Discovery signal is economically inert here anyway.** Every re-export
+   arm sits at ~$0.18–0.20 regardless of which search surfaced the tool;
+   direct stays cheapest at $0.15. The cost gap #125 found comes from the
+   facade round-trips, not from which search wins — so even a durable
+   discovery win would not have closed it.
+
+So the hybrid *optimization* thread closes: curated re-export is a correct,
+safe, opt-in primitive (kept, #125), but on Claude Code it cannot be named
+or described into direct's economics at scale, and the reason is the
+client's ranking of its own tool vocabulary, not anything toolplane
+controls. (Provenance: the runs' `git_dirty` flag reads true because the
+harness writes result files into the tracked `bench/results/` tree; the
+wheel hash `974e578` is byte-identical to the clean-tree smoke build, so
+the measured code is the committed source — a false-positive dirty flag
+worth fixing in the harness, filed against #116's expensive half.)
 
 ## The envelope
 

@@ -43,6 +43,7 @@ from orders_data import (  # noqa: E402
     orders,
     totals_by_region,
 )
+from shipment_data import shipments  # noqa: E402
 
 ANSWER_RE = re.compile(r"<answer>\s*(.*?)\s*</answer>", re.DOTALL)
 
@@ -73,6 +74,15 @@ def _check_region_totals(answer: str, n: int) -> bool:
 def _check_single(answer: str, n: int) -> bool:
     expected = next(
         o["status"] for o in orders(n) if o["order_id"] == "ORD-017"
+    )
+    return (answer or "").strip().lower() == expected
+
+
+def _check_single_shipment(answer: str, n: int) -> bool:
+    # the task asks for the "status" of SHP-017; the tool exposes it as
+    # "state" (the synonym), so a correct answer maps status -> state
+    expected = next(
+        s["state"] for s in shipments(n) if s["shipment_id"] == "SHP-017"
     )
     return (answer or "").strip().lower() == expected
 
@@ -169,6 +179,23 @@ TASKS = {
         "check": _check_filter,
         "orders_n": 30,
     },
+    # #127 second-domain validation: same single-lookup shape, a different
+    # domain, and the query word ("status") is a synonym ABSENT from the
+    # get_shipment description ("state") — so a name-signal re-export's leaf
+    # cannot carry it, yet "status" still collides with built-in Task tools
+    # so the discovery difficulty matches orders. If name-signal helps here
+    # like it did on orders, the bump generalizes; if not, it was a lexical
+    # coincidence of "status" being in the orders description.
+    "single_shipment": {
+        "prompt": (
+            "Using the available tools, find the status of shipment "
+            "SHP-017. Reply with just the status word wrapped in "
+            "<answer></answer> tags."
+        ),
+        "check": _check_single_shipment,
+        "orders_n": 30,
+        "domain": "shipments",
+    },
 }
 
 
@@ -177,8 +204,34 @@ TASKS = {
 _PROFILES = ("crm", "calendar", "tickets", "wiki", "payments", "analytics", "files")
 
 
+# domain of the task under test: which fixture server carries the answer,
+# what the client sees it named, and the token that identifies its tool in
+# a ToolSearch result. Tasks default to "orders"; #127's second-domain
+# validation adds "tickets".
+_DOMAINS = {
+    "orders": {
+        "server": "order_server.py",
+        "server_name": "orders",
+        "include": "mcp:orders/*",
+        "token": "order",
+        "n_env": "BENCH_ORDERS_N",
+    },
+    "shipments": {
+        "server": "shipment_server.py",
+        "server_name": "shipments",
+        "include": "mcp:shipments/*",
+        "token": "shipment",
+        "n_env": "BENCH_SHIPMENTS_N",
+    },
+}
+
+
+def task_domain(task: str) -> dict:
+    return _DOMAINS[TASKS[task].get("domain", "orders")]
+
+
 def distractors(m_servers: int) -> list[tuple[str, str]]:
-    """(server_name, profile) pairs for M total servers (orders included)."""
+    """(server_name, profile) pairs for M total servers (target included)."""
     if m_servers < 1:
         raise ValueError("m_servers counts total servers including orders; min is 1")
     if m_servers - 1 > 2 * len(_PROFILES):
@@ -193,7 +246,7 @@ def distractors(m_servers: int) -> list[tuple[str, str]]:
 
 def task_server_env(task: str) -> dict[str, str]:
     return {
-        "BENCH_ORDERS_N": str(TASKS[task]["orders_n"]),
+        task_domain(task)["n_env"]: str(TASKS[task]["orders_n"]),
         **TASKS[task].get("server_env", {}),
     }
 
@@ -202,7 +255,13 @@ def task_server_env(task: str) -> dict[str, str]:
 # snapshotted into the run's scratch dir and served from there, so an edit
 # to the working tree mid-matrix cannot reach a running measurement (the
 # #111 contamination incident; #116 item 2)
-_FIXTURE_FILES = ("order_server.py", "distractor_server.py", "orders_data.py")
+_FIXTURE_FILES = (
+    "order_server.py",
+    "distractor_server.py",
+    "orders_data.py",
+    "shipment_server.py",
+    "shipment_data.py",
+)
 
 
 def _sha256(path: Path) -> str:
@@ -291,6 +350,8 @@ def mcp_config(
     arm: str, workdir: Path, task: str, m_servers: int, code: dict
 ) -> dict:
     fixtures_dir = Path(code["fixtures_dir"])
+    domain = task_domain(task)
+    target_name = domain["server_name"]
 
     def frozen_cmd(script: str, env: dict) -> dict:
         return {
@@ -299,7 +360,7 @@ def mcp_config(
             "env": env,
         }
 
-    server_cmd = frozen_cmd("order_server.py", task_server_env(task))
+    server_cmd = frozen_cmd(domain["server"], task_server_env(task))
     extra = {
         name: frozen_cmd("distractor_server.py", {"DISTRACTOR_PROFILE": profile})
         for name, profile in distractors(m_servers)
@@ -307,7 +368,7 @@ def mcp_config(
     if arm == "direct":
         return {
             "mcpServers": {
-                "orders": {**server_cmd, "type": "stdio"},
+                target_name: {**server_cmd, "type": "stdio"},
                 **{name: {**cmd, "type": "stdio"} for name, cmd in extra.items()},
             }
         }
@@ -321,13 +382,13 @@ def mcp_config(
         toml_path = workdir / f"toolplane-bench-{arm}-{task}-m{m_servers}.toml"
         sections = []
         if arm in _CURATED_ARMS:
-            # curate the single/adaptive capabilities: the orders server's
+            # curate the single/adaptive capabilities: the target server's
             # tools, by canonical-name glob. Distractors stay behind the
             # facade — the whole #125 hypothesis.
             sections.append(
-                '[hybrid]\nenabled = true\ninclude = ["mcp:orders/*"]\n'
+                f'[hybrid]\nenabled = true\ninclude = ["{domain["include"]}"]\n'
             )
-        for name, cmd in {"orders": server_cmd, **extra}.items():
+        for name, cmd in {target_name: server_cmd, **extra}.items():
             command_toml = json.dumps(cmd["command"])
             args_toml = ", ".join(json.dumps(a) for a in cmd["args"])
             env_toml = ", ".join(
@@ -398,15 +459,15 @@ def _unique_request_ids(stdout: str) -> int:
 _STARTUP_ARTIFACT = "still connecting"
 
 
-def _is_domain_tool(name: str) -> bool:
-    # the orders tool, whether direct (mcp__orders__get_order) or
+def _is_domain_tool(name: str, token: str) -> bool:
+    # the target tool, whether direct (mcp__orders__get_order) or
     # re-exported (mcp__toolplane__orders_get_order, or the #127 name-signal
     # variant mcp__toolplane__orders_fetch_one_order_record_...). Built-ins
-    # (TaskList, Monitor) and the meta-tools carry no "order" token.
-    return name.startswith("mcp__") and "order" in name.lower()
+    # (TaskList, Monitor) and the meta-tools carry no domain token.
+    return name.startswith("mcp__") and token in name.lower()
 
 
-def _first_search_discovery(stdout: str) -> dict:
+def _first_search_discovery(stdout: str, token: str = "order") -> dict:
     """First-valid-ToolSearch discovery of the domain tool (#127 primary).
 
     A ToolSearch whose result says a server is "still connecting" is a
@@ -464,7 +525,7 @@ def _first_search_discovery(stdout: str) -> dict:
                         ]
                     except (json.JSONDecodeError, TypeError, AttributeError):
                         names = []
-                valid_hits.append(any(_is_domain_tool(n) for n in names))
+                valid_hits.append(any(_is_domain_tool(n, token) for n in names))
     hit_index = next((i for i, hit in enumerate(valid_hits) if hit), None)
     return {
         "first_search_hit": valid_hits[0] if valid_hits else None,
@@ -610,7 +671,7 @@ def run_case(
         "api_duration_ms": result_event.get("duration_api_ms"),
         "wall_s": round(wall_s, 1),
         "exit_code": proc.returncode,
-        **_first_search_discovery(proc.stdout),
+        **_first_search_discovery(proc.stdout, task_domain(task)["token"]),
         "transcript": transcript_path.name if transcript_path else None,
     }
 
