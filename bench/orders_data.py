@@ -10,17 +10,33 @@ REGIONS = ("amer", "apac", "emea")
 DEFAULT_N = 30
 
 
-def orders(n: int = DEFAULT_N) -> list[dict]:
+def _filler(seed: int, nbytes: int) -> str:
+    """Deterministic per-order padding of ~nbytes (formula-based, no RNG).
+
+    Its CONTENT is irrelevant to every task's answer — only its SIZE
+    matters. This is the payload axis (#117): a fat record inflates what a
+    direct fetch drops into model context, while the toolplane arm keeps it
+    in the sandbox and only the aggregate escapes.
+    """
+    if nbytes <= 0:
+        return ""
+    token = f"ord{seed:04d}-"
+    return (token * (nbytes // len(token) + 1))[:nbytes]
+
+
+def orders(n: int = DEFAULT_N, record_bytes: int = 0) -> list[dict]:
     out = []
     for i in range(1, n + 1):
-        out.append(
-            {
-                "order_id": f"ORD-{i:03d}",
-                "region": REGIONS[i % 3],
-                "amount": round(100 + (i * 37.7) % 900, 2),
-                "status": "shipped" if i % 4 else "pending",
-            }
-        )
+        record = {
+            "order_id": f"ORD-{i:03d}",
+            "region": REGIONS[i % 3],
+            "amount": round(100 + (i * 37.7) % 900, 2),
+            "status": "shipped" if i % 4 else "pending",
+        }
+        if record_bytes:
+            # a "detail" blob the tasks never read; sizes the fetch payload
+            record["detail"] = _filler(i, record_bytes)
+        out.append(record)
     return out
 
 

@@ -23,7 +23,12 @@ _N = int(os.environ.get("BENCH_ORDERS_N", str(DEFAULT_N)))
 # the server itself never serializes concurrent client calls — any
 # sequencing in the measurement comes from the arms, not the fixture
 _LATENCY_S = float(os.environ.get("BENCH_TOOL_LATENCY_MS", "0")) / 1000.0
-_BY_ID = {order["order_id"]: order for order in orders(_N)}
+# payload axis (#117): pad each record so a direct fetch drops a fat blob
+# into model context while the toolplane arm keeps it in the sandbox
+_RECORD_BYTES = int(os.environ.get("BENCH_RECORD_BYTES", "0"))
+_BY_ID = {
+    order["order_id"]: order for order in orders(_N, record_bytes=_RECORD_BYTES)
+}
 if os.environ.get("BENCH_NOTES") == "chain":
     for order_id, note in chain_notes(_N).items():
         _BY_ID[order_id] = {**_BY_ID[order_id], "note": note}
