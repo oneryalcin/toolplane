@@ -43,6 +43,7 @@ from orders_data import (  # noqa: E402
     orders,
     totals_by_region,
 )
+from shipment_data import shipments  # noqa: E402
 
 ANSWER_RE = re.compile(r"<answer>\s*(.*?)\s*</answer>", re.DOTALL)
 
@@ -73,6 +74,15 @@ def _check_region_totals(answer: str, n: int) -> bool:
 def _check_single(answer: str, n: int) -> bool:
     expected = next(
         o["status"] for o in orders(n) if o["order_id"] == "ORD-017"
+    )
+    return (answer or "").strip().lower() == expected
+
+
+def _check_single_shipment(answer: str, n: int) -> bool:
+    # the task asks for the "status" of SHP-017; the tool exposes it as
+    # "state" (the synonym), so a correct answer maps status -> state
+    expected = next(
+        s["state"] for s in shipments(n) if s["shipment_id"] == "SHP-017"
     )
     return (answer or "").strip().lower() == expected
 
@@ -169,6 +179,23 @@ TASKS = {
         "check": _check_filter,
         "orders_n": 30,
     },
+    # #127 second-domain validation: same single-lookup shape, a different
+    # domain, and the query word ("status") is a synonym ABSENT from the
+    # get_shipment description ("state") — so a name-signal re-export's leaf
+    # cannot carry it, yet "status" still collides with built-in Task tools
+    # so the discovery difficulty matches orders. If name-signal helps here
+    # like it did on orders, the bump generalizes; if not, it was a lexical
+    # coincidence of "status" being in the orders description.
+    "single_shipment": {
+        "prompt": (
+            "Using the available tools, find the status of shipment "
+            "SHP-017. Reply with just the status word wrapped in "
+            "<answer></answer> tags."
+        ),
+        "check": _check_single_shipment,
+        "orders_n": 30,
+        "domain": "shipments",
+    },
 }
 
 
@@ -177,8 +204,35 @@ TASKS = {
 _PROFILES = ("crm", "calendar", "tickets", "wiki", "payments", "analytics", "files")
 
 
+# domain of the task under test: which fixture server carries the answer,
+# what the client sees it named, and the token that identifies its tool in
+# a ToolSearch result. Tasks default to "orders"; #127's second-domain
+# validation adds "shipments" (a name with no distractor-profile collision —
+# unlike "tickets", which _PROFILES already uses).
+_DOMAINS = {
+    "orders": {
+        "server": "order_server.py",
+        "server_name": "orders",
+        "include": "mcp:orders/*",
+        "token": "order",
+        "n_env": "BENCH_ORDERS_N",
+    },
+    "shipments": {
+        "server": "shipment_server.py",
+        "server_name": "shipments",
+        "include": "mcp:shipments/*",
+        "token": "shipment",
+        "n_env": "BENCH_SHIPMENTS_N",
+    },
+}
+
+
+def task_domain(task: str) -> dict:
+    return _DOMAINS[TASKS[task].get("domain", "orders")]
+
+
 def distractors(m_servers: int) -> list[tuple[str, str]]:
-    """(server_name, profile) pairs for M total servers (orders included)."""
+    """(server_name, profile) pairs for M total servers (target included)."""
     if m_servers < 1:
         raise ValueError("m_servers counts total servers including orders; min is 1")
     if m_servers - 1 > 2 * len(_PROFILES):
@@ -193,7 +247,7 @@ def distractors(m_servers: int) -> list[tuple[str, str]]:
 
 def task_server_env(task: str) -> dict[str, str]:
     return {
-        "BENCH_ORDERS_N": str(TASKS[task]["orders_n"]),
+        task_domain(task)["n_env"]: str(TASKS[task]["orders_n"]),
         **TASKS[task].get("server_env", {}),
     }
 
@@ -202,7 +256,13 @@ def task_server_env(task: str) -> dict[str, str]:
 # snapshotted into the run's scratch dir and served from there, so an edit
 # to the working tree mid-matrix cannot reach a running measurement (the
 # #111 contamination incident; #116 item 2)
-_FIXTURE_FILES = ("order_server.py", "distractor_server.py", "orders_data.py")
+_FIXTURE_FILES = (
+    "order_server.py",
+    "distractor_server.py",
+    "orders_data.py",
+    "shipment_server.py",
+    "shipment_data.py",
+)
 
 
 def _sha256(path: Path) -> str:
@@ -261,6 +321,12 @@ def build_code_under_test(workdir: Path) -> dict:
         "wheel": wheel.name,
         "wheel_sha256": _sha256(wheel),
         "fixtures_sha256": fixture_hashes,
+        # the harness itself (prompts, tasks, metric, mcp wiring) is not in
+        # the wheel and runs from the repo, not a frozen copy — hash it so a
+        # dirty run.py is provable from the row, not only from git_dirty
+        # (which snapshots before result files are written and cannot tell
+        # an uncommitted harness edit from an untracked result file, #127)
+        "harness_sha256": _sha256(BENCH_DIR / "run.py"),
         "python": str(python),
         "toolplane_bin": str(venv / "bin" / "toolplane"),
         "fixtures_dir": str(fixtures),
@@ -273,14 +339,27 @@ def provenance_row(code: dict) -> dict:
         "git_sha": code["git_sha"],
         "git_dirty": code["git_dirty"],
         "wheel_sha256": code["wheel_sha256"],
+        "harness_sha256": code["harness_sha256"],
         "fixtures_sha256": code["fixtures_sha256"],
     }
+
+
+# #127 A/B: all three re-export the SAME curated orders tools; they differ
+# only in TOOLPLANE_HYBRID_SIGNAL, which controls how the re-exported
+# tool's name/description is built. "curated" is the control.
+_CURATED_ARMS = {
+    "curated": "control",
+    "curated_name": "name",
+    "curated_desc": "description",
+}
 
 
 def mcp_config(
     arm: str, workdir: Path, task: str, m_servers: int, code: dict
 ) -> dict:
     fixtures_dir = Path(code["fixtures_dir"])
+    domain = task_domain(task)
+    target_name = domain["server_name"]
 
     def frozen_cmd(script: str, env: dict) -> dict:
         return {
@@ -289,7 +368,7 @@ def mcp_config(
             "env": env,
         }
 
-    server_cmd = frozen_cmd("order_server.py", task_server_env(task))
+    server_cmd = frozen_cmd(domain["server"], task_server_env(task))
     extra = {
         name: frozen_cmd("distractor_server.py", {"DISTRACTOR_PROFILE": profile})
         for name, profile in distractors(m_servers)
@@ -297,7 +376,7 @@ def mcp_config(
     if arm == "direct":
         return {
             "mcpServers": {
-                "orders": {**server_cmd, "type": "stdio"},
+                target_name: {**server_cmd, "type": "stdio"},
                 **{name: {**cmd, "type": "stdio"} for name, cmd in extra.items()},
             }
         }
@@ -305,19 +384,19 @@ def mcp_config(
     # facade. "hybrid" adds --hybrid (re-export the WHOLE registry, #114's
     # held baseline); "curated" adds a [hybrid] config section that
     # re-exports ONLY the orders tools (#125 — the selective form).
-    if arm in ("toolplane", "hybrid", "curated"):
+    if arm in ("toolplane", "hybrid") or arm in _CURATED_ARMS:
         # generated with absolute paths: every process here runs from a
         # scratch cwd, so nothing may be cwd-relative
         toml_path = workdir / f"toolplane-bench-{arm}-{task}-m{m_servers}.toml"
         sections = []
-        if arm == "curated":
-            # curate the single/adaptive capabilities: the orders server's
+        if arm in _CURATED_ARMS:
+            # curate the single/adaptive capabilities: the target server's
             # tools, by canonical-name glob. Distractors stay behind the
             # facade — the whole #125 hypothesis.
             sections.append(
-                '[hybrid]\nenabled = true\ninclude = ["mcp:orders/*"]\n'
+                f'[hybrid]\nenabled = true\ninclude = ["{domain["include"]}"]\n'
             )
-        for name, cmd in {"orders": server_cmd, **extra}.items():
+        for name, cmd in {target_name: server_cmd, **extra}.items():
             command_toml = json.dumps(cmd["command"])
             args_toml = ", ".join(json.dumps(a) for a in cmd["args"])
             env_toml = ", ".join(
@@ -331,15 +410,17 @@ def mcp_config(
         serve_args = ["serve", "mcp", "--config", str(toml_path)]
         if arm == "hybrid":
             serve_args.append("--hybrid")
-        return {
-            "mcpServers": {
-                "toolplane": {
-                    "type": "stdio",
-                    "command": code["toolplane_bin"],
-                    "args": serve_args,
-                }
-            }
+        server_entry = {
+            "type": "stdio",
+            "command": code["toolplane_bin"],
+            "args": serve_args,
         }
+        # #127 variant arms set the re-export naming/description signal in
+        # the served process's env (bench-only knob, not public config)
+        signal = _CURATED_ARMS.get(arm, "control")
+        if signal != "control":
+            server_entry["env"] = {"TOOLPLANE_HYBRID_SIGNAL": signal}
+        return {"mcpServers": {"toolplane": server_entry}}
     raise ValueError(arm)
 
 
@@ -381,6 +462,87 @@ def _unique_request_ids(stdout: str) -> int:
         if request_id:
             ids.add(request_id)
     return len(ids)
+
+
+_STARTUP_ARTIFACT = "still connecting"
+
+
+def _is_domain_tool(name: str, token: str) -> bool:
+    # the target tool, whether direct (mcp__orders__get_order) or
+    # re-exported (mcp__toolplane__orders_get_order, or the #127 name-signal
+    # variant mcp__toolplane__orders_fetch_one_order_record_...). Built-ins
+    # (TaskList, Monitor) and the meta-tools carry no domain token.
+    return name.startswith("mcp__") and token in name.lower()
+
+
+def _first_search_discovery(stdout: str, token: str = "order") -> dict:
+    """First-valid-ToolSearch discovery of the domain tool (#127 primary).
+
+    A ToolSearch whose result says a server is "still connecting" is a
+    cold-start artifact, not a ranking miss: it is counted separately and
+    excluded from the valid-search sequence, per the #127 pre-registration.
+    """
+    search_ids: set[str] = set()
+    valid_hits: list[bool] = []  # per valid search: did it return the domain tool?
+    startup_artifacts = 0
+    for line in stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if event.get("type") == "assistant":
+            for block in event.get("message", {}).get("content", []):
+                if (
+                    block.get("type") == "tool_use"
+                    and block.get("name") == "ToolSearch"
+                ):
+                    search_ids.add(block.get("id"))
+        if event.get("type") == "user":
+            for block in event.get("message", {}).get("content", []):
+                if block.get("type") != "tool_result":
+                    continue
+                if block.get("tool_use_id") not in search_ids:
+                    continue
+                # a ToolSearch result is either a list of tool_reference
+                # dicts ({"tool_name": ...}), a list of text blocks, or a
+                # plain string (the "still connecting" / "No matching"
+                # messages). Collect tool names and free text from all shapes.
+                content = block.get("content")
+                names: list[str] = []
+                text = ""
+                if isinstance(content, list):
+                    for item in content:
+                        if not isinstance(item, dict):
+                            continue
+                        if "tool_name" in item:
+                            names.append(item["tool_name"])
+                        elif "text" in item:
+                            text += item["text"]
+                elif isinstance(content, str):
+                    text = content
+                else:
+                    text = json.dumps(content)
+                if _STARTUP_ARTIFACT in text:
+                    startup_artifacts += 1
+                    continue
+                # some clients embed the reference list as JSON in the text
+                if not names and text.strip().startswith("["):
+                    try:
+                        names = [
+                            r.get("tool_name", "") for r in json.loads(text)
+                        ]
+                    except (json.JSONDecodeError, TypeError, AttributeError):
+                        names = []
+                valid_hits.append(any(_is_domain_tool(n, token) for n in names))
+    hit_index = next((i for i, hit in enumerate(valid_hits) if hit), None)
+    return {
+        "first_search_hit": valid_hits[0] if valid_hits else None,
+        "searches_to_domain_tool": (
+            hit_index + 1 if hit_index is not None else None
+        ),
+        "valid_searches": len(valid_hits),
+        "startup_artifact_searches": startup_artifacts,
+    }
 
 
 def arm_order(arms: list[str], rep: int) -> list[str]:
@@ -462,6 +624,10 @@ def run_case(
             "wall_s": round(time.monotonic() - started, 1),
             "exit_code": -1,
             "error": f"timeout after {exc.timeout}s",
+            "first_search_hit": None,
+            "searches_to_domain_tool": None,
+            "valid_searches": None,
+            "startup_artifact_searches": None,
             "transcript": transcript_path.name if transcript_path else None,
         }
     wall_s = time.monotonic() - started
@@ -513,6 +679,7 @@ def run_case(
         "api_duration_ms": result_event.get("duration_api_ms"),
         "wall_s": round(wall_s, 1),
         "exit_code": proc.returncode,
+        **_first_search_discovery(proc.stdout, task_domain(task)["token"]),
         "transcript": transcript_path.name if transcript_path else None,
     }
 
@@ -543,7 +710,14 @@ def summarize(rows: list[dict]) -> str:
     ]
     m_values = sorted({r.get("m_servers", 1) for r in rows})
     # arms in a stable, meaningful order; only those actually present render
-    arm_order_display = ["direct", "toolplane", "hybrid", "curated"]
+    arm_order_display = [
+        "direct",
+        "toolplane",
+        "hybrid",
+        "curated",
+        "curated_name",
+        "curated_desc",
+    ]
     present = {r["arm"] for r in rows}
     arms = [a for a in arm_order_display if a in present] + sorted(
         present - set(arm_order_display)
@@ -614,6 +788,71 @@ def summarize(rows: list[dict]) -> str:
             "\n† this arm's observed per-rep range overlaps direct's for "
             "this task — the median gap is unresolved at this rep count."
         )
+    return "\n".join(lines)
+
+
+def discovery_summary(rows: list[dict]) -> str:
+    """First-search discovery table — the #127 primary outcome.
+
+    first-hit rate = fraction of reps whose first valid ToolSearch returned
+    the domain tool; searches = median valid searches to the first
+    domain-tool hit; artifacts = median 'still connecting' searches, which
+    are excluded from the hit accounting.
+    """
+    lines = [
+        "\n## First-search discovery (#127 primary outcome)",
+        "",
+        "| task | M | arm | reps | first-hit rate | searches→tool | artifacts |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    arm_order_display = [
+        "direct",
+        "toolplane",
+        "hybrid",
+        "curated",
+        "curated_name",
+        "curated_desc",
+    ]
+    present = {r["arm"] for r in rows}
+    arms = [a for a in arm_order_display if a in present] + sorted(
+        present - set(arm_order_display)
+    )
+    tasks = sorted({r["task"] for r in rows})
+    ms = sorted({r["m_servers"] for r in rows})
+    for task in tasks:
+        for m in ms:
+            for arm in arms:
+                group = [
+                    r
+                    for r in rows
+                    if r["task"] == task
+                    and r["m_servers"] == m
+                    and r["arm"] == arm
+                ]
+                if not group:
+                    continue
+                hits = [
+                    r["first_search_hit"]
+                    for r in group
+                    if r.get("first_search_hit") is not None
+                ]
+                rate = f"{sum(hits)}/{len(hits)}" if hits else "n/a"
+                s2t = [
+                    r["searches_to_domain_tool"]
+                    for r in group
+                    if r.get("searches_to_domain_tool") is not None
+                ]
+                s2t_med = statistics.median(s2t) if s2t else "n/a"
+                arts = [
+                    r["startup_artifact_searches"]
+                    for r in group
+                    if r.get("startup_artifact_searches") is not None
+                ]
+                arts_med = statistics.median(arts) if arts else "n/a"
+                lines.append(
+                    f"| {task} | {m} | {arm} | {len(group)} | {rate} | "
+                    f"{s2t_med} | {arts_med} |"
+                )
     return "\n".join(lines)
 
 
@@ -691,6 +930,7 @@ def main() -> int:
     print(f"\nwrote {out}")
     print(f"transcripts in {transcripts_dir}\n")
     print(summarize(rows))
+    print(discovery_summary(rows))
     return 0 if all(r["exit_code"] == 0 for r in rows) else 1
 
 

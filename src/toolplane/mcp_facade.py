@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import os
 import re
 import sys
 from collections.abc import Sequence
@@ -356,21 +357,82 @@ _MCP_TOOL_NAME_RE = re.compile(r"[^A-Za-z0-9_-]")
 _MCP_SAFE_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*\Z")
 
 
+# EXPERIMENT-ONLY (#127): how a re-exported capability's name and
+# description are derived, to test whether pumping the leaf name or the
+# description with domain/query vocabulary lets a re-export reach
+# first-search discovery parity with a direct tool. This is gated by an
+# env var, NOT public config or CLI — the hybrid optimization thread may
+# close (see #127). The client sets the `mcp__<server>__` prefix from the
+# MCP server name ("toolplane"), which no server-side value can change, so
+# these levers only reach the leaf name and the description.
+_HYBRID_SIGNAL_ENV = "TOOLPLANE_HYBRID_SIGNAL"
+_HYBRID_SIGNALS = ("control", "name", "description")
+
+
+def _hybrid_signal() -> str:
+    signal = os.environ.get(_HYBRID_SIGNAL_ENV, "control").strip().lower()
+    return signal if signal in _HYBRID_SIGNALS else "control"
+
+
+def _capability_domain(capability: Capability) -> str:
+    """The server/domain token: ``mcp:orders/get_order`` -> ``orders``."""
+    name = capability.name
+    if name.startswith("mcp:") and "/" in name:
+        return name[4:].split("/", 1)[0]
+    base = _MCP_TOOL_NAME_RE.sub("_", name).strip("_")
+    return base.split("_", 1)[0] if "_" in base else base or "capability"
+
+
+def _capability_leaf_words(capability: Capability) -> str:
+    """The tool part as spaced words: ``mcp:orders/get_order`` -> ``get order``."""
+    name = capability.name
+    leaf = name.split("/", 1)[1] if "/" in name else name
+    # split underscores/hyphens too, so each token ("get", "order") stands
+    # alone for a keyword-matching search — not a single "get_order" blob
+    return re.sub(r"[^A-Za-z0-9]+", " ", leaf).strip()
+
+
+def _hybrid_name_signal_base(capability: Capability) -> str:
+    """A query-shaped leaf name: domain + description vocabulary, bounded.
+
+    Puts the same words a domain query matches (the server token plus the
+    description terms) into the leaf itself — the strongest honest name
+    lever a re-export has, since the server segment is client-owned.
+    """
+    text = f"{_capability_domain(capability)} {capability.description or ''}"
+    tokens = [t for t in _MCP_TOOL_NAME_RE.sub(" ", text).lower().split() if t]
+    # drop consecutive duplicates ("order order" -> "order") and cap length
+    slug_tokens: list[str] = []
+    for token in tokens:
+        if not slug_tokens or slug_tokens[-1] != token:
+            slug_tokens.append(token)
+        if len(slug_tokens) >= 12:
+            break
+    slug = "_".join(slug_tokens)[:64].strip("_")
+    if not slug or not _MCP_SAFE_NAME_RE.match(slug):
+        return ""
+    return slug
+
+
 def _hybrid_tool_name(
-    capability: Capability, taken: set[str]
+    capability: Capability, taken: set[str], signal: str = "control"
 ) -> str:
     """A unique, client-safe MCP tool name for a re-exported capability.
 
-    Prefers the flat binding the agent already sees in code-mode call
-    shapes (``orders_get_order``) for one consistent name across both
+    Control prefers the flat binding the agent already sees in code-mode
+    call shapes (``orders_get_order``) for one consistent name across both
     surfaces; falls back to a sanitized canonical name, then numeric
-    suffixing, so distinct capabilities never collide onto one tool.
+    suffixing, so distinct capabilities never collide onto one tool. The
+    ``name`` signal (#127) instead builds a query-shaped leaf; it falls
+    back to the control base when the slug is empty/unsafe.
     """
     candidates = [capability.name, *sorted(capability.aliases)]
     base = next(
         (c for c in candidates if _MCP_SAFE_NAME_RE.match(c)),
         _MCP_TOOL_NAME_RE.sub("_", capability.name).strip("_") or "capability",
     )
+    if signal == "name":
+        base = _hybrid_name_signal_base(capability) or base
     name = base
     suffix = 2
     while name in taken or name in _FACADE_TOOL_NAMES:
@@ -378,6 +440,17 @@ def _hybrid_tool_name(
         suffix += 1
     taken.add(name)
     return name
+
+
+def _hybrid_tool_description(capability: Capability, signal: str = "control") -> str:
+    base = capability.description or capability.name
+    if signal == "description":
+        # front-load the server/domain word and the leaf verb tokens, so the
+        # terms a domain query matches lead the description (#127).
+        domain = _capability_domain(capability)
+        leaf = _capability_leaf_words(capability)
+        return f"{domain}: {leaf}. {base}"
+    return base
 
 
 def _make_hybrid_dispatch(runtime: Toolplane, canonical_name: str) -> Any:
@@ -403,9 +476,10 @@ def _register_hybrid_tools(
 ) -> None:
     from fastmcp.tools.function_tool import FunctionTool
 
+    signal = _hybrid_signal()
     taken: set[str] = set()
     for capability in capabilities:
-        tool_name = _hybrid_tool_name(capability, taken)
+        tool_name = _hybrid_tool_name(capability, taken, signal=signal)
         # no output_schema: fastmcp validates the return against it, but a
         # capability's DECLARED returns need not match its ACTUAL value
         # (routinely true for third-party MCP tools), and a mismatch would
@@ -415,7 +489,7 @@ def _register_hybrid_tools(
         mcp.add_tool(
             FunctionTool(
                 name=tool_name,
-                description=capability.description or capability.name,
+                description=_hybrid_tool_description(capability, signal=signal),
                 parameters=capability.parameters,
                 fn=_make_hybrid_dispatch(runtime, capability.name),
             )

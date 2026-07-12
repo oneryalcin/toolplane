@@ -543,7 +543,146 @@ direct/toolplane — a disclosed covariate). The M=1 win was real; it does
 not survive a realistic client tool population. The sharper open question
 (#127) is not "curate better" but "can a re-exported tool be named so it
 keeps a server-name signal and outranks the client's built-ins" — or
-whether that ceiling is simply client-owned.
+whether that ceiling is simply client-owned. **That A/B is the next
+section; the answer is client-owned.**
+
+### Naming the re-export does not lift the ceiling (2026-07-12, #127)
+
+#125 left one lever untried: the re-export inherits the client-set
+`mcp__toolplane__` prefix (nothing server-side changes that), but its
+*leaf name* and *description* are ours. #127 pre-registered an A/B to test
+whether pumping either with domain/query vocabulary lets a re-export reach
+the first-search discovery a direct tool gets — or whether the ceiling is
+client-owned. Three re-export arms, all curated to the same target tools,
+differing only in a private `TOOLPLANE_HYBRID_SIGNAL` env knob (bench-only,
+never public config):
+
+- **control** — `orders_get_order`, description as-is;
+- **name** — a query-shaped leaf carrying the domain + the description
+  vocabulary, truncated at 64 chars (`orders_fetch_one_order_record_..._status`;
+  on shipments the cap drops the tail, so `state` never makes it into the leaf);
+- **description** — the domain word and leaf verbs front-loaded.
+
+Primary outcome: the target tool is returned by the **first valid**
+`ToolSearch` — a search that is not the "server still connecting"
+cold-start artifact, which is counted separately and never scored as a
+ranking miss. Because the built-in collision is nondeterministic (the same
+query can hit or miss run to run), the **first-hit rate over reps** is the
+unit of evidence, not any single transcript. (Two honesty notes on the
+metric: it does not distinguish a keyword search from an exact-name
+`select:` fetch — one orders control rep recovered by `select:`-ing a tool
+whose name it had already seen, so control's 4/11 includes one non-ranking
+hit, which if excluded only widens name's apparent edge; and a re-export's
+name is visible in the client's deferred-tool listing without any search,
+so first-search discovery is not the only channel.)
+
+**Orders, M=15, n=11 per arm** (pooled over wheel `974e578`; the query the
+agent chose varies, so a query-controlled column isolates the reps whose
+first search was exactly `"order status"`):
+
+| arm | first-hit | first-hit \| q=`order status` | searches→tool | cost |
+|---|---|---|---|---|
+| direct | **11/11** | **6/6** | 1.0 | **$0.15** |
+| control | 4/11 | 2/6 | 2.0 | $0.19 |
+| name | 6/11 | 5/6 | 1.0 | $0.19 |
+| description | 4/11 | 3/5 | 2.0 | $0.19 |
+
+On orders the name signal looks like it helps — query-controlled 5/6 vs
+control's 2/6, and it reaches the tool in one search like direct. But it is
+not significant overall (6/11 vs 4/11, Fisher p>0.6), and the mechanism is
+suspicious: its leaf `orders_..._order_..._status` literally contains the
+query word "status", which `orders_get_order` lacks. So the pre-registered
+second domain deliberately breaks that coincidence.
+
+**Shipments, M=15, n=9 per arm** — same single-lookup shape, but the tool
+exposes the field as `state` while the task asks for a shipment's
+`status`. "status" is a synonym **absent from the description** (so the
+name-signal leaf cannot carry it) yet **still collides with the client's
+built-in Task tools** (`ToolSearch("shipment status …")` →
+`[TaskCreate, Monitor, PushNotification, TaskGet, TaskList]`, transcript-
+confirmed), so the discovery *difficulty* is identical to orders:
+
+| arm | first-hit | first-hit \| q=`shipment status` | searches→tool | cost |
+|---|---|---|---|---|
+| direct | **9/9** | **9/9** | 1.0 | **$0.15** |
+| control | 2/9 | 0/2 | 2.0 | $0.18 |
+| name | 3/9 | 0/2 | 2.0 | $0.20 |
+| description | 3/9 | 0/5 | 2.0 | $0.17 |
+
+The name signal's advantage **does not survive**: 3/9 vs control 2/9 vs
+description 3/9 (Fisher p=1.0 — no detectable effect), searches→tool back to
+2.0, query-controlled 0/2 = control 0/2. It only ever appeared on orders
+because that query word happened to be in the description; where it is not,
+there is nothing left. Direct, meanwhile, is robust in **both** domains
+(11/11, 9/9, one search). The single strongest statistic in the dataset is
+this gap, not the bump: on the exact query `"shipment status"`, direct hits
+9/9 while every re-export arm hits **0/9** (Fisher p≈4e-5).
+
+Two caveats belong on the table. First, the metric scores the agent's own
+first query, and that phrasing varies within an arm (`shipment status`,
+`shipment status tracking`, `shipment tracking status`, bare `shipment`) —
+hit/miss tracks the *query family* more than the arm, which is why the
+exact-query denominators are small (0/2, 0/5). The claim these support is
+therefore the narrow one: *on Claude Code, in these two domains and this
+query family, no server-side leaf name or description recovered direct's
+first-search advantage.* Second, the orders "bump" was never significant to
+begin with (query-controlled 5/6 vs 2/6 is Fisher p=0.24; pooled 6/11 vs
+4/11 is p>0.6); the structural argument — a re-export leaf cannot carry a
+query word that is not in its source description (and is bounded at 64
+chars, so on shipments even `state` is truncated off) — does the real work,
+not the small-sample deltas.
+
+Conclusions, held to what the two domains isolate:
+
+1. **The naming bump does not generalize.** On orders it was a suggestive-
+   but-non-significant edge that traced to "status" being in that
+   description; on shipments, where the leaf cannot carry the query word,
+   there is no detectable name or description effect. Consistent with a
+   lexical coincidence, not a naming rule — the overfitting risk #125
+   flagged.
+2. **The discovery ceiling is client-owned** — with the mechanism named as
+   a hypothesis, not a proven cause. What is *established*: no server-side
+   leaf name or description tested recovers a re-export's first-search
+   discovery, and direct dominates every re-export on the identical exact
+   query in both domains. The *leading explanation* is the client-set
+   `mcp__<server>__` qualifier, which a re-export flattens to
+   `mcp__toolplane__` — but this A/B varied only the leaf and description,
+   never the server segment (and control's `mcp__toolplane__orders_get_order`
+   already contains the domain token, so token-presence alone is not the
+   differentiator). Isolating the qualifier would need the facade served
+   under a domain-named server. The built-in collision (a domain tool
+   losing to `TaskList`/`Monitor` for a generic query) is separately
+   client-side and untouchable server-side.
+3. **Discovery signal is economically inert here anyway.** Every re-export
+   arm sits at ~$0.17–0.20 regardless of which search surfaced the tool;
+   direct stays cheapest at $0.15. The cost gap #125 found comes from the
+   facade round-trips, not from which search wins — so even a durable
+   discovery win would not have closed it.
+
+So the hybrid *optimization* thread closes: curated re-export is a correct,
+safe, opt-in primitive (kept, #125), but on Claude Code no server-side name
+or description tested recovers direct's first-search discovery at scale, and
+the leading reason is a client-side ranking feature (the server-name
+qualifier, plus the built-in collision) that toolplane does not control.
+
+Provenance, stated precisely: the result rows carry `git_sha=dc59fe5` with
+`git_dirty=true`, and — importantly — `dc59fe5` does **not** yet contain the
+shipments fixtures or the `single_shipment` harness code (those land in
+`14327d8`). So the shipments runs executed genuinely *uncommitted* harness
+and fixture bytes; the dirty flag is real, not a result-file artifact. What
+*is* anchored: the wheel hash `974e578` is byte-identical to a clean-tree
+`dc59fe5` build (the `src/` code under test is unchanged, so the
+interpreter/facade is the committed source), and the shipment fixtures'
+recorded `fixtures_sha256` match `14327d8`'s committed bytes exactly. The
+gap the harness leaves is that `bench/run.py` itself (prompts, metric,
+wiring) is hashed nowhere, so for the shipments runs it is provably not the
+recorded `git_sha`'s version — the numbers are independently reproducible
+from the transcripts (a reviewer reparsed all 80 rows with zero
+mismatches), but the byte-level provenance guard had a hole. This PR closes
+it: `build_code_under_test` now stamps a `harness_sha256` on every row, so a
+dirty `run.py` is provable from the row itself, not only from the coarse
+`git_dirty` bit. (The rows in *this* dataset predate that field; their
+provenance rests on the wheel + fixture hashes plus the transcript reparse.)
 
 ## The envelope
 
