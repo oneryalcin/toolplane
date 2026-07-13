@@ -7,12 +7,93 @@ pre-publication, an over-strict one marks correct answers wrong).
 
 from __future__ import annotations
 
+import asyncio
+import importlib.util
 import sys
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "bench"))
 
 from run import _check_filter, _check_region_totals, _check_single  # noqa: E402
+
+
+def _load_order_server(monkeypatch, granularity: str, record_bytes: int = 0):
+    monkeypatch.setenv("BENCH_API_GRANULARITY", granularity)
+    monkeypatch.setenv("BENCH_RECORD_BYTES", str(record_bytes))
+    path = Path(__file__).resolve().parent.parent / "bench" / "order_server.py"
+    spec = importlib.util.spec_from_file_location(
+        f"bench_order_server_{granularity.replace('-', '_')}_{record_bytes}", path
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_order_server_granularity_profiles_are_mutually_exclusive(monkeypatch) -> None:
+    from fastmcp import Client
+
+    async def tool_names(app) -> list[str]:
+        async with Client(app) as client:
+            return sorted(tool.name for tool in await client.list_tools())
+
+    fetch = _load_order_server(monkeypatch, "fetch-one")
+    bulk = _load_order_server(monkeypatch, "bulk", record_bytes=2000)
+
+    assert asyncio.run(tool_names(fetch.mcp)) == ["get_order", "list_order_ids"]
+    assert asyncio.run(tool_names(bulk.mcp)) == ["get_orders"]
+    records = asyncio.run(bulk.get_orders())
+    assert len(records) == 30
+    assert len(records[0]["detail"]) == 2000
+
+
+def test_task_server_env_carries_payload_and_granularity() -> None:
+    from run import task_server_env
+
+    assert task_server_env("loop", 20000, "bulk") == {
+        "BENCH_ORDERS_N": "30",
+        "BENCH_API_GRANULARITY": "bulk",
+        "BENCH_RECORD_BYTES": "20000",
+    }
+
+
+def test_payload_axes_reject_non_orders_tasks() -> None:
+    from run import validate_axis_scope
+
+    validate_axis_scope(["single_shipment"], [0], ["fetch-one"])
+
+    with pytest.raises(ValueError, match="orders-domain"):
+        validate_axis_scope(["single_shipment"], [0, 20_000], ["fetch-one"])
+    with pytest.raises(ValueError, match="single_shipment"):
+        validate_axis_scope(
+            ["loop", "single_shipment"], [0], ["fetch-one", "bulk"]
+        )
+
+
+def test_mcp_config_wires_bulk_profile_to_both_arms(tmp_path: Path) -> None:
+    from run import mcp_config
+
+    code = {
+        "fixtures_dir": str(tmp_path / "fixtures"),
+        "python": "/frozen/python",
+        "toolplane_bin": "/frozen/toolplane",
+    }
+    direct = mcp_config(
+        "direct", tmp_path, "loop", 1, code, 2000, "bulk"
+    )
+    direct_env = direct["mcpServers"]["orders"]["env"]
+    assert direct_env["BENCH_API_GRANULARITY"] == "bulk"
+    assert direct_env["BENCH_RECORD_BYTES"] == "2000"
+
+    toolplane = mcp_config(
+        "toolplane", tmp_path, "loop", 1, code, 2000, "bulk"
+    )
+    config_arg = toolplane["mcpServers"]["toolplane"]["args"][-1]
+    toml = Path(config_arg).read_text(encoding="utf-8")
+    assert 'BENCH_API_GRANULARITY = "bulk"' in toml
+    assert 'BENCH_RECORD_BYTES = "2000"' in toml
 
 
 def test_region_totals_accepts_two_decimal_rendering() -> None:
@@ -157,7 +238,7 @@ def test_summarize_three_arms_flags_against_direct_only() -> None:
     ]
     table = summarize(rows)
     arm_lines = [ln for ln in table.splitlines() if ln.startswith("| single |")]
-    assert [ln.split("|")[3].strip() for ln in arm_lines] == [
+    assert [ln.split("|")[5].strip() for ln in arm_lines] == [
         "direct",
         "toolplane",
         "hybrid",
@@ -168,6 +249,35 @@ def test_summarize_three_arms_flags_against_direct_only() -> None:
     assert "†" not in direct_line  # the reference is never flagged
     assert "†" not in toolplane_line  # disjoint range
     assert "†" in hybrid_line  # overlaps direct
+
+
+def test_summarize_keeps_granularity_cells_separate() -> None:
+    from run import summarize
+
+    rows = []
+    for granularity, cost in (("fetch-one", 0.30), ("bulk", 0.10)):
+        for arm in ("direct", "toolplane"):
+            rows.append(
+                {
+                    "task": "loop",
+                    "arm": arm,
+                    "m_servers": 1,
+                    "record_bytes": 2000,
+                    "granularity": granularity,
+                    "correct": True,
+                    "cost_usd": cost,
+                    "wall_s": 10.0,
+                    "model_requests": 3,
+                    "tool_calls": 2,
+                    "num_turns": 3,
+                    "output_tokens": 1,
+                    "uncached_input_tokens": 1,
+                }
+            )
+
+    table = summarize(rows)
+    assert table.count("| loop | 1 | 2000 | fetch-one |") == 2
+    assert table.count("| loop | 1 | 2000 | bulk |") == 2
 
 
 def test_summarize_survives_all_timeout_arm_and_prices_unknown_as_na() -> None:

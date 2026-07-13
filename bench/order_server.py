@@ -1,8 +1,9 @@
 """Deterministic stdio MCP server for the code-mode benchmark.
 
-Two tools shaped like a typical record-store API: enumerate ids, fetch one
-record. Fetching each record individually is the point — it forces the
-round-trip structure the benchmark measures.
+The ``BENCH_API_GRANULARITY`` profile exposes one of two mutually exclusive
+record-store shapes: enumerate ids + fetch one record, or fetch every record
+in one bulk response. Keeping the profiles exclusive makes API granularity a
+fixture property rather than a model endpoint-choice confound (#117).
 """
 
 from __future__ import annotations
@@ -23,29 +24,50 @@ _N = int(os.environ.get("BENCH_ORDERS_N", str(DEFAULT_N)))
 # the server itself never serializes concurrent client calls — any
 # sequencing in the measurement comes from the arms, not the fixture
 _LATENCY_S = float(os.environ.get("BENCH_TOOL_LATENCY_MS", "0")) / 1000.0
-_BY_ID = {order["order_id"]: order for order in orders(_N)}
+# payload axis (#117): pad each record so a direct fetch drops a fat blob
+# into model context while the toolplane arm keeps it in the sandbox
+_RECORD_BYTES = int(os.environ.get("BENCH_RECORD_BYTES", "0"))
+_GRANULARITY = os.environ.get("BENCH_API_GRANULARITY", "fetch-one")
+if _GRANULARITY not in {"fetch-one", "bulk"}:
+    raise ValueError(
+        "BENCH_API_GRANULARITY must be 'fetch-one' or 'bulk', "
+        f"got {_GRANULARITY!r}"
+    )
+_BY_ID = {
+    order["order_id"]: order for order in orders(_N, record_bytes=_RECORD_BYTES)
+}
 if os.environ.get("BENCH_NOTES") == "chain":
     for order_id, note in chain_notes(_N).items():
         _BY_ID[order_id] = {**_BY_ID[order_id], "note": note}
 
 
-@mcp.tool
-async def list_order_ids() -> list[str]:
-    """List every order id in the store."""
-    if _LATENCY_S:
-        await asyncio.sleep(_LATENCY_S)
-    return sorted(_BY_ID)
+if _GRANULARITY == "fetch-one":
 
+    @mcp.tool
+    async def list_order_ids() -> list[str]:
+        """List every order id in the store."""
+        if _LATENCY_S:
+            await asyncio.sleep(_LATENCY_S)
+        return sorted(_BY_ID)
 
-@mcp.tool
-async def get_order(order_id: str) -> dict:
-    """Fetch one order record: order_id, region, amount, status."""
-    if _LATENCY_S:
-        await asyncio.sleep(_LATENCY_S)
-    order = _BY_ID.get(order_id)
-    if order is None:
-        raise ValueError(f"no such order: {order_id}")
-    return order
+    @mcp.tool
+    async def get_order(order_id: str) -> dict:
+        """Fetch one order record: order_id, region, amount, status."""
+        if _LATENCY_S:
+            await asyncio.sleep(_LATENCY_S)
+        order = _BY_ID.get(order_id)
+        if order is None:
+            raise ValueError(f"no such order: {order_id}")
+        return order
+
+else:
+
+    @mcp.tool
+    async def get_orders() -> list[dict]:
+        """Fetch all order records in one bulk response."""
+        if _LATENCY_S:
+            await asyncio.sleep(_LATENCY_S)
+        return [_BY_ID[order_id] for order_id in sorted(_BY_ID)]
 
 
 if __name__ == "__main__":
