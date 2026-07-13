@@ -131,6 +131,30 @@ def test_reset_detector_rejects_search_and_same_execution() -> None:
     )
 
 
+def test_reset_detector_rejects_fixture_work_before_reset() -> None:
+    def execute(code: str) -> dict:
+        return {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "mcp__toolplane__execute_code",
+                        "input": {"code": code},
+                    }
+                ]
+            },
+        }
+
+    events = [
+        execute("return await orders_list_order_ids()"),
+        execute("await reset_session()"),
+        execute('return "cached answer"'),
+    ]
+
+    assert not longitudinal._uses_reset_contract(events)
+
+
 def test_call_log_is_wired_through_both_arms(tmp_path: Path) -> None:
     fixtures = tmp_path / "fixtures"
     fixtures.mkdir()

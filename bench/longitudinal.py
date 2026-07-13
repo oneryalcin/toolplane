@@ -266,7 +266,7 @@ def _uses_reset_contract(events: list[dict[str, Any]]) -> bool:
             ):
                 continue
             codes.append(str(block.get("input", {}).get("code", "")))
-    return any(_is_dedicated_reset_code(code) for code in codes[:-1])
+    return len(codes) >= 2 and _is_dedicated_reset_code(codes[0])
 
 
 def _call_log_rows(path: Path) -> list[dict[str, Any]]:
