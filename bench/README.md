@@ -25,8 +25,8 @@ Hardening (#116): the code under test is **frozen at matrix start** — the
 toolplane facade is built into a wheel and installed into a scratch venv,
 and the fixture servers are snapshotted beside it, so editing the working
 tree mid-run cannot reach a running measurement (the #111 contamination
-incident). Every result row records the git SHA + dirty flag + wheel and
-fixture sha256s. Arm order is **counterbalanced deterministically** (odd
+incident). Every result row records the git SHA + dirty flag + wheel, harness,
+and fixture sha256s. Arm order is **counterbalanced deterministically** (odd
 reps reverse it — recomputable from the rep number; use even rep counts
 for headline cells, odd counts leave the first-position split uneven by
 one). Each row also records `model_requests`: the count of unique API
@@ -83,12 +83,26 @@ the recorded tool names rather than corrupted. M counts total configured
 servers including `orders`. Finding (2026-07-09): Claude Code's deferred
 tool loading neutralizes most of the M axis — see the docs piece.
 
+## Payload and API-granularity axes (#117)
+
+`--record-bytes 0,2000,20000` sets deterministic padding bytes on every
+order. `--granularity fetch-one,bulk` changes the orders server's public API:
+
+- `fetch-one` exposes only `list_order_ids` + `get_order`;
+- `bulk` exposes only `get_orders`, returning the whole dataset.
+
+The profiles are mutually exclusive so the model cannot choose the preferred
+endpoint inside a cell. This measures the interaction between response size
+and API shape; it does not treat a deliberately missing bulk endpoint as an
+inherent limitation of direct MCP.
+
 ## Run it
 
 ```bash
 uv run python bench/run.py --reps 3            # full matrix, 24 paid runs
 uv run python bench/run.py --reps 1 --tasks single   # cheap smoke
 uv run python bench/run.py --reps 3 --tasks loop,single --servers 1,5,15   # M-axis, 36 paid runs
+uv run python bench/run.py --reps 3 --tasks loop --arms direct,toolplane --servers 1 --record-bytes 0,2000,20000 --granularity fetch-one,bulk  # #117, 36 runs
 ```
 
 Requires the `claude` CLI on PATH and an authenticated session. Results
