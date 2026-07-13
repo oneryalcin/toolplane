@@ -248,6 +248,19 @@ def distractors(m_servers: int) -> list[tuple[str, str]]:
 _GRANULARITIES = ("fetch-one", "bulk")
 
 
+def validate_axis_scope(
+    tasks: list[str], record_bytes: list[int], granularities: list[str]
+) -> None:
+    unsupported = [
+        task for task in tasks if task_domain(task)["server_name"] != "orders"
+    ]
+    if unsupported and (record_bytes != [0] or granularities != ["fetch-one"]):
+        raise ValueError(
+            "--record-bytes and --granularity currently apply only to "
+            f"orders-domain tasks; unsupported tasks: {unsupported}"
+        )
+
+
 def task_server_env(
     task: str, record_bytes: int = 0, granularity: str = "fetch-one"
 ) -> dict[str, str]:
@@ -967,6 +980,10 @@ def main() -> int:
             f"unknown --granularity values {unknown_granularities}; "
             f"expected comma-separated {_GRANULARITIES}"
         )
+    try:
+        validate_axis_scope(tasks, b_values, g_values)
+    except ValueError as exc:
+        parser.error(str(exc))
     client_version = subprocess.run(
         ["claude", "--version"], capture_output=True, text=True
     ).stdout.strip()

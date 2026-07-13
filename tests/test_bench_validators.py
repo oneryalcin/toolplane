@@ -12,6 +12,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "bench"))
 
 from run import _check_filter, _check_region_totals, _check_single  # noqa: E402
@@ -55,6 +57,19 @@ def test_task_server_env_carries_payload_and_granularity() -> None:
         "BENCH_API_GRANULARITY": "bulk",
         "BENCH_RECORD_BYTES": "20000",
     }
+
+
+def test_payload_axes_reject_non_orders_tasks() -> None:
+    from run import validate_axis_scope
+
+    validate_axis_scope(["single_shipment"], [0], ["fetch-one"])
+
+    with pytest.raises(ValueError, match="orders-domain"):
+        validate_axis_scope(["single_shipment"], [0, 20_000], ["fetch-one"])
+    with pytest.raises(ValueError, match="single_shipment"):
+        validate_axis_scope(
+            ["loop", "single_shipment"], [0], ["fetch-one", "bulk"]
+        )
 
 
 def test_mcp_config_wires_bulk_profile_to_both_arms(tmp_path: Path) -> None:

@@ -687,7 +687,7 @@ provenance rests on the wheel + fixture hashes plus the transcript reparse.)
 ## Payload size and API granularity reverse the winner (2026-07-13, #117)
 
 The original loop fixture exposed only `list_order_ids` + `get_order`, with
-roughly 0.2 KB records. That is a legitimate API shape, but it hides code
+tiny records. That is a legitimate API shape, but it hides code
 mode's context-isolation advantage and gives direct MCP no bulk endpoint as a
 counterweight. #117 crossed two controlled axes at N=30 and M=1:
 
@@ -702,20 +702,22 @@ all 36 correct; medians below. Input is uncached input tokens.
 | 0 | fetch-one | $0.17 / 23.5K input | $0.12 / 14.1K | toolplane, 32% |
 | 2 KB | fetch-one | $0.30 / 60.8K | $0.12 / 15.5K | toolplane, 2.4x |
 | 20 KB | fetch-one | $1.58 / 398K | $0.16 / 26.6K | **toolplane, 9.7x** |
-| 0 | bulk | $0.10 / 13.4K | $0.13 / 14.5K | direct, 23% |
+| 0 | bulk | $0.10 / 13.4K | $0.13 / 14.5K | direct, 24% |
 | 2 KB | bulk | $0.13 / 14.7K | $0.14 / 18.1K | direct, 8% |
-| 20 KB | bulk | $0.18 / 26.0K | $0.23 / 39.8K | **direct, 22%** |
+| 20 KB | bulk | $0.18 / 26.0K | $0.23 / 39.8K | **direct, 21%** |
 
 The interaction is the result. With fetch-one APIs, direct pulls records into
-the conversation one call at a time while Toolplane aggregates inside Monty
-and returns only three totals; payload therefore turns a modest baseline win
-into 9.7x. Give the server a bulk endpoint and the winner reverses at every
-payload: direct avoids Toolplane's discovery and snippet overhead.
+the conversation one call at a time while Toolplane performs the 30-record
+aggregation inside Monty and returns the totals. Five of six high-payload
+Toolplane reps later leaked one sampled record, still far less than all 30;
+payload therefore turns a modest baseline win into 9.7x. Give the server a
+bulk endpoint and the winner reverses at every payload: direct avoids
+Toolplane's discovery and snippet overhead.
 
 There is an important client mechanism in the bulk cells. At 2 KB and 20 KB,
 Claude Code externalized the oversized direct MCP result to a local tool-result
-file in all 6 reps, then the agent used Bash/`jq` against that file. The large
-payload therefore did *not* enter model context. This is real production-client
+file in all 6 reps, then the agent used Bash with `jq` or Python against that
+file. The large payload therefore did *not* enter model context. This is real production-client
 behavior and available to both arms, but it means the bulk result measures API
 granularity together with Claude Code's oversized-result escape hatch—not a
 client-independent one-call law. At zero padding the response stays inline and
@@ -728,11 +730,13 @@ Toolplane runs. The measured comparison is agent behavior, not an ideal hand-
 written snippet.
 
 The honest envelope is therefore conditional on API shape. Code mode is a
-large win when many fat per-record calls must be composed; a native bulk
-endpoint already embodies that composition and is cheaper here. Filter
-placement remains a separate axis rather than being folded into this result.
-This is one Claude Code/Sonnet run date with n=3; odd reps also leave the
-counterbalanced first-position split uneven by one.
+large win when many fat per-record calls must be composed; bulk retrieval plus
+Claude Code's file externalization and Bash aggregation is cheaper here.
+Filter placement remains a separate axis rather than being folded into this
+result. This is one Claude Code/Sonnet run date with n=3; odd reps leave the
+counterbalanced first-position split uneven by one, and payload/granularity
+cells ran in a fixed order. The 8% bulk/2 KB edge is therefore descriptive,
+not a precise or client-independent causal estimate.
 
 Provenance: `run-20260713-040737`, clean committed tree at `57e9165`, wheel
 `faa5de87`, harness `d3ad3224`; raw JSON and full transcripts are committed.
