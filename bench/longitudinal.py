@@ -230,19 +230,26 @@ def _is_dedicated_reset_code(code: str) -> bool:
         tree = ast.parse(code)
     except SyntaxError:
         return False
-    has_reset = any(
-        isinstance(node, ast.Expr)
-        and isinstance(node.value, ast.Await)
-        and isinstance(node.value.value, ast.Call)
-        and isinstance(node.value.value.func, ast.Name)
-        and node.value.value.func.id == "reset_session"
-        for node in tree.body
+    if not tree.body:
+        return False
+    first = tree.body[0]
+    resets_first = (
+        isinstance(first, ast.Expr)
+        and isinstance(first.value, ast.Await)
+        and isinstance(first.value.value, ast.Call)
+        and isinstance(first.value.value.func, ast.Name)
+        and first.value.value.func.id == "reset_session"
+    )
+    inert_tail = all(
+        isinstance(node, ast.Return)
+        and (node.value is None or isinstance(node.value, ast.Constant))
+        for node in tree.body[1:]
     )
     calls_orders = any(
         isinstance(node, ast.Name) and node.id.startswith("orders_")
         for node in ast.walk(tree)
     )
-    return has_reset and not calls_orders
+    return resets_first and inert_tail and not calls_orders
 
 
 def _uses_reset_contract(events: list[dict[str, Any]]) -> bool:
