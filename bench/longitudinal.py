@@ -9,6 +9,7 @@ creating a clean next turn.
 from __future__ import annotations
 
 import argparse
+import ast
 import asyncio
 import json
 import re
@@ -179,6 +180,21 @@ def _answer(result: dict[str, Any]) -> str:
     return match.group(1).strip() if match else ""
 
 
+def _turn_usage(result: dict[str, Any]) -> dict[str, int]:
+    """Result usage is per user turn; unlike total_cost_usd, never delta it."""
+    usage = result.get("usage", {})
+    return {
+        "input_tokens": int(usage.get("input_tokens", 0) or 0),
+        "cache_creation_input_tokens": int(
+            usage.get("cache_creation_input_tokens", 0) or 0
+        ),
+        "cache_read_input_tokens": int(
+            usage.get("cache_read_input_tokens", 0) or 0
+        ),
+        "output_tokens": int(usage.get("output_tokens", 0) or 0),
+    }
+
+
 def _context_tokens(events: list[dict[str, Any]]) -> int:
     totals = []
     for event in events:
@@ -209,6 +225,26 @@ def _tool_names(events: list[dict[str, Any]]) -> list[str]:
     return names
 
 
+def _is_dedicated_reset_code(code: str) -> bool:
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return False
+    has_reset = any(
+        isinstance(node, ast.Expr)
+        and isinstance(node.value, ast.Await)
+        and isinstance(node.value.value, ast.Call)
+        and isinstance(node.value.value.func, ast.Name)
+        and node.value.value.func.id == "reset_session"
+        for node in tree.body
+    )
+    calls_orders = any(
+        isinstance(node, ast.Name) and node.id.startswith("orders_")
+        for node in ast.walk(tree)
+    )
+    return has_reset and not calls_orders
+
+
 def _uses_reset_contract(events: list[dict[str, Any]]) -> bool:
     codes = []
     for event in events:
@@ -221,10 +257,7 @@ def _uses_reset_contract(events: list[dict[str, Any]]) -> bool:
             ):
                 continue
             codes.append(str(block.get("input", {}).get("code", "")))
-    for index, code in enumerate(codes[:-1]):
-        if "await reset_session()" in code and "orders_" not in code:
-            return True
-    return False
+    return any(_is_dedicated_reset_code(code) for code in codes[:-1])
 
 
 def _call_log_rows(path: Path) -> list[dict[str, Any]]:
@@ -307,13 +340,7 @@ def run_session(
     selector.register(process.stdout, selectors.EVENT_READ)
     all_lines: list[str] = []
     turns = []
-    previous_cumulative: dict[str, float] = {
-        "cost": 0.0,
-        "input": 0.0,
-        "cache_creation": 0.0,
-        "cache_read": 0.0,
-        "output": 0.0,
-    }
+    previous_cost = 0.0
     prior_calls = 0
     session_id: str | None = None
     try:
@@ -349,20 +376,10 @@ def run_session(
                         raise RuntimeError("Claude session id changed mid-conversation")
                 if event.get("type") == "result":
                     result = event
-            usage = result.get("usage", {})
-            cumulative = {
-                "cost": float(result.get("total_cost_usd", 0) or 0),
-                "input": float(usage.get("input_tokens", 0) or 0),
-                "cache_creation": float(
-                    usage.get("cache_creation_input_tokens", 0) or 0
-                ),
-                "cache_read": float(usage.get("cache_read_input_tokens", 0) or 0),
-                "output": float(usage.get("output_tokens", 0) or 0),
-            }
-            delta = {
-                key: cumulative[key] - previous_cumulative[key] for key in cumulative
-            }
-            previous_cumulative = cumulative
+            turn_usage = _turn_usage(result)
+            cumulative_cost = float(result.get("total_cost_usd", 0) or 0)
+            turn_cost = cumulative_cost - previous_cost
+            previous_cost = cumulative_cost
             calls = _call_log_rows(call_log)
             turn_calls = calls[prior_calls:]
             prior_calls = len(calls)
@@ -374,11 +391,8 @@ def run_session(
                     "task": task["name"],
                     "answer": answer,
                     "correct": bool(task["check"](answer)),
-                    "cost_usd": delta["cost"],
-                    "input_tokens": int(delta["input"]),
-                    "cache_creation_input_tokens": int(delta["cache_creation"]),
-                    "cache_read_input_tokens": int(delta["cache_read"]),
-                    "output_tokens": int(delta["output"]),
+                    "cost_usd": turn_cost,
+                    **turn_usage,
                     "peak_request_context_tokens": _context_tokens(events),
                     "model_requests": base._unique_request_ids("".join(
                         json.dumps(event) + "\n" for event in events
@@ -424,7 +438,7 @@ def run_session(
             if arm == "toolplane"
             else True
         ),
-        "total_cost_usd": previous_cumulative["cost"],
+        "total_cost_usd": previous_cost,
         "peak_context_tokens": max(
             turn["peak_request_context_tokens"] for turn in turns
         ),

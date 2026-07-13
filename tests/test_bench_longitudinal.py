@@ -69,6 +69,19 @@ def test_stream_metrics_extract_context_tools_answer_and_reset() -> None:
     assert longitudinal._uses_reset_contract(events)
 
 
+def test_result_usage_is_per_turn_not_a_cumulative_delta() -> None:
+    first = {"usage": {"input_tokens": 8, "cache_creation_input_tokens": 50_000}}
+    smaller_second = {
+        "usage": {"input_tokens": 2, "cache_creation_input_tokens": 1_000}
+    }
+
+    assert longitudinal._turn_usage(first)["cache_creation_input_tokens"] == 50_000
+    assert (
+        longitudinal._turn_usage(smaller_second)["cache_creation_input_tokens"]
+        == 1_000
+    )
+
+
 def test_reset_detector_rejects_search_and_same_execution() -> None:
     search = [
         {
@@ -102,6 +115,15 @@ def test_reset_detector_rejects_search_and_same_execution() -> None:
     ]
     assert not longitudinal._uses_reset_contract(search)
     assert not longitudinal._uses_reset_contract(combined)
+    for false_positive in (
+        'return "await reset_session()"',
+        "# await reset_session()\nreturn 1",
+        "if False:\n    await reset_session()\nreturn 1",
+    ):
+        assert not longitudinal._is_dedicated_reset_code(false_positive)
+    assert longitudinal._is_dedicated_reset_code(
+        'await reset_session()\nreturn "reset"'
+    )
 
 
 def test_call_log_is_wired_through_both_arms(tmp_path: Path) -> None:

@@ -765,7 +765,7 @@ predicted**. The decomposition matters:
 
 | phase | direct median | toolplane median | interpretation |
 |---|---:|---:|---|
-| initial load + totals | $0.286 | **$0.122** | 57% cheaper: the 60 KB payload stays behind Toolplane |
+| initial load + totals | $0.286 | **$0.122** | 57% cheaper: the full 60 KB dataset stays behind Toolplane |
 | four reuse turns combined | $0.094 | $0.092 | effectively tied; ranges overlap |
 
 Both arms made **zero fixture calls** on reuse turns 2–5. Direct did not
@@ -787,7 +787,9 @@ were the same operation would be misleading.
 Agent quality remains visible. Toolplane's first-load fixture calls ranged from
 31 to 93 because some snippets fetched the dataset again after an error; the
 session still won on total cost and context in every rep. The result is about
-observed agent behavior, not an ideal handwritten cache setup.
+observed agent behavior, not an ideal handwritten cache setup. Some successful
+snippets also returned one or three padded sample records, so “stays behind”
+describes the full dataset rather than claiming that no sample bytes escaped.
 
 ### Snapshot scaling is linear and small at 10 MB
 
@@ -807,13 +809,17 @@ not extrapolate to 100 MB+ namespaces or the future AsyncMonty subprocess path
 in #88.
 
 The sharper conclusion is conditional: persistent sessions work and halve
-context here, but five follow-ups are not enough to turn that context reduction
+context here, but four reuse follow-ups are not enough to turn that context reduction
 into compounding dollar savings. A longer run that actually crosses the
 client's compaction threshold remains unmeasured.
 
 Provenance: `longitudinal-20260713-095957`, clean committed tree at `871ce53`;
 all rows stamp the frozen wheel, fixture set, base harness, and longitudinal
-harness hashes. Raw JSON and full transcripts are committed.
+harness hashes. Raw JSON and full transcripts are committed. One disclosed
+post-hoc correction replaces the per-turn token fields with the verbatim
+`usage` object from each recorded result event: the first harness incorrectly
+differenced those already-per-turn counters. Costs, peak context, answers, and
+every published table value were unaffected; no run was re-executed.
 
 ## The envelope
 
