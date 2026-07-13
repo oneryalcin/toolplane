@@ -245,11 +245,22 @@ def distractors(m_servers: int) -> list[tuple[str, str]]:
     return out
 
 
-def task_server_env(task: str, record_bytes: int = 0) -> dict[str, str]:
+_GRANULARITIES = ("fetch-one", "bulk")
+
+
+def task_server_env(
+    task: str, record_bytes: int = 0, granularity: str = "fetch-one"
+) -> dict[str, str]:
+    if granularity not in _GRANULARITIES:
+        raise ValueError(
+            f"unknown API granularity {granularity!r}; expected {_GRANULARITIES}"
+        )
     env = {
         task_domain(task)["n_env"]: str(TASKS[task]["orders_n"]),
         **TASKS[task].get("server_env", {}),
     }
+    if task_domain(task)["server_name"] == "orders":
+        env["BENCH_API_GRANULARITY"] = granularity
     if record_bytes:
         # payload axis (#117): only the orders server reads this; harmless
         # elsewhere. Sizes each record so a direct fetch pays it in context.
@@ -366,6 +377,7 @@ def mcp_config(
     m_servers: int,
     code: dict,
     record_bytes: int = 0,
+    granularity: str = "fetch-one",
 ) -> dict:
     fixtures_dir = Path(code["fixtures_dir"])
     domain = task_domain(task)
@@ -378,7 +390,9 @@ def mcp_config(
             "env": env,
         }
 
-    server_cmd = frozen_cmd(domain["server"], task_server_env(task, record_bytes))
+    server_cmd = frozen_cmd(
+        domain["server"], task_server_env(task, record_bytes, granularity)
+    )
     extra = {
         name: frozen_cmd("distractor_server.py", {"DISTRACTOR_PROFILE": profile})
         for name, profile in distractors(m_servers)
@@ -399,7 +413,10 @@ def mcp_config(
         # scratch cwd, so nothing may be cwd-relative
         toml_path = (
             workdir
-            / f"toolplane-bench-{arm}-{task}-m{m_servers}-b{record_bytes}.toml"
+            / (
+                f"toolplane-bench-{arm}-{task}-m{m_servers}-"
+                f"b{record_bytes}-g{granularity}.toml"
+            )
         )
         sections = []
         if arm in _CURATED_ARMS:
@@ -579,11 +596,24 @@ def run_case(
     m_servers: int = 1,
     transcript_path: Path | None = None,
     record_bytes: int = 0,
+    granularity: str = "fetch-one",
 ) -> dict:
     orders_n = TASKS[task]["orders_n"]
-    config_path = workdir / f"mcp-{arm}-{task}-m{m_servers}-b{record_bytes}.json"
+    config_path = workdir / (
+        f"mcp-{arm}-{task}-m{m_servers}-b{record_bytes}-g{granularity}.json"
+    )
     config_path.write_text(
-        json.dumps(mcp_config(arm, workdir, task, m_servers, code, record_bytes)),
+        json.dumps(
+            mcp_config(
+                arm,
+                workdir,
+                task,
+                m_servers,
+                code,
+                record_bytes,
+                granularity,
+            )
+        ),
         encoding="utf-8",
     )
     cwd = workdir / f"cwd-{arm}-{task}-{time.time_ns()}"
@@ -624,6 +654,7 @@ def run_case(
             "orders_n": orders_n,
             "m_servers": m_servers,
             "record_bytes": record_bytes,
+            "granularity": granularity,
             "model": None,
             "correct": False,
             "answer": None,
@@ -678,6 +709,7 @@ def run_case(
         "orders_n": orders_n,
         "m_servers": m_servers,
         "record_bytes": record_bytes,
+        "granularity": granularity,
         "model": model_used,
         "correct": TASKS[task]["check"](answer or "", orders_n),
         "answer": answer,
@@ -720,13 +752,18 @@ def summarize(rows: list[dict]) -> str:
     (timeout) makes the cell "n/a" rather than silently pricing as free.
     """
     lines = [
-        "| task | M | B | arm | ok | tool calls | reqs | turns | out tokens "
-        "| uncached in | cost $ | cost/pass | wall s |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "| task | M | B | granularity | arm | ok | tool calls | reqs | turns "
+        "| out tokens | uncached in | cost $ | cost/pass | wall s |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     m_values = sorted({r.get("m_servers", 1) for r in rows})
     # payload axis (#117): record_bytes per fetched record; 0 = current
     b_values = sorted({r.get("record_bytes", 0) for r in rows})
+    g_values = [
+        g
+        for g in _GRANULARITIES
+        if g in {r.get("granularity", "fetch-one") for r in rows}
+    ]
     # arms in a stable, meaningful order; only those actually present render
     arm_order_display = [
         "direct",
@@ -744,65 +781,67 @@ def summarize(rows: list[dict]) -> str:
     for task in TASKS:
         for m in m_values:
             for b in b_values:
-                groups = {
-                    arm: [
-                        r
-                        for r in rows
-                        if r["task"] == task
-                        and r["arm"] == arm
-                        and r.get("m_servers", 1) == m
-                        and r.get("record_bytes", 0) == b
-                    ]
-                    for arm in arms
-                }
-                # † marks an arm whose per-rep range overlaps direct's (the
-                # reference) for this cell — direct itself never gets the mark
-                overlaps = {arm: {} for arm in arms}
-                direct_group = groups.get("direct")
-                for key in ("cost_usd", "wall_s"):
-                    direct_span = (
-                        _cell_stats(direct_group, key) if direct_group else None
-                    )
-                    if not direct_span or None in direct_span[1:]:
-                        continue
-                    _, lo_a, hi_a = direct_span
-                    for arm, g in groups.items():
-                        if arm == "direct" or not g:
+                for granularity in g_values:
+                    groups = {
+                        arm: [
+                            r
+                            for r in rows
+                            if r["task"] == task
+                            and r["arm"] == arm
+                            and r.get("m_servers", 1) == m
+                            and r.get("record_bytes", 0) == b
+                            and r.get("granularity", "fetch-one") == granularity
+                        ]
+                        for arm in arms
+                    }
+                    # † marks an arm whose per-rep range overlaps direct's (the
+                    # reference) for this cell — direct itself never gets the mark
+                    overlaps = {arm: {} for arm in arms}
+                    direct_group = groups.get("direct")
+                    for key in ("cost_usd", "wall_s"):
+                        direct_span = (
+                            _cell_stats(direct_group, key) if direct_group else None
+                        )
+                        if not direct_span or None in direct_span[1:]:
                             continue
-                        _, lo_b, hi_b = _cell_stats(g, key)
-                        if None not in (lo_b, hi_b):
-                            overlaps[arm][key] = lo_a <= hi_b and lo_b <= hi_a
-                for arm, group in groups.items():
-                    if not group:
-                        continue
+                        _, lo_a, hi_a = direct_span
+                        for arm, group in groups.items():
+                            if arm == "direct" or not group:
+                                continue
+                            _, lo_b, hi_b = _cell_stats(group, key)
+                            if None not in (lo_b, hi_b):
+                                overlaps[arm][key] = lo_a <= hi_b and lo_b <= hi_a
+                    for arm, group in groups.items():
+                        if not group:
+                            continue
 
-                    def med(key, group=group):
-                        value = _cell_stats(group, key)[0]
-                        return round(value, 2) if value is not None else "-"
+                        def med(key, group=group):
+                            value = _cell_stats(group, key)[0]
+                            return round(value, 2) if value is not None else "-"
 
-                    def flagged(key, arm=arm):
-                        mark = "†" if overlaps[arm].get(key) else ""
-                        return f"{med(key)}{mark}"
+                        def flagged(key, arm=arm):
+                            mark = "†" if overlaps[arm].get(key) else ""
+                            return f"{med(key)}{mark}"
 
-                    successes = sum(r["correct"] for r in group)
-                    costs = [r["cost_usd"] for r in group]
-                    if any(c is None for c in costs):
-                        # a timed-out run billed an unknown amount; pricing it
-                        # as zero would make unreliable arms look cheaper
-                        cost_of_pass = "n/a"
-                    elif successes:
-                        cost_of_pass = round(sum(costs) / successes, 2)
-                    else:
-                        cost_of_pass = "inf"
-                    overlap_seen = overlap_seen or any(overlaps[arm].values())
-                    ok = f"{successes}/{len(group)}"
-                    lines.append(
-                        f"| {task} | {m} | {b} | {arm} | {ok} "
-                        f"| {med('tool_calls')} | {med('model_requests')} | "
-                        f"{med('num_turns')} | {med('output_tokens')} | "
-                        f"{med('uncached_input_tokens')} | {flagged('cost_usd')} | "
-                        f"{cost_of_pass} | {flagged('wall_s')} |"
-                    )
+                        successes = sum(r["correct"] for r in group)
+                        costs = [r["cost_usd"] for r in group]
+                        if any(c is None for c in costs):
+                            # a timed-out run billed an unknown amount; pricing it
+                            # as zero would make unreliable arms look cheaper
+                            cost_of_pass = "n/a"
+                        elif successes:
+                            cost_of_pass = round(sum(costs) / successes, 2)
+                        else:
+                            cost_of_pass = "inf"
+                        overlap_seen = overlap_seen or any(overlaps[arm].values())
+                        ok = f"{successes}/{len(group)}"
+                        lines.append(
+                            f"| {task} | {m} | {b} | {granularity} | {arm} | {ok} "
+                            f"| {med('tool_calls')} | {med('model_requests')} | "
+                            f"{med('num_turns')} | {med('output_tokens')} | "
+                            f"{med('uncached_input_tokens')} | {flagged('cost_usd')} | "
+                            f"{cost_of_pass} | {flagged('wall_s')} |"
+                        )
     if overlap_seen:
         lines.append(
             "\n† this arm's observed per-rep range overlaps direct's for "
@@ -822,8 +861,9 @@ def discovery_summary(rows: list[dict]) -> str:
     lines = [
         "\n## First-search discovery (#127 primary outcome)",
         "",
-        "| task | M | arm | reps | first-hit rate | searches→tool | artifacts |",
-        "| --- | --- | --- | --- | --- | --- | --- |",
+        "| task | M | B | granularity | arm | reps | first-hit rate "
+        "| searches→tool | artifacts |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     arm_order_display = [
         "direct",
@@ -839,40 +879,51 @@ def discovery_summary(rows: list[dict]) -> str:
     )
     tasks = sorted({r["task"] for r in rows})
     ms = sorted({r["m_servers"] for r in rows})
+    payloads = sorted({r.get("record_bytes", 0) for r in rows})
+    granularities = [
+        g
+        for g in _GRANULARITIES
+        if g in {r.get("granularity", "fetch-one") for r in rows}
+    ]
     for task in tasks:
         for m in ms:
-            for arm in arms:
-                group = [
-                    r
-                    for r in rows
-                    if r["task"] == task
-                    and r["m_servers"] == m
-                    and r["arm"] == arm
-                ]
-                if not group:
-                    continue
-                hits = [
-                    r["first_search_hit"]
-                    for r in group
-                    if r.get("first_search_hit") is not None
-                ]
-                rate = f"{sum(hits)}/{len(hits)}" if hits else "n/a"
-                s2t = [
-                    r["searches_to_domain_tool"]
-                    for r in group
-                    if r.get("searches_to_domain_tool") is not None
-                ]
-                s2t_med = statistics.median(s2t) if s2t else "n/a"
-                arts = [
-                    r["startup_artifact_searches"]
-                    for r in group
-                    if r.get("startup_artifact_searches") is not None
-                ]
-                arts_med = statistics.median(arts) if arts else "n/a"
-                lines.append(
-                    f"| {task} | {m} | {arm} | {len(group)} | {rate} | "
-                    f"{s2t_med} | {arts_med} |"
-                )
+            for payload in payloads:
+                for granularity in granularities:
+                    for arm in arms:
+                        group = [
+                            r
+                            for r in rows
+                            if r["task"] == task
+                            and r["m_servers"] == m
+                            and r["arm"] == arm
+                            and r.get("record_bytes", 0) == payload
+                            and r.get("granularity", "fetch-one") == granularity
+                        ]
+                        if not group:
+                            continue
+                        hits = [
+                            r["first_search_hit"]
+                            for r in group
+                            if r.get("first_search_hit") is not None
+                        ]
+                        rate = f"{sum(hits)}/{len(hits)}" if hits else "n/a"
+                        s2t = [
+                            r["searches_to_domain_tool"]
+                            for r in group
+                            if r.get("searches_to_domain_tool") is not None
+                        ]
+                        s2t_med = statistics.median(s2t) if s2t else "n/a"
+                        arts = [
+                            r["startup_artifact_searches"]
+                            for r in group
+                            if r.get("startup_artifact_searches") is not None
+                        ]
+                        arts_med = statistics.median(arts) if arts else "n/a"
+                        lines.append(
+                            f"| {task} | {m} | {payload} | {granularity} | "
+                            f"{arm} | {len(group)} | {rate} | {s2t_med} | "
+                            f"{arts_med} |"
+                        )
     return "\n".join(lines)
 
 
@@ -896,12 +947,26 @@ def main() -> int:
         "a direct fetch drops into model context; the toolplane arm keeps "
         "it in the sandbox.",
     )
+    parser.add_argument(
+        "--granularity",
+        default="fetch-one",
+        help="comma-separated API profiles (#117): fetch-one or bulk. "
+        "Profiles are mutually exclusive fixture surfaces, not optional "
+        "endpoints presented together.",
+    )
     args = parser.parse_args()
 
     tasks = [t for t in args.tasks.split(",") if t in TASKS]
     arms = args.arms.split(",")
     m_values = [int(m) for m in args.servers.split(",")]
     b_values = [int(b) for b in args.record_bytes.split(",")]
+    g_values = [g for g in args.granularity.split(",") if g]
+    unknown_granularities = [g for g in g_values if g not in _GRANULARITIES]
+    if unknown_granularities:
+        parser.error(
+            f"unknown --granularity values {unknown_granularities}; "
+            f"expected comma-separated {_GRANULARITIES}"
+        )
     client_version = subprocess.run(
         ["claude", "--version"], capture_output=True, text=True
     ).stdout.strip()
@@ -931,36 +996,46 @@ def main() -> int:
             for task in tasks:
                 for m in m_values:
                     for b in b_values:
-                        for arm in ordered_arms:
-                            tag = f"{task}/M={m}/B={b}/{arm}"
-                            print(f"[{rep + 1}/{args.reps}] {tag} ...", flush=True)
-                            transcript = (
-                                transcripts_dir
-                                / f"{task}-{arm}-m{m}-b{b}-rep{rep + 1}.jsonl"
-                            )
-                            row = run_case(
-                                arm,
-                                task,
-                                args.model,
-                                workdir,
-                                code,
-                                m,
-                                transcript,
-                                record_bytes=b,
-                            )
-                            row["client_version"] = client_version
-                            row["arm_order"] = "->".join(ordered_arms)
-                            row.update(prov)
-                            rows.append(row)
-                            print(
-                                f"  ok={row['correct']} "
-                                f"tools={row['tool_calls']} "
-                                f"reqs={row['model_requests']} "
-                                f"turns={row['num_turns']} "
-                                f"cost=${row['cost_usd']} "
-                                f"wall={row['wall_s']}s",
-                                flush=True,
-                            )
+                        for granularity in g_values:
+                            for arm in ordered_arms:
+                                tag = (
+                                    f"{task}/M={m}/B={b}/G={granularity}/{arm}"
+                                )
+                                print(
+                                    f"[{rep + 1}/{args.reps}] {tag} ...",
+                                    flush=True,
+                                )
+                                transcript = (
+                                    transcripts_dir
+                                    / (
+                                        f"{task}-{arm}-m{m}-b{b}-g{granularity}-"
+                                        f"rep{rep + 1}.jsonl"
+                                    )
+                                )
+                                row = run_case(
+                                    arm,
+                                    task,
+                                    args.model,
+                                    workdir,
+                                    code,
+                                    m,
+                                    transcript,
+                                    record_bytes=b,
+                                    granularity=granularity,
+                                )
+                                row["client_version"] = client_version
+                                row["arm_order"] = "->".join(ordered_arms)
+                                row.update(prov)
+                                rows.append(row)
+                                print(
+                                    f"  ok={row['correct']} "
+                                    f"tools={row['tool_calls']} "
+                                    f"reqs={row['model_requests']} "
+                                    f"turns={row['num_turns']} "
+                                    f"cost=${row['cost_usd']} "
+                                    f"wall={row['wall_s']}s",
+                                    flush=True,
+                                )
 
     out = BENCH_DIR / "results" / f"run-{stamp}.json"
     out.write_text(json.dumps(rows, indent=2), encoding="utf-8")
