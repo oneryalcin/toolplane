@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -19,9 +20,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "bench"))
 from run import _check_filter, _check_region_totals, _check_single  # noqa: E402
 
 
-def _load_order_server(monkeypatch, granularity: str, record_bytes: int = 0):
+def _load_order_server(
+    monkeypatch, granularity: str, record_bytes: int = 0, call_log: Path | None = None
+):
     monkeypatch.setenv("BENCH_API_GRANULARITY", granularity)
     monkeypatch.setenv("BENCH_RECORD_BYTES", str(record_bytes))
+    if call_log is None:
+        monkeypatch.delenv("BENCH_CALL_LOG", raising=False)
+    else:
+        monkeypatch.setenv("BENCH_CALL_LOG", str(call_log))
     path = Path(__file__).resolve().parent.parent / "bench" / "order_server.py"
     spec = importlib.util.spec_from_file_location(
         f"bench_order_server_{granularity.replace('-', '_')}_{record_bytes}", path
@@ -47,6 +54,18 @@ def test_order_server_granularity_profiles_are_mutually_exclusive(monkeypatch) -
     records = asyncio.run(bulk.get_orders())
     assert len(records) == 30
     assert len(records[0]["detail"]) == 2000
+
+
+def test_order_server_optional_call_log(monkeypatch, tmp_path: Path) -> None:
+    log = tmp_path / "calls.jsonl"
+    fetch = _load_order_server(monkeypatch, "fetch-one", call_log=log)
+
+    assert asyncio.run(fetch.list_order_ids())[0] == "ORD-001"
+    assert asyncio.run(fetch.get_order("ORD-017"))["order_id"] == "ORD-017"
+    assert [json.loads(line) for line in log.read_text().splitlines()] == [
+        {"tool": "list_order_ids", "params": {}},
+        {"tool": "get_order", "params": {"order_id": "ORD-017"}},
+    ]
 
 
 def test_task_server_env_carries_payload_and_granularity() -> None:

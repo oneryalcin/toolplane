@@ -741,6 +741,86 @@ not a precise or client-independent causal estimate.
 Provenance: `run-20260713-040737`, clean committed tree at `57e9165`, wheel
 `faa5de87`, harness `d3ad3224`; raw JSON and full transcripts are committed.
 
+## Sessions preserve data, but the savings do not compound (2026-07-13, #119)
+
+Every earlier paid cell was a fresh one-shot conversation. #119 keeps one
+Claude Code process and its stdio MCP server alive for six related turns over
+30 orders padded by 2 KB each: load + regional totals; four filters/aggregates
+over the same data; then a separately scored reset/refetch task. Bash, files,
+web, and helper agents are disabled. The shared first prompt asks either
+surface to retain reusable data using its native mechanism: conversation
+history for direct, Monty's `orders_cache` for Toolplane.
+
+Four counterbalanced Sonnet reps, all 48 answers correct:
+
+| six-turn session | direct | toolplane | result |
+|---|---:|---:|---|
+| cumulative cost, median | $0.44 | **$0.25** | Toolplane 43% cheaper |
+| observed cost range | $0.43–0.87 | **$0.20–0.37** | ranges do not overlap |
+| peak request context, median | 71.2K | **34.1K** | Toolplane 52% lower |
+| observed peak range | 70.6K–121.6K | **32.0K–43.7K** | ranges do not overlap |
+
+That is a real session-level win, but **not for the compounding reason we
+predicted**. The decomposition matters:
+
+| phase | direct median | toolplane median | interpretation |
+|---|---:|---:|---|
+| initial load + totals | $0.286 | **$0.122** | 57% cheaper: the full 60 KB dataset stays behind Toolplane |
+| four reuse turns combined | $0.094 | $0.092 | effectively tied; ranges overlap |
+
+Both arms made **zero fixture calls** on reuse turns 2–5. Direct did not
+refetch: Claude reused the order records already carried in conversation.
+Toolplane genuinely reused `orders_cache` in Monty, but each small follow-up
+took two model requests (tool call + answer) while direct answered from
+conversation in one. Toolplane's half-sized context roughly balances that
+extra request, so the cost gap stays flat instead of widening. No compaction
+event fired in any run, even at direct's 121.6K-token outlier; this experiment
+therefore does not establish an earlier-compaction advantage.
+
+The reset phase proves the runtime contract, not an arm-to-arm economic race.
+Every Toolplane rep executed `await reset_session()` in its own call, then made
+31 fresh fixture calls and answered correctly. Direct has no equivalent reset:
+three reps reused conversation without refetching; one made 30 fresh calls and
+created the $0.87/121.6K outlier. Comparing those reset-turn costs as if they
+were the same operation would be misleading.
+
+Agent quality remains visible. Toolplane's first-load fixture calls ranged from
+31 to 93 because some snippets fetched the dataset again after an error; the
+session still won on total cost and context in every rep. The result is about
+observed agent behavior, not an ideal handwritten cache setup. Some successful
+snippets also returned one or three padded sample records, so “stays behind”
+describes the full dataset rather than claiming that no sample bytes escaped.
+
+### Snapshot scaling is linear and small at 10 MB
+
+Monty snapshots the complete session before every run to make timeout rollback
+safe. Seven local measurements per size, against the same frozen wheel:
+
+| live namespace payload | snapshot bytes | median `dump()` | median no-op run including snapshot |
+|---:|---:|---:|---:|
+| 1 KB | 1.2 KB | 0.001 ms | 0.20 ms |
+| 100 KB | 100.2 KB | 0.017 ms | 0.19 ms |
+| 10 MB | 10.0 MB | 2.62 ms | 3.48 ms |
+
+Serialized size and the Python-visible allocation are approximately linear in
+live state. At 10 MB the mandatory snapshot is measurable but not a practical
+bottleneck for these tasks. This is not a process-RSS measurement, and it does
+not extrapolate to 100 MB+ namespaces or the future AsyncMonty subprocess path
+in #88.
+
+The sharper conclusion is conditional: persistent sessions work and halve
+context here, but four reuse follow-ups are not enough to turn that context reduction
+into compounding dollar savings. A longer run that actually crosses the
+client's compaction threshold remains unmeasured.
+
+Provenance: `longitudinal-20260713-095957`, clean committed tree at `871ce53`;
+all rows stamp the frozen wheel, fixture set, base harness, and longitudinal
+harness hashes. Raw JSON and full transcripts are committed. One disclosed
+post-hoc correction replaces the per-turn token fields with the verbatim
+`usage` object from each recorded result event: the first harness incorrectly
+differenced those already-per-turn counters. Costs, peak context, answers, and
+every published table value were unaffected; no run was re-executed.
+
 ## The envelope
 
 Two measured points; nothing measured between them:

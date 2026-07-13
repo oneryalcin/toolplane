@@ -9,6 +9,7 @@ fixture property rather than a model endpoint-choice confound (#117).
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import sys
 from pathlib import Path
@@ -27,6 +28,7 @@ _LATENCY_S = float(os.environ.get("BENCH_TOOL_LATENCY_MS", "0")) / 1000.0
 # payload axis (#117): pad each record so a direct fetch drops a fat blob
 # into model context while the toolplane arm keeps it in the sandbox
 _RECORD_BYTES = int(os.environ.get("BENCH_RECORD_BYTES", "0"))
+_CALL_LOG = os.environ.get("BENCH_CALL_LOG")
 _GRANULARITY = os.environ.get("BENCH_API_GRANULARITY", "fetch-one")
 if _GRANULARITY not in {"fetch-one", "bulk"}:
     raise ValueError(
@@ -41,11 +43,20 @@ if os.environ.get("BENCH_NOTES") == "chain":
         _BY_ID[order_id] = {**_BY_ID[order_id], "note": note}
 
 
+def _record_call(tool: str, **params: object) -> None:
+    """Optional append-only fixture telemetry for longitudinal runs (#119)."""
+    if not _CALL_LOG:
+        return
+    with Path(_CALL_LOG).open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"tool": tool, "params": params}) + "\n")
+
+
 if _GRANULARITY == "fetch-one":
 
     @mcp.tool
     async def list_order_ids() -> list[str]:
         """List every order id in the store."""
+        _record_call("list_order_ids")
         if _LATENCY_S:
             await asyncio.sleep(_LATENCY_S)
         return sorted(_BY_ID)
@@ -53,6 +64,7 @@ if _GRANULARITY == "fetch-one":
     @mcp.tool
     async def get_order(order_id: str) -> dict:
         """Fetch one order record: order_id, region, amount, status."""
+        _record_call("get_order", order_id=order_id)
         if _LATENCY_S:
             await asyncio.sleep(_LATENCY_S)
         order = _BY_ID.get(order_id)
@@ -65,6 +77,7 @@ else:
     @mcp.tool
     async def get_orders() -> list[dict]:
         """Fetch all order records in one bulk response."""
+        _record_call("get_orders")
         if _LATENCY_S:
             await asyncio.sleep(_LATENCY_S)
         return [_BY_ID[order_id] for order_id in sorted(_BY_ID)]
