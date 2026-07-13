@@ -1,0 +1,4381 @@
+{
+  "experiment": "#119 longitudinal sessions",
+  "created_at": "20260713-095957",
+  "rows": [
+    {
+      "arm": "direct",
+      "session_id": "6cbe8582-fc51-464b-bb80-c6863b41c840",
+      "exit_code": 0,
+      "stderr": "\u26a0 claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login \u00b7 Unset it to load your organization's connectors\n",
+      "turns": [
+        {
+          "turn": 1,
+          "task": "load_and_total",
+          "answer": "amer,4520.50\napac,4666.50\nemea,5043.50",
+          "correct": true,
+          "cost_usd": 0.28908734999999997,
+          "input_tokens": 8,
+          "cache_creation_input_tokens": 57687,
+          "cache_read_input_tokens": 92557,
+          "output_tokens": 2998,
+          "peak_request_context_tokens": 69006,
+          "model_requests": 4,
+          "tool_names": [
+            "ToolSearch",
+            "mcp__orders__list_order_ids",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order"
+          ],
+          "fixture_calls": [
+            {
+              "tool": "list_order_ids",
+              "params": {}
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-001"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-002"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-003"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-004"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-005"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-006"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-007"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-008"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-009"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-010"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-011"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-012"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-013"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-014"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-015"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-016"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-017"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-018"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-019"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-020"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-021"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-022"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-023"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-024"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-025"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-026"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-027"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-028"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-029"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-030"
+              }
+            }
+          ],
+          "fixture_call_count": 31,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 2,
+          "task": "filter_reuse",
+          "answer": "5",
+          "correct": true,
+          "cost_usd": 0.02635470000000001,
+          "input_tokens": -6,
+          "cache_creation_input_tokens": -56517,
+          "cache_read_input_tokens": -23553,
+          "output_tokens": -2914,
+          "peak_request_context_tokens": 70176,
+          "model_requests": 1,
+          "tool_names": [],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 3,
+          "task": "maximum_reuse",
+          "answer": "ORD-023,967.10",
+          "correct": true,
+          "cost_usd": 0.023109449999999976,
+          "input_tokens": 0,
+          "cache_creation_input_tokens": -1023,
+          "cache_read_input_tokens": 1170,
+          "output_tokens": 16,
+          "peak_request_context_tokens": 70323,
+          "model_requests": 1,
+          "tool_names": [],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 4,
+          "task": "averages_reuse",
+          "answer": "amer,452.05\napac,466.65\nemea,504.35",
+          "correct": true,
+          "cost_usd": 0.023112299999999975,
+          "input_tokens": 0,
+          "cache_creation_input_tokens": 21,
+          "cache_read_input_tokens": 147,
+          "output_tokens": -8,
+          "peak_request_context_tokens": 70491,
+          "model_requests": 1,
+          "tool_names": [],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 5,
+          "task": "status_reuse",
+          "answer": "7",
+          "correct": true,
+          "cost_usd": 0.022641450000000007,
+          "input_tokens": 0,
+          "cache_creation_input_tokens": -27,
+          "cache_read_input_tokens": 168,
+          "output_tokens": -28,
+          "peak_request_context_tokens": 70632,
+          "model_requests": 1,
+          "tool_names": [],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 6,
+          "task": "reset_and_refetch",
+          "answer": "amer,4520.50\napac,4666.50\nemea,5043.50",
+          "correct": true,
+          "cost_usd": 0.04783664999999998,
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 248,
+          "cache_read_input_tokens": 70964,
+          "output_tokens": 198,
+          "peak_request_context_tokens": 71021,
+          "model_requests": 2,
+          "tool_names": [
+            "ToolSearch"
+          ],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        }
+      ],
+      "all_correct": true,
+      "reuse_turns_correct": true,
+      "reset_turn_correct": true,
+      "reset_verified": true,
+      "total_cost_usd": 0.4321418999999999,
+      "peak_context_tokens": 71021,
+      "total_fixture_calls": 31,
+      "transcript": "/Users/oner/dev/personal-projects/toolplane/bench/results/transcripts/longitudinal-20260713-095957/direct-rep1.jsonl",
+      "rep": 1,
+      "model": "sonnet",
+      "record_bytes": 2000,
+      "orders_n": 30,
+      "git_sha": "871ce5366e9a425abe12c83b3b9467d5424acde0",
+      "git_dirty": false,
+      "wheel_sha256": "faa5de875240153f70144e49ffbb70a13be7a989f13c3c40b82fde12f5ec4c44",
+      "harness_sha256": "6b6adf0aaab1063add52ec5f70c652b5818f8e01ea74c9666cd1af2840d8ade5",
+      "fixtures_sha256": {
+        "order_server.py": "228caa10640462e93fa25997ebd22890859affa2289172c70ca4abdf587dfb07",
+        "distractor_server.py": "434aa008f65d64769dd30e90bd8eddf98c0328007674ab9bcee215744ae10bad",
+        "orders_data.py": "956d01f342f9e5855eb3b8f8ca3f64e645a1f190b8b8330a6f75c570418097d4",
+        "shipment_server.py": "6acf5584833b6c062a4daba5d54e8d72f684b3779fb5427455c6c7e4d26968a0",
+        "shipment_data.py": "4784a786f9f2b8fb2db98d8a3faf46999ed6894b8b22a8084629bcc2e7469413"
+      },
+      "longitudinal_harness_sha256": "3e4323e29eb2e0fa43c6a75aa9a3e3d6a0a1537fd36eaecc3da18c3656ae3c30"
+    },
+    {
+      "arm": "toolplane",
+      "session_id": "36b5ea30-9a82-43c2-abb1-24ea323f0fe9",
+      "exit_code": 0,
+      "stderr": "\u26a0 claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login \u00b7 Unset it to load your organization's connectors\n",
+      "turns": [
+        {
+          "turn": 1,
+          "task": "load_and_total",
+          "answer": "amer,4520.50\napac,4666.50\nemea,5043.50",
+          "correct": true,
+          "cost_usd": 0.21182445,
+          "input_tokens": 18,
+          "cache_creation_input_tokens": 24677,
+          "cache_read_input_tokens": 311339,
+          "output_tokens": 1722,
+          "peak_request_context_tokens": 41534,
+          "model_requests": 9,
+          "tool_names": [
+            "ToolSearch",
+            "mcp__toolplane__execute_code",
+            "mcp__toolplane__execute_code",
+            "mcp__toolplane__search_capabilities",
+            "ToolSearch",
+            "ReadMcpResourceTool",
+            "mcp__toolplane__execute_code",
+            "mcp__toolplane__execute_code"
+          ],
+          "fixture_calls": [
+            {
+              "tool": "list_order_ids",
+              "params": {}
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-001"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-002"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-003"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-004"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-005"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-006"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-007"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-008"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-009"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-010"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-011"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-012"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-013"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-014"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-015"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-016"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-017"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-018"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-019"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-020"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-021"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-022"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-023"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-024"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-025"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-026"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-027"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-028"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-029"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-030"
+              }
+            },
+            {
+              "tool": "list_order_ids",
+              "params": {}
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-001"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-002"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-003"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-004"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-005"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-006"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-007"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-008"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-009"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-010"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-011"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-012"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-013"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-014"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-015"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-016"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-017"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-018"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-019"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-020"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-021"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-022"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-023"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-024"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-025"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-026"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-027"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-028"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-029"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-030"
+              }
+            },
+            {
+              "tool": "list_order_ids",
+              "params": {}
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-001"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-002"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-003"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-004"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-005"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-006"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-007"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-008"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-009"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-010"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-011"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-012"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-013"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-014"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-015"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-016"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-017"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-018"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-019"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-020"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-021"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-022"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-023"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-024"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-025"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-026"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-027"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-028"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-029"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-030"
+              }
+            }
+          ],
+          "fixture_call_count": 93,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 2,
+          "task": "filter_reuse",
+          "answer": "5",
+          "correct": true,
+          "cost_usd": 0.02867805000000001,
+          "input_tokens": -14,
+          "cache_creation_input_tokens": -24162,
+          "cache_read_input_tokens": -227923,
+          "output_tokens": -1608,
+          "peak_request_context_tokens": 42049,
+          "model_requests": 2,
+          "tool_names": [
+            "mcp__toolplane__execute_code"
+          ],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 3,
+          "task": "maximum_reuse",
+          "answer": "ORD-023,967.10",
+          "correct": true,
+          "cost_usd": 0.028401149999999986,
+          "input_tokens": 0,
+          "cache_creation_input_tokens": -242,
+          "cache_read_input_tokens": 752,
+          "output_tokens": 27,
+          "peak_request_context_tokens": 42322,
+          "model_requests": 2,
+          "tool_names": [
+            "mcp__toolplane__execute_code"
+          ],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 4,
+          "task": "averages_reuse",
+          "answer": "amer,452.05\napac,466.65\nemea,504.35",
+          "correct": true,
+          "cost_usd": 0.029825099999999993,
+          "input_tokens": 0,
+          "cache_creation_input_tokens": 71,
+          "cache_read_input_tokens": 559,
+          "output_tokens": 66,
+          "peak_request_context_tokens": 42666,
+          "model_requests": 2,
+          "tool_names": [
+            "mcp__toolplane__execute_code"
+          ],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 5,
+          "task": "status_reuse",
+          "answer": "7",
+          "correct": true,
+          "cost_usd": 0.02797470000000002,
+          "input_tokens": 0,
+          "cache_creation_input_tokens": -116,
+          "cache_read_input_tokens": 682,
+          "output_tokens": -108,
+          "peak_request_context_tokens": 42894,
+          "model_requests": 2,
+          "tool_names": [
+            "mcp__toolplane__execute_code"
+          ],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 6,
+          "task": "reset_and_refetch",
+          "answer": "amer,4520.50\napac,4666.50\nemea,5043.50",
+          "correct": true,
+          "cost_usd": 0.04714440000000003,
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 536,
+          "cache_read_input_tokens": 43729,
+          "output_tokens": 269,
+          "peak_request_context_tokens": 43658,
+          "model_requests": 3,
+          "tool_names": [
+            "mcp__toolplane__execute_code",
+            "mcp__toolplane__execute_code"
+          ],
+          "fixture_calls": [
+            {
+              "tool": "list_order_ids",
+              "params": {}
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-001"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-002"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-003"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-004"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-005"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-006"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-007"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-008"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-009"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-010"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-011"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-012"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-013"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-014"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-015"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-016"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-017"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-018"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-019"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-020"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-021"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-022"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-023"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-024"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-025"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-026"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-027"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-028"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-029"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-030"
+              }
+            }
+          ],
+          "fixture_call_count": 31,
+          "used_reset_session": true,
+          "compaction_events": 0
+        }
+      ],
+      "all_correct": true,
+      "reuse_turns_correct": true,
+      "reset_turn_correct": true,
+      "reset_verified": true,
+      "total_cost_usd": 0.37384785000000004,
+      "peak_context_tokens": 43658,
+      "total_fixture_calls": 124,
+      "transcript": "/Users/oner/dev/personal-projects/toolplane/bench/results/transcripts/longitudinal-20260713-095957/toolplane-rep1.jsonl",
+      "rep": 1,
+      "model": "sonnet",
+      "record_bytes": 2000,
+      "orders_n": 30,
+      "git_sha": "871ce5366e9a425abe12c83b3b9467d5424acde0",
+      "git_dirty": false,
+      "wheel_sha256": "faa5de875240153f70144e49ffbb70a13be7a989f13c3c40b82fde12f5ec4c44",
+      "harness_sha256": "6b6adf0aaab1063add52ec5f70c652b5818f8e01ea74c9666cd1af2840d8ade5",
+      "fixtures_sha256": {
+        "order_server.py": "228caa10640462e93fa25997ebd22890859affa2289172c70ca4abdf587dfb07",
+        "distractor_server.py": "434aa008f65d64769dd30e90bd8eddf98c0328007674ab9bcee215744ae10bad",
+        "orders_data.py": "956d01f342f9e5855eb3b8f8ca3f64e645a1f190b8b8330a6f75c570418097d4",
+        "shipment_server.py": "6acf5584833b6c062a4daba5d54e8d72f684b3779fb5427455c6c7e4d26968a0",
+        "shipment_data.py": "4784a786f9f2b8fb2db98d8a3faf46999ed6894b8b22a8084629bcc2e7469413"
+      },
+      "longitudinal_harness_sha256": "3e4323e29eb2e0fa43c6a75aa9a3e3d6a0a1537fd36eaecc3da18c3656ae3c30"
+    },
+    {
+      "arm": "toolplane",
+      "session_id": "1e1e912e-d453-4fc9-b7e9-02e75e5672c2",
+      "exit_code": 0,
+      "stderr": "\u26a0 claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login \u00b7 Unset it to load your organization's connectors\n",
+      "turns": [
+        {
+          "turn": 1,
+          "task": "load_and_total",
+          "answer": "amer,4520.5\napac,4666.5\nemea,5043.5",
+          "correct": true,
+          "cost_usd": 0.0805167,
+          "input_tokens": 6,
+          "cache_creation_input_tokens": 13286,
+          "cache_read_input_tokens": 71454,
+          "output_tokens": 616,
+          "peak_request_context_tokens": 30143,
+          "model_requests": 3,
+          "tool_names": [
+            "ToolSearch",
+            "mcp__toolplane__execute_code"
+          ],
+          "fixture_calls": [
+            {
+              "tool": "list_order_ids",
+              "params": {}
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-001"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-002"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-003"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-004"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-005"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-006"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-007"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-008"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-009"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-010"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-011"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-012"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-013"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-014"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-015"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-016"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-017"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-018"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-019"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-020"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-021"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-022"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-023"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-024"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-025"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-026"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-027"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-028"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-029"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-030"
+              }
+            }
+          ],
+          "fixture_call_count": 31,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 2,
+          "task": "filter_reuse",
+          "answer": "5",
+          "correct": true,
+          "cost_usd": 0.02084055,
+          "input_tokens": -2,
+          "cache_creation_input_tokens": -13015,
+          "cache_read_input_tokens": -11063,
+          "output_tokens": -503,
+          "peak_request_context_tokens": 30414,
+          "model_requests": 2,
+          "tool_names": [
+            "mcp__toolplane__execute_code"
+          ],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 3,
+          "task": "maximum_reuse",
+          "answer": "ORD-023,967.10",
+          "correct": true,
+          "cost_usd": 0.021405149999999998,
+          "input_tokens": 0,
+          "cache_creation_input_tokens": 2,
+          "cache_read_input_tokens": 507,
+          "output_tokens": 27,
+          "peak_request_context_tokens": 30687,
+          "model_requests": 2,
+          "tool_names": [
+            "mcp__toolplane__execute_code"
+          ],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 4,
+          "task": "averages_reuse",
+          "answer": "amer,452.05\napac,466.65\nemea,504.35",
+          "correct": true,
+          "cost_usd": 0.02280660000000001,
+          "input_tokens": 0,
+          "cache_creation_input_tokens": 69,
+          "cache_read_input_tokens": 559,
+          "output_tokens": 65,
+          "peak_request_context_tokens": 31029,
+          "model_requests": 2,
+          "tool_names": [
+            "mcp__toolplane__execute_code"
+          ],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 5,
+          "task": "status_reuse",
+          "answer": "7",
+          "correct": true,
+          "cost_usd": 0.021517500000000023,
+          "input_tokens": 0,
+          "cache_creation_input_tokens": 30,
+          "cache_read_input_tokens": 678,
+          "output_tokens": -107,
+          "peak_request_context_tokens": 31401,
+          "model_requests": 2,
+          "tool_names": [
+            "mcp__toolplane__execute_code"
+          ],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 6,
+          "task": "reset_and_refetch",
+          "answer": "amer,4520.5\napac,4666.5\nemea,5043.5",
+          "correct": true,
+          "cost_usd": 0.03637725,
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 253,
+          "cache_read_input_tokens": 32500,
+          "output_tokens": 277,
+          "peak_request_context_tokens": 32026,
+          "model_requests": 3,
+          "tool_names": [
+            "mcp__toolplane__execute_code",
+            "mcp__toolplane__execute_code"
+          ],
+          "fixture_calls": [
+            {
+              "tool": "list_order_ids",
+              "params": {}
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-001"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-002"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-003"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-004"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-005"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-006"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-007"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-008"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-009"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-010"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-011"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-012"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-013"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-014"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-015"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-016"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-017"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-018"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-019"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-020"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-021"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-022"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-023"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-024"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-025"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-026"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-027"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-028"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-029"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-030"
+              }
+            }
+          ],
+          "fixture_call_count": 31,
+          "used_reset_session": true,
+          "compaction_events": 0
+        }
+      ],
+      "all_correct": true,
+      "reuse_turns_correct": true,
+      "reset_turn_correct": true,
+      "reset_verified": true,
+      "total_cost_usd": 0.20346375000000003,
+      "peak_context_tokens": 32026,
+      "total_fixture_calls": 62,
+      "transcript": "/Users/oner/dev/personal-projects/toolplane/bench/results/transcripts/longitudinal-20260713-095957/toolplane-rep2.jsonl",
+      "rep": 2,
+      "model": "sonnet",
+      "record_bytes": 2000,
+      "orders_n": 30,
+      "git_sha": "871ce5366e9a425abe12c83b3b9467d5424acde0",
+      "git_dirty": false,
+      "wheel_sha256": "faa5de875240153f70144e49ffbb70a13be7a989f13c3c40b82fde12f5ec4c44",
+      "harness_sha256": "6b6adf0aaab1063add52ec5f70c652b5818f8e01ea74c9666cd1af2840d8ade5",
+      "fixtures_sha256": {
+        "order_server.py": "228caa10640462e93fa25997ebd22890859affa2289172c70ca4abdf587dfb07",
+        "distractor_server.py": "434aa008f65d64769dd30e90bd8eddf98c0328007674ab9bcee215744ae10bad",
+        "orders_data.py": "956d01f342f9e5855eb3b8f8ca3f64e645a1f190b8b8330a6f75c570418097d4",
+        "shipment_server.py": "6acf5584833b6c062a4daba5d54e8d72f684b3779fb5427455c6c7e4d26968a0",
+        "shipment_data.py": "4784a786f9f2b8fb2db98d8a3faf46999ed6894b8b22a8084629bcc2e7469413"
+      },
+      "longitudinal_harness_sha256": "3e4323e29eb2e0fa43c6a75aa9a3e3d6a0a1537fd36eaecc3da18c3656ae3c30"
+    },
+    {
+      "arm": "direct",
+      "session_id": "8e430698-93ea-429d-9f5a-e3a85cdba668",
+      "exit_code": 0,
+      "stderr": "\u26a0 claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login \u00b7 Unset it to load your organization's connectors\n",
+      "turns": [
+        {
+          "turn": 1,
+          "task": "load_and_total",
+          "answer": "amer,4520.50\napac,4666.50\nemea,5043.50",
+          "correct": true,
+          "cost_usd": 0.28243229999999997,
+          "input_tokens": 8,
+          "cache_creation_input_tokens": 57668,
+          "cache_read_input_tokens": 92561,
+          "output_tokens": 2559,
+          "peak_request_context_tokens": 68983,
+          "model_requests": 4,
+          "tool_names": [
+            "ToolSearch",
+            "mcp__orders__list_order_ids",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order"
+          ],
+          "fixture_calls": [
+            {
+              "tool": "list_order_ids",
+              "params": {}
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-001"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-002"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-003"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-004"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-005"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-006"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-007"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-008"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-009"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-010"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-011"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-012"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-013"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-014"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-015"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-016"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-017"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-018"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-019"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-020"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-021"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-022"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-023"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-024"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-025"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-026"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-027"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-028"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-029"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-030"
+              }
+            }
+          ],
+          "fixture_call_count": 31,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 2,
+          "task": "filter_reuse",
+          "answer": "5",
+          "correct": true,
+          "cost_usd": 0.0257328,
+          "input_tokens": -6,
+          "cache_creation_input_tokens": -56914,
+          "cache_read_input_tokens": -23580,
+          "output_tokens": -2412,
+          "peak_request_context_tokens": 69737,
+          "model_requests": 1,
+          "tool_names": [],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 3,
+          "task": "maximum_reuse",
+          "answer": "ORD-023,967.10",
+          "correct": true,
+          "cost_usd": 0.02223900000000001,
+          "input_tokens": 0,
+          "cache_creation_input_tokens": -544,
+          "cache_read_input_tokens": 754,
+          "output_tokens": -112,
+          "peak_request_context_tokens": 69947,
+          "model_requests": 1,
+          "tool_names": [],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 4,
+          "task": "averages_reuse",
+          "answer": "amer,452.05\napac,466.65\nemea,504.35",
+          "correct": true,
+          "cost_usd": 0.022590749999999993,
+          "input_tokens": 0,
+          "cache_creation_input_tokens": -107,
+          "cache_read_input_tokens": 210,
+          "output_tokens": 46,
+          "peak_request_context_tokens": 70050,
+          "model_requests": 1,
+          "tool_names": [],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 5,
+          "task": "status_reuse",
+          "answer": "7",
+          "correct": true,
+          "cost_usd": 0.02243790000000001,
+          "input_tokens": 0,
+          "cache_creation_input_tokens": 27,
+          "cache_read_input_tokens": 103,
+          "output_tokens": -19,
+          "peak_request_context_tokens": 70180,
+          "model_requests": 1,
+          "tool_names": [],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 6,
+          "task": "reset_and_refetch",
+          "answer": "amer,4520.50\napac,4666.50\nemea,5043.50",
+          "correct": true,
+          "cost_usd": 0.49446614999999994,
+          "input_tokens": 4,
+          "cache_creation_input_tokens": 109299,
+          "cache_read_input_tokens": 92400,
+          "output_tokens": 2295,
+          "peak_request_context_tokens": 121641,
+          "model_requests": 3,
+          "tool_names": [
+            "ToolSearch",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order"
+          ],
+          "fixture_calls": [
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-001"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-002"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-003"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-004"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-005"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-006"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-007"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-008"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-009"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-010"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-011"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-012"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-013"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-014"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-015"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-016"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-017"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-018"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-019"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-020"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-021"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-022"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-023"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-024"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-025"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-026"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-027"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-028"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-029"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-030"
+              }
+            }
+          ],
+          "fixture_call_count": 30,
+          "used_reset_session": false,
+          "compaction_events": 0
+        }
+      ],
+      "all_correct": true,
+      "reuse_turns_correct": true,
+      "reset_turn_correct": true,
+      "reset_verified": true,
+      "total_cost_usd": 0.8698988999999999,
+      "peak_context_tokens": 121641,
+      "total_fixture_calls": 61,
+      "transcript": "/Users/oner/dev/personal-projects/toolplane/bench/results/transcripts/longitudinal-20260713-095957/direct-rep2.jsonl",
+      "rep": 2,
+      "model": "sonnet",
+      "record_bytes": 2000,
+      "orders_n": 30,
+      "git_sha": "871ce5366e9a425abe12c83b3b9467d5424acde0",
+      "git_dirty": false,
+      "wheel_sha256": "faa5de875240153f70144e49ffbb70a13be7a989f13c3c40b82fde12f5ec4c44",
+      "harness_sha256": "6b6adf0aaab1063add52ec5f70c652b5818f8e01ea74c9666cd1af2840d8ade5",
+      "fixtures_sha256": {
+        "order_server.py": "228caa10640462e93fa25997ebd22890859affa2289172c70ca4abdf587dfb07",
+        "distractor_server.py": "434aa008f65d64769dd30e90bd8eddf98c0328007674ab9bcee215744ae10bad",
+        "orders_data.py": "956d01f342f9e5855eb3b8f8ca3f64e645a1f190b8b8330a6f75c570418097d4",
+        "shipment_server.py": "6acf5584833b6c062a4daba5d54e8d72f684b3779fb5427455c6c7e4d26968a0",
+        "shipment_data.py": "4784a786f9f2b8fb2db98d8a3faf46999ed6894b8b22a8084629bcc2e7469413"
+      },
+      "longitudinal_harness_sha256": "3e4323e29eb2e0fa43c6a75aa9a3e3d6a0a1537fd36eaecc3da18c3656ae3c30"
+    },
+    {
+      "arm": "direct",
+      "session_id": "57f09e1f-3e32-4653-bc01-a0f160ea55f8",
+      "exit_code": 0,
+      "stderr": "\u26a0 claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login \u00b7 Unset it to load your organization's connectors\n",
+      "turns": [
+        {
+          "turn": 1,
+          "task": "load_and_total",
+          "answer": "amer,4520.50\napac,4666.50\nemea,5043.50",
+          "correct": true,
+          "cost_usd": 0.28141425,
+          "input_tokens": 8,
+          "cache_creation_input_tokens": 57685,
+          "cache_read_input_tokens": 92555,
+          "output_tokens": 2487,
+          "peak_request_context_tokens": 69006,
+          "model_requests": 4,
+          "tool_names": [
+            "ToolSearch",
+            "mcp__orders__list_order_ids",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order"
+          ],
+          "fixture_calls": [
+            {
+              "tool": "list_order_ids",
+              "params": {}
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-001"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-002"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-003"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-004"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-005"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-006"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-007"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-008"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-009"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-010"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-011"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-012"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-013"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-014"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-015"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-016"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-017"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-018"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-019"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-020"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-021"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-022"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-023"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-024"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-025"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-026"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-027"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-028"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-029"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-030"
+              }
+            }
+          ],
+          "fixture_call_count": 31,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 2,
+          "task": "filter_reuse",
+          "answer": "5",
+          "correct": true,
+          "cost_usd": 0.024738450000000023,
+          "input_tokens": -6,
+          "cache_creation_input_tokens": -57026,
+          "cache_read_input_tokens": -23551,
+          "output_tokens": -2383,
+          "peak_request_context_tokens": 69665,
+          "model_requests": 1,
+          "tool_names": [],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 3,
+          "task": "maximum_reuse",
+          "answer": "ORD-023,967.10",
+          "correct": true,
+          "cost_usd": 0.023211150000000014,
+          "input_tokens": 0,
+          "cache_creation_input_tokens": -492,
+          "cache_read_input_tokens": 659,
+          "output_tokens": 8,
+          "peak_request_context_tokens": 69832,
+          "model_requests": 1,
+          "tool_names": [],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 4,
+          "task": "averages_reuse",
+          "answer": "amer,452.05\napac,466.65\nemea,504.35",
+          "correct": true,
+          "cost_usd": 0.022799999999999987,
+          "input_tokens": 0,
+          "cache_creation_input_tokens": 13,
+          "cache_read_input_tokens": 167,
+          "output_tokens": -34,
+          "peak_request_context_tokens": 70012,
+          "model_requests": 1,
+          "tool_names": [],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 5,
+          "task": "status_reuse",
+          "answer": "7",
+          "correct": true,
+          "cost_usd": 0.022055250000000026,
+          "input_tokens": 0,
+          "cache_creation_input_tokens": -53,
+          "cache_read_input_tokens": 180,
+          "output_tokens": -40,
+          "peak_request_context_tokens": 70139,
+          "model_requests": 1,
+          "tool_names": [],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 6,
+          "task": "reset_and_refetch",
+          "answer": "amer,4520.50\napac,4666.50\nemea,5043.50",
+          "correct": true,
+          "cost_usd": 0.055865549999999986,
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 348,
+          "cache_read_input_tokens": 70431,
+          "output_tokens": 758,
+          "peak_request_context_tokens": 70614,
+          "model_requests": 2,
+          "tool_names": [
+            "ToolSearch"
+          ],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        }
+      ],
+      "all_correct": true,
+      "reuse_turns_correct": true,
+      "reset_turn_correct": true,
+      "reset_verified": true,
+      "total_cost_usd": 0.43008465,
+      "peak_context_tokens": 70614,
+      "total_fixture_calls": 31,
+      "transcript": "/Users/oner/dev/personal-projects/toolplane/bench/results/transcripts/longitudinal-20260713-095957/direct-rep3.jsonl",
+      "rep": 3,
+      "model": "sonnet",
+      "record_bytes": 2000,
+      "orders_n": 30,
+      "git_sha": "871ce5366e9a425abe12c83b3b9467d5424acde0",
+      "git_dirty": false,
+      "wheel_sha256": "faa5de875240153f70144e49ffbb70a13be7a989f13c3c40b82fde12f5ec4c44",
+      "harness_sha256": "6b6adf0aaab1063add52ec5f70c652b5818f8e01ea74c9666cd1af2840d8ade5",
+      "fixtures_sha256": {
+        "order_server.py": "228caa10640462e93fa25997ebd22890859affa2289172c70ca4abdf587dfb07",
+        "distractor_server.py": "434aa008f65d64769dd30e90bd8eddf98c0328007674ab9bcee215744ae10bad",
+        "orders_data.py": "956d01f342f9e5855eb3b8f8ca3f64e645a1f190b8b8330a6f75c570418097d4",
+        "shipment_server.py": "6acf5584833b6c062a4daba5d54e8d72f684b3779fb5427455c6c7e4d26968a0",
+        "shipment_data.py": "4784a786f9f2b8fb2db98d8a3faf46999ed6894b8b22a8084629bcc2e7469413"
+      },
+      "longitudinal_harness_sha256": "3e4323e29eb2e0fa43c6a75aa9a3e3d6a0a1537fd36eaecc3da18c3656ae3c30"
+    },
+    {
+      "arm": "toolplane",
+      "session_id": "460839b7-43b8-4633-80c8-e08225a5cd22",
+      "exit_code": 0,
+      "stderr": "\u26a0 claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login \u00b7 Unset it to load your organization's connectors\n",
+      "turns": [
+        {
+          "turn": 1,
+          "task": "load_and_total",
+          "answer": "amer,4520.50\napac,4666.50\nemea,5043.50",
+          "correct": true,
+          "cost_usd": 0.14650425,
+          "input_tokens": 16,
+          "cache_creation_input_tokens": 15015,
+          "cache_read_input_tokens": 223700,
+          "output_tokens": 1536,
+          "peak_request_context_tokens": 31872,
+          "model_requests": 8,
+          "tool_names": [
+            "ToolSearch",
+            "mcp__toolplane__execute_code",
+            "mcp__toolplane__execute_code",
+            "mcp__toolplane__search_capabilities",
+            "ToolSearch",
+            "ReadMcpResourceTool",
+            "mcp__toolplane__execute_code"
+          ],
+          "fixture_calls": [
+            {
+              "tool": "list_order_ids",
+              "params": {}
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-001"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-002"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-003"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-004"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-005"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-006"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-007"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-008"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-009"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-010"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-011"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-012"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-013"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-014"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-015"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-016"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-017"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-018"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-019"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-020"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-021"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-022"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-023"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-024"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-025"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-026"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-027"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-028"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-029"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-030"
+              }
+            },
+            {
+              "tool": "list_order_ids",
+              "params": {}
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-001"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-002"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-003"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-004"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-005"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-006"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-007"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-008"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-009"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-010"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-011"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-012"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-013"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-014"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-015"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-016"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-017"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-018"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-019"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-020"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-021"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-022"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-023"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-024"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-025"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-026"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-027"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-028"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-029"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-030"
+              }
+            }
+          ],
+          "fixture_call_count": 62,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 2,
+          "task": "filter_reuse",
+          "answer": "5",
+          "correct": true,
+          "cost_usd": 0.022346699999999997,
+          "input_tokens": -12,
+          "cache_creation_input_tokens": -14603,
+          "cache_read_input_tokens": -159851,
+          "output_tokens": -1427,
+          "peak_request_context_tokens": 32284,
+          "model_requests": 2,
+          "tool_names": [
+            "mcp__toolplane__execute_code"
+          ],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 3,
+          "task": "maximum_reuse",
+          "answer": "ORD-023,967.10",
+          "correct": true,
+          "cost_usd": 0.0223584,
+          "input_tokens": 0,
+          "cache_creation_input_tokens": -148,
+          "cache_read_input_tokens": 789,
+          "output_tokens": 22,
+          "peak_request_context_tokens": 32548,
+          "model_requests": 2,
+          "tool_names": [
+            "mcp__toolplane__execute_code"
+          ],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 4,
+          "task": "averages_reuse",
+          "answer": "amer,452.05\napac,466.65\nemea,504.35",
+          "correct": true,
+          "cost_usd": 0.023945699999999986,
+          "input_tokens": 0,
+          "cache_creation_input_tokens": 80,
+          "cache_read_input_tokens": 541,
+          "output_tokens": 75,
+          "peak_request_context_tokens": 32892,
+          "model_requests": 2,
+          "tool_names": [
+            "mcp__toolplane__execute_code"
+          ],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 5,
+          "task": "status_reuse",
+          "answer": "7",
+          "correct": true,
+          "cost_usd": 0.022095300000000012,
+          "input_tokens": 0,
+          "cache_creation_input_tokens": -116,
+          "cache_read_input_tokens": 682,
+          "output_tokens": -108,
+          "peak_request_context_tokens": 33120,
+          "model_requests": 2,
+          "tool_names": [
+            "mcp__toolplane__execute_code"
+          ],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 6,
+          "task": "reset_and_refetch",
+          "answer": "amer,4520.50\napac,4666.50\nemea,5043.50",
+          "correct": true,
+          "cost_usd": 0.037735649999999954,
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 417,
+          "cache_read_input_tokens": 33952,
+          "output_tokens": 259,
+          "peak_request_context_tokens": 33765,
+          "model_requests": 3,
+          "tool_names": [
+            "mcp__toolplane__execute_code",
+            "mcp__toolplane__execute_code"
+          ],
+          "fixture_calls": [
+            {
+              "tool": "list_order_ids",
+              "params": {}
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-001"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-002"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-003"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-004"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-005"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-006"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-007"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-008"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-009"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-010"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-011"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-012"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-013"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-014"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-015"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-016"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-017"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-018"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-019"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-020"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-021"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-022"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-023"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-024"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-025"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-026"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-027"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-028"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-029"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-030"
+              }
+            }
+          ],
+          "fixture_call_count": 31,
+          "used_reset_session": true,
+          "compaction_events": 0
+        }
+      ],
+      "all_correct": true,
+      "reuse_turns_correct": true,
+      "reset_turn_correct": true,
+      "reset_verified": true,
+      "total_cost_usd": 0.27498599999999995,
+      "peak_context_tokens": 33765,
+      "total_fixture_calls": 93,
+      "transcript": "/Users/oner/dev/personal-projects/toolplane/bench/results/transcripts/longitudinal-20260713-095957/toolplane-rep3.jsonl",
+      "rep": 3,
+      "model": "sonnet",
+      "record_bytes": 2000,
+      "orders_n": 30,
+      "git_sha": "871ce5366e9a425abe12c83b3b9467d5424acde0",
+      "git_dirty": false,
+      "wheel_sha256": "faa5de875240153f70144e49ffbb70a13be7a989f13c3c40b82fde12f5ec4c44",
+      "harness_sha256": "6b6adf0aaab1063add52ec5f70c652b5818f8e01ea74c9666cd1af2840d8ade5",
+      "fixtures_sha256": {
+        "order_server.py": "228caa10640462e93fa25997ebd22890859affa2289172c70ca4abdf587dfb07",
+        "distractor_server.py": "434aa008f65d64769dd30e90bd8eddf98c0328007674ab9bcee215744ae10bad",
+        "orders_data.py": "956d01f342f9e5855eb3b8f8ca3f64e645a1f190b8b8330a6f75c570418097d4",
+        "shipment_server.py": "6acf5584833b6c062a4daba5d54e8d72f684b3779fb5427455c6c7e4d26968a0",
+        "shipment_data.py": "4784a786f9f2b8fb2db98d8a3faf46999ed6894b8b22a8084629bcc2e7469413"
+      },
+      "longitudinal_harness_sha256": "3e4323e29eb2e0fa43c6a75aa9a3e3d6a0a1537fd36eaecc3da18c3656ae3c30"
+    },
+    {
+      "arm": "toolplane",
+      "session_id": "fd178c50-6725-4d4c-b82d-e33ad08173ff",
+      "exit_code": 0,
+      "stderr": "\u26a0 claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login \u00b7 Unset it to load your organization's connectors\n",
+      "turns": [
+        {
+          "turn": 1,
+          "task": "load_and_total",
+          "answer": "amer,4520.50\napac,4666.50\nemea,5043.50",
+          "correct": true,
+          "cost_usd": 0.0974592,
+          "input_tokens": 8,
+          "cache_creation_input_tokens": 15778,
+          "cache_read_input_tokens": 103859,
+          "output_tokens": 474,
+          "peak_request_context_tokens": 32635,
+          "model_requests": 4,
+          "tool_names": [
+            "ToolSearch",
+            "mcp__toolplane__execute_code",
+            "mcp__toolplane__execute_code"
+          ],
+          "fixture_calls": [
+            {
+              "tool": "list_order_ids",
+              "params": {}
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-001"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-002"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-003"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-004"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-005"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-006"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-007"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-008"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-009"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-010"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-011"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-012"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-013"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-014"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-015"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-016"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-017"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-018"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-019"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-020"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-021"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-022"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-023"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-024"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-025"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-026"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-027"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-028"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-029"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-030"
+              }
+            }
+          ],
+          "fixture_call_count": 31,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 2,
+          "task": "filter_reuse",
+          "answer": "5",
+          "correct": true,
+          "cost_usd": 0.022260749999999996,
+          "input_tokens": -4,
+          "cache_creation_input_tokens": -15511,
+          "cache_read_input_tokens": -38484,
+          "output_tokens": -365,
+          "peak_request_context_tokens": 32902,
+          "model_requests": 2,
+          "tool_names": [
+            "mcp__toolplane__execute_code"
+          ],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 3,
+          "task": "maximum_reuse",
+          "answer": "ORD-023,967.10",
+          "correct": true,
+          "cost_usd": 0.022729200000000005,
+          "input_tokens": 0,
+          "cache_creation_input_tokens": -3,
+          "cache_read_input_tokens": 499,
+          "output_tokens": 22,
+          "peak_request_context_tokens": 33166,
+          "model_requests": 2,
+          "tool_names": [
+            "mcp__toolplane__execute_code"
+          ],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 4,
+          "task": "averages_reuse",
+          "answer": "amer,452.05\napac,466.65\nemea,504.35",
+          "correct": true,
+          "cost_usd": 0.02442525000000001,
+          "input_tokens": 0,
+          "cache_creation_input_tokens": 85,
+          "cache_read_input_tokens": 541,
+          "output_tokens": 81,
+          "peak_request_context_tokens": 33515,
+          "model_requests": 2,
+          "tool_names": [
+            "mcp__toolplane__execute_code"
+          ],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 5,
+          "task": "status_reuse",
+          "answer": "7",
+          "correct": true,
+          "cost_usd": 0.023056349999999975,
+          "input_tokens": 0,
+          "cache_creation_input_tokens": 24,
+          "cache_read_input_tokens": 837,
+          "output_tokens": -114,
+          "peak_request_context_tokens": 33888,
+          "model_requests": 2,
+          "tool_names": [
+            "mcp__toolplane__execute_code"
+          ],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 6,
+          "task": "reset_and_refetch",
+          "answer": "amer,4520.50\napac,4666.50\nemea,5043.50",
+          "correct": true,
+          "cost_usd": 0.03766710000000001,
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 203,
+          "cache_read_input_tokens": 34845,
+          "output_tokens": 226,
+          "peak_request_context_tokens": 34464,
+          "model_requests": 3,
+          "tool_names": [
+            "mcp__toolplane__execute_code",
+            "mcp__toolplane__execute_code"
+          ],
+          "fixture_calls": [
+            {
+              "tool": "list_order_ids",
+              "params": {}
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-001"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-002"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-003"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-004"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-005"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-006"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-007"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-008"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-009"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-010"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-011"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-012"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-013"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-014"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-015"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-016"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-017"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-018"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-019"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-020"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-021"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-022"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-023"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-024"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-025"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-026"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-027"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-028"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-029"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-030"
+              }
+            }
+          ],
+          "fixture_call_count": 31,
+          "used_reset_session": true,
+          "compaction_events": 0
+        }
+      ],
+      "all_correct": true,
+      "reuse_turns_correct": true,
+      "reset_turn_correct": true,
+      "reset_verified": true,
+      "total_cost_usd": 0.22759785,
+      "peak_context_tokens": 34464,
+      "total_fixture_calls": 62,
+      "transcript": "/Users/oner/dev/personal-projects/toolplane/bench/results/transcripts/longitudinal-20260713-095957/toolplane-rep4.jsonl",
+      "rep": 4,
+      "model": "sonnet",
+      "record_bytes": 2000,
+      "orders_n": 30,
+      "git_sha": "871ce5366e9a425abe12c83b3b9467d5424acde0",
+      "git_dirty": false,
+      "wheel_sha256": "faa5de875240153f70144e49ffbb70a13be7a989f13c3c40b82fde12f5ec4c44",
+      "harness_sha256": "6b6adf0aaab1063add52ec5f70c652b5818f8e01ea74c9666cd1af2840d8ade5",
+      "fixtures_sha256": {
+        "order_server.py": "228caa10640462e93fa25997ebd22890859affa2289172c70ca4abdf587dfb07",
+        "distractor_server.py": "434aa008f65d64769dd30e90bd8eddf98c0328007674ab9bcee215744ae10bad",
+        "orders_data.py": "956d01f342f9e5855eb3b8f8ca3f64e645a1f190b8b8330a6f75c570418097d4",
+        "shipment_server.py": "6acf5584833b6c062a4daba5d54e8d72f684b3779fb5427455c6c7e4d26968a0",
+        "shipment_data.py": "4784a786f9f2b8fb2db98d8a3faf46999ed6894b8b22a8084629bcc2e7469413"
+      },
+      "longitudinal_harness_sha256": "3e4323e29eb2e0fa43c6a75aa9a3e3d6a0a1537fd36eaecc3da18c3656ae3c30"
+    },
+    {
+      "arm": "direct",
+      "session_id": "c4933477-6795-4193-a416-db7111683c83",
+      "exit_code": 0,
+      "stderr": "\u26a0 claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login \u00b7 Unset it to load your organization's connectors\n",
+      "turns": [
+        {
+          "turn": 1,
+          "task": "load_and_total",
+          "answer": "amer,4520.5\napac,4666.5\nemea,5043.5",
+          "correct": true,
+          "cost_usd": 0.2957283,
+          "input_tokens": 8,
+          "cache_creation_input_tokens": 57766,
+          "cache_read_input_tokens": 92556,
+          "output_tokens": 3421,
+          "peak_request_context_tokens": 69028,
+          "model_requests": 4,
+          "tool_names": [
+            "ToolSearch",
+            "mcp__orders__list_order_ids",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order"
+          ],
+          "fixture_calls": [
+            {
+              "tool": "list_order_ids",
+              "params": {}
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-001"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-002"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-003"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-004"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-005"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-006"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-007"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-008"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-009"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-010"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-011"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-012"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-013"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-014"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-015"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-016"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-017"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-018"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-019"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-020"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-021"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-022"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-023"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-024"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-025"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-026"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-027"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-028"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-029"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-030"
+              }
+            }
+          ],
+          "fixture_call_count": 31,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 2,
+          "task": "filter_reuse",
+          "answer": "5",
+          "correct": true,
+          "cost_usd": 0.02818379999999998,
+          "input_tokens": -6,
+          "cache_creation_input_tokens": -56194,
+          "cache_read_input_tokens": -23530,
+          "output_tokens": -3316,
+          "peak_request_context_tokens": 70600,
+          "model_requests": 1,
+          "tool_names": [],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 3,
+          "task": "maximum_reuse",
+          "answer": "ORD-023,967.10",
+          "correct": true,
+          "cost_usd": 0.023315399999999986,
+          "input_tokens": 0,
+          "cache_creation_input_tokens": -1404,
+          "cache_read_input_tokens": 1572,
+          "output_tokens": -5,
+          "peak_request_context_tokens": 70768,
+          "model_requests": 1,
+          "tool_names": [],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 4,
+          "task": "averages_reuse",
+          "answer": "amer,452.05\napac,466.65\nemea,504.35",
+          "correct": true,
+          "cost_usd": 0.023305799999999988,
+          "input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 168,
+          "output_tokens": -4,
+          "peak_request_context_tokens": 70936,
+          "model_requests": 1,
+          "tool_names": [],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 5,
+          "task": "status_reuse",
+          "answer": "7",
+          "correct": true,
+          "cost_usd": 0.02278619999999998,
+          "input_tokens": 0,
+          "cache_creation_input_tokens": -24,
+          "cache_read_input_tokens": 168,
+          "output_tokens": -32,
+          "peak_request_context_tokens": 71080,
+          "model_requests": 1,
+          "tool_names": [],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        },
+        {
+          "turn": 6,
+          "task": "reset_and_refetch",
+          "answer": "amer,4520.5\napac,4666.5\nemea,5043.5",
+          "correct": true,
+          "cost_usd": 0.04861169999999998,
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 244,
+          "cache_read_input_tokens": 71415,
+          "output_tokens": 232,
+          "peak_request_context_tokens": 71468,
+          "model_requests": 2,
+          "tool_names": [
+            "ToolSearch"
+          ],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "compaction_events": 0
+        }
+      ],
+      "all_correct": true,
+      "reuse_turns_correct": true,
+      "reset_turn_correct": true,
+      "reset_verified": true,
+      "total_cost_usd": 0.4419311999999999,
+      "peak_context_tokens": 71468,
+      "total_fixture_calls": 31,
+      "transcript": "/Users/oner/dev/personal-projects/toolplane/bench/results/transcripts/longitudinal-20260713-095957/direct-rep4.jsonl",
+      "rep": 4,
+      "model": "sonnet",
+      "record_bytes": 2000,
+      "orders_n": 30,
+      "git_sha": "871ce5366e9a425abe12c83b3b9467d5424acde0",
+      "git_dirty": false,
+      "wheel_sha256": "faa5de875240153f70144e49ffbb70a13be7a989f13c3c40b82fde12f5ec4c44",
+      "harness_sha256": "6b6adf0aaab1063add52ec5f70c652b5818f8e01ea74c9666cd1af2840d8ade5",
+      "fixtures_sha256": {
+        "order_server.py": "228caa10640462e93fa25997ebd22890859affa2289172c70ca4abdf587dfb07",
+        "distractor_server.py": "434aa008f65d64769dd30e90bd8eddf98c0328007674ab9bcee215744ae10bad",
+        "orders_data.py": "956d01f342f9e5855eb3b8f8ca3f64e645a1f190b8b8330a6f75c570418097d4",
+        "shipment_server.py": "6acf5584833b6c062a4daba5d54e8d72f684b3779fb5427455c6c7e4d26968a0",
+        "shipment_data.py": "4784a786f9f2b8fb2db98d8a3faf46999ed6894b8b22a8084629bcc2e7469413"
+      },
+      "longitudinal_harness_sha256": "3e4323e29eb2e0fa43c6a75aa9a3e3d6a0a1537fd36eaecc3da18c3656ae3c30"
+    }
+  ],
+  "snapshot_scaling": [
+    {
+      "namespace_payload_bytes": 1000,
+      "snapshot_bytes": 1207,
+      "dump_ms_median": 0.00100000761449337,
+      "dump_ms_range": [
+        0.0007499475032091141,
+        0.04237517714500427
+      ],
+      "dump_python_peak_bytes_median": 1240,
+      "noop_execute_ms_median": 0.19637495279312134,
+      "noop_execute_ms_range": [
+        0.16279099509119987,
+        0.30795810744166374
+      ],
+      "repeats": 7
+    },
+    {
+      "namespace_payload_bytes": 100000,
+      "snapshot_bytes": 100211,
+      "dump_ms_median": 0.017124926671385765,
+      "dump_ms_range": [
+        0.011665979400277138,
+        0.05037500523030758
+      ],
+      "dump_python_peak_bytes_median": 100244,
+      "noop_execute_ms_median": 0.19441707991063595,
+      "noop_execute_ms_range": [
+        0.159708084538579,
+        0.23099989630281925
+      ],
+      "repeats": 7
+    },
+    {
+      "namespace_payload_bytes": 10000000,
+      "snapshot_bytes": 10000215,
+      "dump_ms_median": 2.6221671141684055,
+      "dump_ms_range": [
+        1.899499911814928,
+        5.064542172476649
+      ],
+      "dump_python_peak_bytes_median": 10000248,
+      "noop_execute_ms_median": 3.4846668131649494,
+      "noop_execute_ms_range": [
+        3.164874855428934,
+        3.970875171944499
+      ],
+      "repeats": 7
+    }
+  ],
+  "snapshot_provenance": {
+    "git_sha": "871ce5366e9a425abe12c83b3b9467d5424acde0",
+    "git_dirty": false,
+    "wheel_sha256": "faa5de875240153f70144e49ffbb70a13be7a989f13c3c40b82fde12f5ec4c44",
+    "harness_sha256": "6b6adf0aaab1063add52ec5f70c652b5818f8e01ea74c9666cd1af2840d8ade5",
+    "fixtures_sha256": {
+      "order_server.py": "228caa10640462e93fa25997ebd22890859affa2289172c70ca4abdf587dfb07",
+      "distractor_server.py": "434aa008f65d64769dd30e90bd8eddf98c0328007674ab9bcee215744ae10bad",
+      "orders_data.py": "956d01f342f9e5855eb3b8f8ca3f64e645a1f190b8b8330a6f75c570418097d4",
+      "shipment_server.py": "6acf5584833b6c062a4daba5d54e8d72f684b3779fb5427455c6c7e4d26968a0",
+      "shipment_data.py": "4784a786f9f2b8fb2db98d8a3faf46999ed6894b8b22a8084629bcc2e7469413"
+    },
+    "longitudinal_harness_sha256": "3e4323e29eb2e0fa43c6a75aa9a3e3d6a0a1537fd36eaecc3da18c3656ae3c30"
+  }
+}

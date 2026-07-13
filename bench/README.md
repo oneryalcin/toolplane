@@ -96,6 +96,21 @@ endpoint inside a cell. This measures the interaction between response size
 and API shape; it does not treat a deliberately missing bulk endpoint as an
 inherent limitation of direct MCP.
 
+## Longitudinal sessions (#119)
+
+`longitudinal.py` sends six related user turns through one streaming Claude
+Code process, so the conversation and the stdio MCP process stay alive
+together. It measures per-turn cumulative-cost deltas, peak request context,
+real fixture calls, session reuse, compaction events, and a separately scored
+`reset_session` + refetch turn. Prompts are sent only after the prior `result`
+event; pre-buffering stream-json messages can steer an in-flight turn instead
+of creating a clean next turn.
+
+The same script separately measures Monty's required pre-run snapshot at
+1 KB, 100 KB, and 10 MB of live namespace state. The snapshot worker runs
+against the frozen wheel, and result provenance includes the longitudinal
+harness hash as well as the ordinary wheel, fixture, and base-harness hashes.
+
 ## Run it
 
 ```bash
@@ -103,6 +118,8 @@ uv run python bench/run.py --reps 3            # full matrix, 24 paid runs
 uv run python bench/run.py --reps 1 --tasks single   # cheap smoke
 uv run python bench/run.py --reps 3 --tasks loop,single --servers 1,5,15   # M-axis, 36 paid runs
 uv run python bench/run.py --reps 3 --tasks loop --arms direct,toolplane --servers 1 --record-bytes 0,2000,20000 --granularity fetch-one,bulk  # #117, 36 runs
+uv run python bench/longitudinal.py --reps 4 --model sonnet   # #119, 8 six-turn sessions
+uv run python bench/longitudinal.py --snapshot-only          # free local snapshot microbench
 ```
 
 Requires the `claude` CLI on PATH and an authenticated session. Results
