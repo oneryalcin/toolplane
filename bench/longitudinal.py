@@ -255,18 +255,48 @@ def _is_dedicated_reset_code(code: str) -> bool:
 
 
 def _uses_reset_contract(events: list[dict[str, Any]]) -> bool:
-    codes = []
-    for event in events:
+    reset_index: int | None = None
+    reset_tool_id: str | None = None
+    later_execute_index: int | None = None
+    for index, event in enumerate(events):
         if event.get("type") != "assistant":
             continue
+        tool_uses = [
+            block
+            for block in event.get("message", {}).get("content", [])
+            if block.get("type") == "tool_use"
+        ]
+        executes = [
+            block
+            for block in tool_uses
+            if block.get("name", "").endswith("execute_code")
+        ]
+        if not executes:
+            continue
+        if reset_index is None:
+            if (
+                len(tool_uses) != 1
+                or len(executes) != 1
+                or not _is_dedicated_reset_code(
+                    str(executes[0].get("input", {}).get("code", ""))
+                )
+            ):
+                return False
+            reset_index = index
+            reset_tool_id = str(executes[0].get("id", ""))
+        else:
+            later_execute_index = index
+            break
+    if reset_index is None or not reset_tool_id or later_execute_index is None:
+        return False
+    for event in events[reset_index + 1 : later_execute_index]:
         for block in event.get("message", {}).get("content", []):
             if (
-                block.get("type") != "tool_use"
-                or not block.get("name", "").endswith("execute_code")
+                block.get("type") == "tool_result"
+                and block.get("tool_use_id") == reset_tool_id
             ):
-                continue
-            codes.append(str(block.get("input", {}).get("code", "")))
-    return len(codes) >= 2 and _is_dedicated_reset_code(codes[0])
+                return block.get("is_error") is not True
+    return False
 
 
 def _call_log_rows(path: Path) -> list[dict[str, Any]]:

@@ -40,6 +40,7 @@ def test_stream_metrics_extract_context_tools_answer_and_reset() -> None:
                 "content": [
                     {
                         "type": "tool_use",
+                        "id": "reset-1",
                         "name": "mcp__toolplane__execute_code",
                         "input": {"code": "await reset_session()"},
                     }
@@ -52,6 +53,20 @@ def test_stream_metrics_extract_context_tools_answer_and_reset() -> None:
     assert longitudinal._answer(result) == "42"
     assert longitudinal._context_tokens(events) == 60
     assert longitudinal._tool_names(events) == ["mcp__toolplane__execute_code"]
+    events.append(
+        {
+            "type": "user",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "reset-1",
+                        "content": "reset",
+                    }
+                ]
+            },
+        }
+    )
     events.append(
         {
             "type": "assistant",
@@ -132,13 +147,14 @@ def test_reset_detector_rejects_search_and_same_execution() -> None:
 
 
 def test_reset_detector_rejects_fixture_work_before_reset() -> None:
-    def execute(code: str) -> dict:
+    def execute(code: str, tool_id: str) -> dict:
         return {
             "type": "assistant",
             "message": {
                 "content": [
                     {
                         "type": "tool_use",
+                        "id": tool_id,
                         "name": "mcp__toolplane__execute_code",
                         "input": {"code": code},
                     }
@@ -147,12 +163,52 @@ def test_reset_detector_rejects_fixture_work_before_reset() -> None:
         }
 
     events = [
-        execute("return await orders_list_order_ids()"),
-        execute("await reset_session()"),
-        execute('return "cached answer"'),
+        execute("return await orders_list_order_ids()", "prefetch"),
+        execute("await reset_session()", "reset"),
+        execute('return "cached answer"', "answer"),
     ]
 
     assert not longitudinal._uses_reset_contract(events)
+
+
+def test_reset_detector_rejects_parallel_or_failed_reset() -> None:
+    reset = {
+        "type": "tool_use",
+        "id": "reset",
+        "name": "mcp__toolplane__execute_code",
+        "input": {"code": "await reset_session()"},
+    }
+    calculation = {
+        "type": "tool_use",
+        "id": "calculation",
+        "name": "mcp__toolplane__execute_code",
+        "input": {"code": "return 42"},
+    }
+    failed_result = {
+        "type": "user",
+        "message": {
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "reset",
+                    "is_error": True,
+                    "content": "reset failed",
+                }
+            ]
+        },
+    }
+
+    parallel = [
+        {"type": "assistant", "message": {"content": [reset, calculation]}}
+    ]
+    failed = [
+        {"type": "assistant", "message": {"content": [reset]}},
+        failed_result,
+        {"type": "assistant", "message": {"content": [calculation]}},
+    ]
+
+    assert not longitudinal._uses_reset_contract(parallel)
+    assert not longitudinal._uses_reset_contract(failed)
 
 
 def test_call_log_is_wired_through_both_arms(tmp_path: Path) -> None:
