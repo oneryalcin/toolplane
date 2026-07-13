@@ -52,7 +52,56 @@ def test_stream_metrics_extract_context_tools_answer_and_reset() -> None:
     assert longitudinal._answer(result) == "42"
     assert longitudinal._context_tokens(events) == 60
     assert longitudinal._tool_names(events) == ["mcp__toolplane__execute_code"]
-    assert longitudinal._uses_reset(events)
+    events.append(
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "mcp__toolplane__execute_code",
+                        "input": {"code": "return 1"},
+                    }
+                ]
+            },
+        }
+    )
+    assert longitudinal._uses_reset_contract(events)
+
+
+def test_reset_detector_rejects_search_and_same_execution() -> None:
+    search = [
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "ToolSearch",
+                        "input": {"query": "reset_session"},
+                    }
+                ]
+            },
+        }
+    ]
+    combined = [
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "mcp__toolplane__execute_code",
+                        "input": {
+                            "code": "await reset_session()\nreturn await orders_list_order_ids()"
+                        },
+                    }
+                ]
+            },
+        }
+    ]
+    assert not longitudinal._uses_reset_contract(search)
+    assert not longitudinal._uses_reset_contract(combined)
 
 
 def test_call_log_is_wired_through_both_arms(tmp_path: Path) -> None:

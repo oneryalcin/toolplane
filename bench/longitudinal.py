@@ -209,15 +209,21 @@ def _tool_names(events: list[dict[str, Any]]) -> list[str]:
     return names
 
 
-def _uses_reset(events: list[dict[str, Any]]) -> bool:
+def _uses_reset_contract(events: list[dict[str, Any]]) -> bool:
+    codes = []
     for event in events:
         if event.get("type") != "assistant":
             continue
         for block in event.get("message", {}).get("content", []):
-            if block.get("type") != "tool_use":
+            if (
+                block.get("type") != "tool_use"
+                or not block.get("name", "").endswith("execute_code")
+            ):
                 continue
-            if "reset_session" in json.dumps(block.get("input", {})):
-                return True
+            codes.append(str(block.get("input", {}).get("code", "")))
+    for index, code in enumerate(codes[:-1]):
+        if "await reset_session()" in code and "orders_" not in code:
+            return True
     return False
 
 
@@ -361,6 +367,7 @@ def run_session(
             turn_calls = calls[prior_calls:]
             prior_calls = len(calls)
             answer = _answer(result)
+            used_reset_contract = _uses_reset_contract(events)
             turns.append(
                 {
                     "turn": index,
@@ -379,7 +386,7 @@ def run_session(
                     "tool_names": _tool_names(events),
                     "fixture_calls": turn_calls,
                     "fixture_call_count": len(turn_calls),
-                    "used_reset_session": _uses_reset(events),
+                    "used_reset_session": used_reset_contract,
                     "compaction_events": sum(
                         "compact" in str(event.get("subtype", "")).lower()
                         or bool(event.get("message", {}).get("context_management"))
@@ -410,7 +417,12 @@ def run_session(
         "reuse_turns_correct": all(turn["correct"] for turn in turns[:5]),
         "reset_turn_correct": turns[-1]["correct"],
         "reset_verified": (
-            turns[-1]["used_reset_session"] if arm == "toolplane" else True
+            (
+                turns[-1]["used_reset_session"]
+                and turns[-1]["fixture_call_count"] > 0
+            )
+            if arm == "toolplane"
+            else True
         ),
         "total_cost_usd": previous_cumulative["cost"],
         "peak_context_tokens": max(
