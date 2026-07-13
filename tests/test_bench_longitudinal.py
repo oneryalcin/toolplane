@@ -122,6 +122,8 @@ def test_reset_detector_rejects_search_and_same_execution() -> None:
         'return "done"\nawait reset_session()',
         'raise Exception("stop")\nawait reset_session()',
         'await reset_session()\nmarker = "not dedicated"',
+        "await reset_session(1)",
+        "await reset_session(unexpected=True)",
     ):
         assert not longitudinal._is_dedicated_reset_code(false_positive)
     assert longitudinal._is_dedicated_reset_code(

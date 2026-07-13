@@ -239,6 +239,8 @@ def _is_dedicated_reset_code(code: str) -> bool:
         and isinstance(first.value.value, ast.Call)
         and isinstance(first.value.value.func, ast.Name)
         and first.value.value.func.id == "reset_session"
+        and not first.value.value.args
+        and not first.value.value.keywords
     )
     inert_tail = all(
         isinstance(node, ast.Return)
