@@ -11,6 +11,27 @@ default on the monty backend; see the `[session]` section in
 five scenarios, including the timeout-atomicity and shadow-guard edges
 this record predicted.*
 
+*Port status (2026-07-18, branch `monty-0.0.19-port`, #88): sessions now
+run on the 0.0.19b4 `AsyncMonty` subprocess-pool API — one worker
+subprocess per checkout. The snapshot-per-run pattern mapped cleanly
+(`await dump()` before the run; on timeout the wedged checkout is
+discarded and the snapshot `load()`ed into a fresh checkout), with three
+pool-specific edges verified empirically: (1) closing a checkout whose
+cancelled run was CPU-busy hangs the event loop uncancellably
+([pydantic/monty#551](https://github.com/pydantic/monty/issues/551)), so
+the timeout path SIGKILLs the worker by the pid captured at checkout
+time — the attribute reads `None` after a cancelled feed — before
+closing; (2) the stale-future error now *finishes* the checkout ("this
+checkout has already been finished"), so that path also discards and
+restores the pre-run snapshot to keep the session-survives contract;
+(3) feed frames are always named `<python-input-N>` regardless of
+`script_name`, so tracebacks rewrite it to the snippet display name.
+Bonus finding: external calls dispatch eagerly — fire-then-await
+overlaps N bridged calls, which is #109's upstream answer. Session
+suite 20/20, one-shot suite 23/23, full suite green on 0.0.19b4; the
+pin is exact (`==0.0.19b4`) and must not be published to PyPI (uv/uvx
+needs `--prerelease=allow` for the beta's transitive runtime dep).*
+
 ## Problem
 
 Every `execute_code` run today gets a fresh interpreter. Variables,

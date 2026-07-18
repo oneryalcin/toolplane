@@ -498,20 +498,23 @@ async def snapshot_cell(size: int, repeats: int = 7) -> dict[str, Any]:
     if seeded.error or seeded.value != size:
         raise RuntimeError(f"failed to seed {size}: {seeded}")
     backend = runtime.backends["monty"]
-    repl = backend._repl
-    if repl is None:
-        raise RuntimeError("session REPL was not created")
+    # pool API (#88): the live session is a pool checkout and dump() is an
+    # awaited IPC round-trip to the worker — measured numbers on 0.0.19 are
+    # not comparable to the 0.0.18 in-process MontyRepl rows
+    session = backend._checkout_session
+    if session is None:
+        raise RuntimeError("session checkout was not created")
     dump_ms = []
     dump_bytes = []
     dump_peak_bytes = []
     for _ in range(repeats):
         started = time.perf_counter()
-        blob = repl.dump()
+        blob = await session.dump()
         dump_ms.append((time.perf_counter() - started) * 1000)
         dump_bytes.append(len(blob))
     for _ in range(repeats):
         tracemalloc.start()
-        blob = repl.dump()
+        blob = await session.dump()
         _, peak = tracemalloc.get_traced_memory()
         tracemalloc.stop()
         dump_peak_bytes.append(peak)

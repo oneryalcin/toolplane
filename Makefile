@@ -1,6 +1,11 @@
 .PHONY: help test examples docs docs-serve ci build clean publish-check publish
 
 UV ?= uv --no-config
+# BETA (monty-0.0.19-port, #88): the ==0.0.19b4 pin's transitive
+# pydantic-monty-runtime dep is a pre-release that uv's default resolver
+# mode rejects in cold --no-project resolution (CI). Drop this with the
+# stable pin swap.
+PRERELEASE ?= --prerelease=allow
 PYTEST ?= pytest
 SITE_DIR ?= /tmp/toolplane-site
 PORT ?= 8000
@@ -19,20 +24,20 @@ help:
 	@printf "  make clean       Remove local generated artifacts\n"
 
 test:
-	$(UV) run --no-project --with-editable ".[dev]" python -m $(PYTEST)
+	$(UV) run --no-project $(PRERELEASE) --with-editable ".[dev]" python -m $(PYTEST)
 
 examples:
-	$(UV) run --no-project --with-editable . python examples/ambient_cli_git.py
-	$(UV) run --no-project --with-editable . python examples/fastmcp_in_process.py
-	$(UV) run --no-project --with-editable . python examples/mcp_stdio_config.py
-	$(UV) run --no-project --with-editable . python examples/multi_server.py
-	$(UV) run --no-project --with-editable . python examples/from_config.py
-	env -u ANTHROPIC_API_KEY -u OPENAI_API_KEY $(UV) run --no-project --with-editable . --with pydantic-ai python examples/as_tool_pydantic_ai.py
-	env -u ANTHROPIC_API_KEY -u OPENAI_API_KEY $(UV) run --no-project --with-editable . --with openai-agents python examples/as_tool_openai_agents.py
-	env -u ANTHROPIC_API_KEY -u OPENAI_API_KEY $(UV) run --no-project --with-editable . --with langchain-core python examples/as_tool_langgraph.py
+	$(UV) run --no-project $(PRERELEASE) --with-editable . python examples/ambient_cli_git.py
+	$(UV) run --no-project $(PRERELEASE) --with-editable . python examples/fastmcp_in_process.py
+	$(UV) run --no-project $(PRERELEASE) --with-editable . python examples/mcp_stdio_config.py
+	$(UV) run --no-project $(PRERELEASE) --with-editable . python examples/multi_server.py
+	$(UV) run --no-project $(PRERELEASE) --with-editable . python examples/from_config.py
+	env -u ANTHROPIC_API_KEY -u OPENAI_API_KEY $(UV) run --no-project $(PRERELEASE) --with-editable . --with pydantic-ai python examples/as_tool_pydantic_ai.py
+	env -u ANTHROPIC_API_KEY -u OPENAI_API_KEY $(UV) run --no-project $(PRERELEASE) --with-editable . --with openai-agents python examples/as_tool_openai_agents.py
+	env -u ANTHROPIC_API_KEY -u OPENAI_API_KEY $(UV) run --no-project $(PRERELEASE) --with-editable . --with langchain-core python examples/as_tool_langgraph.py
 
 docs:
-	$(UV) run --no-project --with-editable ".[docs]" mkdocs build --strict --site-dir $(SITE_DIR)
+	$(UV) run --no-project $(PRERELEASE) --with-editable ".[docs]" mkdocs build --strict --site-dir $(SITE_DIR)
 
 docs-serve:
 	$(UV) run --no-project --with-editable ".[docs]" mkdocs serve -a 127.0.0.1:$(PORT)
