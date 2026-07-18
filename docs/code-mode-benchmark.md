@@ -351,8 +351,19 @@ $0.117 vs direct 28.4s / $0.161 — the cost win holds (~27%, flat
 output tokens) and wall is parity within overlapping ranges, so
 direct's batching no longer *beats* code mode here, but the N×latency
 bank the eager dispatch makes available goes uncollected when the model
-defaults to its loop idiom. Closing the adoption gap (stronger than a
-footer sentence) is the open follow-up.*
+defaults to its loop idiom.*
+
+*Adoption A/B, same cell and client version an hour later: adding the
+fan-out pattern to the `execute_code` tool description (the one
+teaching surface always read before a snippet) flipped adoption from
+**0/5 to 4/4 snippets** (run-20260719-025053, toolplane arm only,
+direct control unchanged). Medians: toolplane **22.8s** (21.3–23.1) /
+$0.114 vs direct 28.4s (26.8–29.1) / $0.161 — wall now *beats*
+direct's parallel batching with disjoint ranges, and cost stays ~29%
+cheaper. n=3 on both arms, same evening, counterbalanced; one B rep
+spent an extra turn self-correcting a wrong return shape, pattern
+intact. The done-when from #109 — match or beat direct's batching on
+slow-tool loops — is met.*
 
 ## What actually happened (read the usage data, not the folklore)
 
