@@ -276,6 +276,13 @@ class Toolplane:
             "value, already unwrapped — never index into a ['result'] or "
             "['value'] envelope; `return` a JSON-shaped value."
         ]
+        if self._default_backend_capability("parallel_calls"):
+            lines.append(
+                "Calls dispatch when invoked, not when awaited — fan out "
+                "slow tools instead of paying N x latency: "
+                "`futures = [fn(x=i) for i in ids]` then "
+                "`results = [await f for f in futures]`."
+            )
         extras = []
         if self.ambient_cli:
             if self.cli_policy.restricted:
@@ -331,9 +338,28 @@ class Toolplane:
             "",
             "Python passed to `execute_code` runs against these bindings.",
             "Every binding is async — always `await` it.",
-            "",
-            "## Capability functions",
         ]
+        if self._default_backend_capability("parallel_calls"):
+            lines.extend(
+                [
+                    "",
+                    "## Concurrency",
+                    "Calls dispatch when invoked, not when awaited — fire a "
+                    "batch, then await the batch, and slow tools overlap "
+                    "instead of serializing:",
+                    "",
+                    "```python",
+                    "futures = [orders_get_order(order_id=oid) for oid in ids]",
+                    "orders = [await f for f in futures]",
+                    "```",
+                    "",
+                    "- Awaiting each call inside a loop body costs N x the "
+                    "tool's latency; fire-then-await costs it once.",
+                    "- Await everything you fire in the same run — a future "
+                    "left un-awaited cannot be awaited by a later run.",
+                ]
+            )
+        lines.extend(["", "## Capability functions"])
         flat: dict[str, list[str]] = {}
         for callable_name, canonical in self.registry.callable_namespace().items():
             flat.setdefault(canonical, []).append(callable_name)

@@ -38,6 +38,19 @@ capability. You write small Python snippets against a curated namespace.
   async. A call that is never awaited fails with a typed
   `UnawaitedToolCallError` before or after execution — if you see it, add
   `await`.
+- **Fan out slow calls: fire first, await after.** On the monty backend a
+  call *dispatches* the moment it is invoked — `await` only collects the
+  result. So `for oid in ids: await fn(order_id=oid)` pays N × the tool's
+  latency, while
+
+  ```python
+  futures = [fn(order_id=oid) for oid in ids]
+  results = [await f for f in futures]
+  ```
+
+  pays it once. Await everything you fire within the same run — a future
+  left over cannot be awaited by a later run. (The pyodide backend runs
+  calls sequentially; the pattern is correct there too, just not faster.)
 - `return` a JSON-shaped value (dict/list/str/number/bool/None). The result
   arrives in the tool response's `value` field; `print(...)` output arrives
   in `stdout`.

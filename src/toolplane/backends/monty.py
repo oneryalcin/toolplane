@@ -71,6 +71,9 @@ class MontyBackend:
         persistence="none",
         startup_latency="low",
         scoped_bindings=False,
+        # 0.0.19 pool API dispatches external calls eagerly at invoke time —
+        # verified through the host bridge: 4 x 0.5s calls overlap to 0.51s
+        parallel_calls=True,
     )
 
     def __init__(

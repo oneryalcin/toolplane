@@ -341,6 +341,29 @@ def test_manifest_hides_scoped_sugar_the_default_backend_cannot_bind() -> None:
     assert "`await helper.ask(...)`" in local_default.describe_namespace()
 
 
+def test_parallel_fan_out_is_taught_only_where_the_backend_overlaps() -> None:
+    # monty >= 0.0.19 dispatches external calls at invoke time, so
+    # fire-then-await overlaps slow tools; local/pyodide start calls at
+    # await. Teaching the pattern where it does nothing would spend
+    # snippet complexity for zero wall-clock — teach only where it pays
+    def ping() -> str:
+        """Ping."""
+        return "pong"
+
+    monty_default = Toolplane(default_backend="monty", ambient_cli=False)
+    monty_default.register(ping)
+    manifest = monty_default.describe_namespace()
+    assert "## Concurrency" in manifest
+    assert "[await f for f in futures]" in manifest
+    assert "Calls dispatch when invoked" in run(monty_default.search("ping"))
+
+    local_default = Toolplane(default_backend="local_unsafe", ambient_cli=False)
+    local_default.register(ping)
+    assert "## Concurrency" not in local_default.describe_namespace()
+    assert "Calls dispatch when invoked" not in run(local_default.search("ping"))
+
+
+
 def test_call_shape_orders_required_first_and_marks_optional() -> None:
     from toolplane.capabilities import Capability
     from toolplane.discovery import call_shape

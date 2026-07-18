@@ -335,6 +335,14 @@ cross-run within one evening), so by this page's own † standard the
 +2.7s is a median estimate whose arithmetic checks out, not a
 resolved measurement.
 
+*Update 2026-07-18 (#88/#131): the sequential-await mechanism this
+section measured is gone. The 0.0.19 monty pool API dispatches external
+calls eagerly, so a fire-then-await snippet overlaps slow tools —
+verified through the real MCP bridge at this fixture's exact shape: 30
+calls at 100ms in 0.24s vs 3.3s serial. `loop_lat100` now gates whether
+models write the pattern and the wall advantage survives them; the
+pre-port numbers above stand as the 0.0.18 measurement they are.*
+
 ## What actually happened (read the usage data, not the folklore)
 
 The naive reading of the N=100 table is "103 round-trips vs 11." The

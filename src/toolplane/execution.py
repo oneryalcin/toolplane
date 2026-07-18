@@ -28,6 +28,11 @@ class BackendCapabilities(BaseModel):
     # manifest must not advertise it where it would NameError (monty is
     # flat-only — found by the 0.3.0 quickstart cold-agent cert)
     scoped_bindings: bool = True
+    # whether external calls dispatch when invoked, so fire-then-await
+    # (`fs = [fn(x=i) for i in ids]; [await f for f in fs]`) overlaps slow
+    # tools. True on monty >= 0.0.19 (measured: 4x0.5s calls in 0.51s,
+    # #109); false where calls start at await (local, pyodide)
+    parallel_calls: bool = False
 
 
 class ExecutionError(BaseModel):

@@ -59,7 +59,12 @@ served from the working tree and always ran direct first.
   what agents choose to do, not impossibility; disclosed in the docs.
 - `loop_lat100` — `loop` with 100ms per-call server latency
   (`BENCH_TOOL_LATENCY_MS`, async so the fixture never serializes);
-  measures monty's sequential awaits, gates #109.
+  the #109 gate cell. Pre-port monty awaited sequentially (N x latency);
+  the 0.0.19 pool API dispatches external calls eagerly, so a
+  fire-then-await snippet should overlap (verified through the real
+  bridge: 30 calls at 100ms in 0.24s vs 3.3s serial) — the cell proves
+  whether agents actually write the pattern and the wall advantage
+  survives a model.
 
 The summary table annotates honesty mechanically: **†** where the two
 arms' observed per-rep ranges overlap (the median gap is unresolved at

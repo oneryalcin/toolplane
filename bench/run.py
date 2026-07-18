@@ -153,8 +153,11 @@ TASKS = {
         "orders_n": 30,
         "server_env": {"BENCH_NOTES": "chain"},
     },
-    # latency axis (#107 item 10 / #109 gate): 100ms per tool call —
-    # direct batches in parallel, monty awaits sequentially
+    # latency axis (#107 item 10 / #109 gate): 100ms per tool call.
+    # Pre-port monty awaited sequentially (N x latency); the 0.0.19 pool
+    # API dispatches eagerly, so fire-then-await overlaps — this cell
+    # measures whether the model writes the pattern and beats direct's
+    # parallel batching on wall-clock
     "loop_lat100": {
         "prompt": _LOOP_PROMPT,
         "check": _check_region_totals,
