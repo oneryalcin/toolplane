@@ -225,6 +225,19 @@ def build_mcp_facade(
     save_result/load_result; the toolplane://namespace resource is the
     full manifest when a shape is unclear.
     """
+    if runtime._default_backend_capability("parallel_calls"):
+        # the one teaching surface always read before a snippet: footer /
+        # manifest / skill all sit behind a read the model can skip, and
+        # with those alone fire-then-await adoption measured 0/5
+        # (run-20260719-023232, #109)
+        _EXECUTE_DOC += """
+
+    Looping over ids to call the same tool? Calls dispatch when
+    invoked, not when awaited — fire the batch, then await it:
+    `futures = [fn(x=i) for i in ids]` then
+    `rows = [await f for f in futures]`. Slow tools overlap; awaiting
+    each call in the loop body pays N x its latency.
+    """
 
     @mcp.tool(description=_described(_EXECUTE_DOC))
     async def execute_code(

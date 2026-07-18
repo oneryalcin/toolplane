@@ -618,6 +618,30 @@ def test_facade_tool_descriptions_carry_the_domain_vocabulary() -> None:
     assert "JSON-shaped" in descriptions["execute_code"]
 
 
+def test_execute_code_description_teaches_fan_out_only_where_it_pays() -> None:
+    # 0/5 fire-then-await adoption with footer/manifest/skill alone
+    # (run-20260719-023232, #109): the execute_code description is the one
+    # teaching surface always read before snippet writing — but only where
+    # the default backend actually overlaps fired calls
+    from fastmcp import Client
+
+    from toolplane.mcp_facade import build_mcp_facade
+
+    async def execute_description(backend: str) -> str:
+        runtime = Toolplane(default_backend=backend, ambient_cli=False)
+        app = build_mcp_facade(runtime)
+        async with Client(app) as client:
+            tools = await client.list_tools()
+        return next(
+            t.description or "" for t in tools if t.name == "execute_code"
+        )
+
+    monty_desc = asyncio.run(execute_description("monty"))
+    assert "[await f for f in futures]" in monty_desc
+    local_desc = asyncio.run(execute_description("local_unsafe"))
+    assert "[await f for f in futures]" not in local_desc
+
+
 def test_domain_hint_never_exceeds_max_chars_on_any_axis() -> None:
     # both #115 reviewers reproduced unbounded output: 500 domains blew a
     # 100-char cap to 6.6k (the prefix ignored the budget) and the sentinel
