@@ -28,12 +28,13 @@ dependencies = [
     # transitively via fastmcp's storage stack
     "keyring>=25",
     "pydantic>=2.0",
-    # HARD pin: monty main (post-0.0.18) deletes MontyRepl for an AsyncMonty
-    # subprocess-pool API — 0.0.19 will break our import. Port tracked in the
-    # sessions-port issue; on upgrade re-run tests/test_monty_session.py and
-    # revisit the snapshot/limit guards (pydantic/monty#533 wedges differently
-    # on main, #534 still reproduces there)
-    "pydantic-monty>=0.0.18,<0.0.19",
+    # BETA pin (monty-0.0.19-port branch, #88): the session backend runs on
+    # the AsyncMonty subprocess-pool API. Exact pin because the beta API may
+    # still churn — reopen to >=0.0.19,<0.0.20 once 0.0.19 stable lands.
+    # uv resolves this fine from package metadata (verified: make test /
+    # --with-editable), but if a release ever ships on a beta pin, re-check
+    # plain `uvx --no-config --refresh-package toolplane` first.
+    "pydantic-monty==0.0.19b4",
     "tomlkit>=0.15.0",
 ]
 

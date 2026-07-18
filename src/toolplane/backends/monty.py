@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import re
+import signal
 import time
 from collections.abc import Mapping, Sequence
 from typing import Any
 
 from pydantic_monty import (
+    AsyncMonty,
+    AsyncMontySession,
     CollectStreams,
-    Monty,
     MontyError,
-    MontyRepl,
     MontyRuntimeError,
     ResourceLimits,
 )
@@ -85,11 +87,18 @@ class MontyBackend:
             self.capabilities = self.capabilities.model_copy(
                 update={"persistence": "session"}
             )
-        self._repl: MontyRepl | None = None
+        self._pool: AsyncMonty | None = None
+        self._checkout_session: AsyncMontySession | None = None
+        self._checkout_ctx: Any = None  # context manager owning the checkout
+        # capture at checkout time: after a cancelled feed the session's
+        # worker_pid attribute already reads None, and the timeout path needs
+        # the pid to kill the wedged worker before closing (pydantic/monty#551)
+        self._worker_pid: int | None = None
         self._pending_reset = False
-        # one run at a time per session: MontyRepl holds an internal mutex
-        # and a second feed raises instead of queueing, so overlapping
-        # execute_code calls serialize here in arrival order
+        # one run at a time per session: a second feed on a live checkout
+        # raises ("feed called while a suspension is awaiting an answer")
+        # instead of queueing, so overlapping execute_code calls serialize
+        # here in arrival order
         self._session_lock = asyncio.Lock()
 
     async def run(
@@ -161,22 +170,31 @@ class MontyBackend:
             return await self._run_session(
                 code, started, streams, input_namespace, external_functions
             )
+        # one-shot = a fresh checkout per run: the pool reuses worker
+        # processes, but each checkout starts a clean namespace (verified
+        # on 0.0.19b4), so runs stay isolated without session state
+        pool = await self._ensure_pool()
+        ctx = pool.checkout(
+            script_name="toolplane_snippet.py",
+            limits=ResourceLimits(max_duration_secs=self.timeout_seconds),
+        )
+        one_shot = await ctx.__aenter__()
+        worker_pid = one_shot.worker_pid
         try:
-            interpreter = await Monty.acreate(
-                wrap_async_main(code) + "\n\nawait __toolplane_main__()",
-                script_name="toolplane_snippet.py",
-                inputs=sorted(input_namespace) or None,
-            )
             value = await asyncio.wait_for(
-                interpreter.run_async(
+                one_shot.feed_run(
+                    wrap_async_main(code) + "\n\nawait __toolplane_main__()",
                     inputs=input_namespace or None,
-                    limits=ResourceLimits(max_duration_secs=self.timeout_seconds),
-                    external_functions=external_functions,
+                    external_lookup=external_functions,
                     print_callback=streams,
                 ),
                 timeout=self.timeout_seconds,
             )
         except TimeoutError:
+            # the worker is wedged (suspended mid-call or CPU-busy): kill
+            # before close — closing a CPU-busy wedged checkout hangs the
+            # event loop uncancellably (pydantic/monty#551)
+            await self._kill_and_close(ctx, worker_pid)
             return self._result(
                 started,
                 streams,
@@ -186,6 +204,7 @@ class MontyBackend:
                 ),
             )
         except MontyRuntimeError as exc:
+            await self._close_healthy(ctx)
             cause = exc.exception()
             return self._result(
                 started,
@@ -193,10 +212,11 @@ class MontyBackend:
                 error=ExecutionError(
                     type=type(cause).__name__,
                     message=str(cause),
-                    traceback=_format_frames(exc),
+                    traceback=_format_frames(exc, "toolplane_snippet.py"),
                 ),
             )
         except MontyError as exc:
+            await self._close_healthy(ctx)
             return self._result(
                 started,
                 streams,
@@ -205,6 +225,7 @@ class MontyBackend:
                     message=str(exc),
                 ),
             )
+        await self._close_healthy(ctx)
         if _contains_unawaited_future(value) or _printed_unawaited_future(streams):
             return self._result(
                 started,
@@ -252,10 +273,10 @@ class MontyBackend:
                 ),
             )
         async with self._session_lock:
-            repl = self._ensure_repl()
+            session = await self._ensure_session()
             pending_reset_before = self._pending_reset
             try:
-                snapshot: bytes | None = repl.dump()
+                snapshot: bytes | None = await session.dump()
             except Exception:
                 # rollback protection is best-effort; a run that cannot be
                 # checkpointed still executes, and a timeout then resets the
@@ -263,33 +284,34 @@ class MontyBackend:
                 snapshot = None
             try:
                 value = await asyncio.wait_for(
-                    repl.feed_run_async(
+                    session.feed_run(
                         code,
-                        inputs=input_namespace or None,
-                        external_functions=external_functions,
+                        external_lookup=external_functions,
                         print_callback=streams,
                     ),
                     timeout=self.timeout_seconds,
                 )
             except TimeoutError:
-                # a cancelled feed leaves partial mutations in the heap and —
-                # whenever the run interned a new string — permanently
-                # poisons the interpreter (pydantic/monty#533). Restoring the
-                # pre-run snapshot fixes both: the namespace is as if the run
-                # never happened. Host-side effects are NOT rolled back; the
-                # message must say so instead of promising a transaction.
+                # a cancelled feed leaves partial mutations in the heap and
+                # permanently wedges the checkout — every later feed raises
+                # "feed called while a suspension is awaiting an answer"
+                # (pydantic/monty#533, still true on the pool API). Restoring
+                # the pre-run snapshot into a fresh checkout fixes both: the
+                # namespace is as if the run never happened. Host-side
+                # effects are NOT rolled back; the message must say so
+                # instead of promising a transaction.
                 # The reset flag is namespace state too: a reset requested by
                 # the timed-out run must not fire after "rolled back" was
                 # reported (Codex adversarial finding on #86)
                 self._pending_reset = pending_reset_before
+                await self._discard_session()
                 if snapshot is not None:
-                    self._repl = MontyRepl.load(snapshot)
+                    await self._restore_session(snapshot)
                     recovery = (
                         "Session variables were rolled back to the state "
                         "before this run"
                     )
                 else:
-                    self._repl = None
                     recovery = (
                         "The session could not be checkpointed, so its "
                         "variables were cleared"
@@ -326,7 +348,7 @@ class MontyBackend:
                     error=ExecutionError(
                         type=type(cause).__name__,
                         message=message,
-                        traceback=_format_frames(exc),
+                        traceback=_format_frames(exc, "toolplane_session.py"),
                     ),
                 )
             except MontyError as exc:
@@ -339,12 +361,19 @@ class MontyBackend:
                     ),
                 )
             except Exception as exc:
-                # monty's REPL driver can raise bare builtins — awaiting a
-                # future persisted un-awaited by an EARLIER run raises
+                # the pool driver can raise bare builtins — awaiting a future
+                # persisted un-awaited by an EARLIER run raises
                 # RuntimeError("No pending async tasks but ResolveFutures
                 # requested"). Every failure mode here must come back as a
                 # structured error, never crash the caller.
                 if "No pending async tasks" in str(exc):
+                    # on the pool API this error FINISHES the checkout — later
+                    # feeds raise "this checkout has already been finished"
+                    # (0.0.18 kept the session alive). Discard and restore
+                    # the pre-run snapshot so the session survives as before.
+                    await self._discard_session()
+                    if snapshot is not None:
+                        await self._restore_session(snapshot)
                     return self._result(
                         started,
                         streams,
@@ -378,24 +407,110 @@ class MontyBackend:
             )
         return self._result(started, streams, value=value)
 
-    def _ensure_repl(self) -> MontyRepl:
-        if self._repl is None or self._pending_reset:
-            limits: ResourceLimits | None = None
-            if self.session_max_memory_bytes is not None:
-                # literal key only: ResourceLimits silently ignores unknown
-                # keys (pydantic/monty#534), so the cap is also asserted
-                # empirically in tests, not trusted from construction
-                limits = ResourceLimits(
-                    max_memory=self.session_max_memory_bytes
-                )
-            # no max_duration_secs: the REPL clock runs from construction,
-            # not per feed (pydantic/monty#483) — per-run timeouts are the
-            # host's asyncio.wait_for
-            self._repl = MontyRepl(
-                script_name="toolplane_session.py", limits=limits
-            )
+    async def _ensure_pool(self) -> AsyncMonty:
+        if self._pool is None:
+            # lazy: the pool spawns worker subprocesses and needs a running
+            # event loop, so it is created on first run, not in __init__.
+            # Workers self-reap when the host process exits (verified on
+            # 0.0.19b4); aclose() is the clean shutdown path.
+            self._pool = AsyncMonty()
+            await self._pool.__aenter__()
+        return self._pool
+
+    def _session_limits(self) -> ResourceLimits | None:
+        if self.session_max_memory_bytes is None:
+            return None
+        # literal key only: ResourceLimits silently ignores unknown keys
+        # (pydantic/monty#534), so the cap is also asserted empirically in
+        # tests, not trusted from construction
+        return ResourceLimits(max_memory=self.session_max_memory_bytes)
+
+    async def _checkout_fresh(self) -> AsyncMontySession:
+        pool = await self._ensure_pool()
+        # no max_duration_secs: the checkout clock runs from construction,
+        # not per feed (pydantic/monty#483) — per-run timeouts are the
+        # host's asyncio.wait_for
+        ctx = pool.checkout(
+            script_name="toolplane_session.py", limits=self._session_limits()
+        )
+        session = await ctx.__aenter__()
+        self._checkout_ctx = ctx
+        self._checkout_session = session
+        self._worker_pid = session.worker_pid
+        return session
+
+    async def _ensure_session(self) -> AsyncMontySession:
+        if self._checkout_session is None or self._pending_reset:
+            if self._checkout_ctx is not None:
+                # a reset fires after the requesting run completed normally,
+                # so the previous checkout is healthy and closes cleanly
+                await self._close_healthy(self._checkout_ctx)
+                self._checkout_session = None
+                self._checkout_ctx = None
+                self._worker_pid = None
+            await self._checkout_fresh()
             self._pending_reset = False
-        return self._repl
+        assert self._checkout_session is not None
+        return self._checkout_session
+
+    async def _restore_session(self, snapshot: bytes) -> None:
+        # load() is only accepted on a fresh checkout ("only valid on a
+        # fresh session"), which _checkout_fresh just made
+        session = await self._checkout_fresh()
+        await session.load(snapshot)
+
+    async def _discard_session(self) -> None:
+        """Drop a wedged or finished checkout without trusting its close.
+
+        A cancelled feed leaves the worker either suspended awaiting an
+        answer or CPU-busy; closing the latter hangs the event loop
+        uncancellably (pydantic/monty#551), so the worker is always killed
+        before the close is attempted.
+        """
+        ctx, pid = self._checkout_ctx, self._worker_pid
+        self._checkout_session = None
+        self._checkout_ctx = None
+        self._worker_pid = None
+        await self._kill_and_close(ctx, pid)
+
+    @staticmethod
+    async def _kill_and_close(ctx: Any, pid: int | None) -> None:
+        if pid is not None:
+            try:
+                os.kill(pid, getattr(signal, "SIGKILL", signal.SIGTERM))
+            except OSError:
+                pass  # the worker is already gone
+        if ctx is not None:
+            try:
+                await asyncio.wait_for(ctx.__aexit__(None, None, None), timeout=5)
+            except Exception:
+                pass  # cleanup is hygiene; it must never block the caller
+
+    @staticmethod
+    async def _close_healthy(ctx: Any) -> None:
+        await ctx.__aexit__(None, None, None)
+
+    async def aclose(self) -> None:
+        """Close the live checkout and the worker pool.
+
+        Hygiene only: workers also self-reap when the host process exits,
+        so skipping this is a resource-delay, not a leak.
+        """
+        ctx = self._checkout_ctx
+        self._checkout_session = None
+        self._checkout_ctx = None
+        self._worker_pid = None
+        if ctx is not None:
+            try:
+                await asyncio.wait_for(ctx.__aexit__(None, None, None), timeout=5)
+            except Exception:
+                pass
+        if self._pool is not None:
+            pool, self._pool = self._pool, None
+            try:
+                await asyncio.wait_for(pool.__aexit__(None, None, None), timeout=5)
+            except Exception:
+                pass
 
     def _make_reset_session(self) -> Any:
         async def reset_session() -> str:
@@ -560,15 +675,24 @@ def _split_streams(streams: CollectStreams) -> tuple[str, str]:
     return "".join(stdout), "".join(stderr)
 
 
-def _format_frames(exc: MontyRuntimeError) -> str:
+def _format_frames(exc: MontyRuntimeError, filename: str) -> str:
     try:
         frames = exc.traceback()
     except Exception:
         return ""
     return "\n".join(
-        f'  File "{frame.filename}", line {frame.line}, in {frame.function_name}'
+        f'  File "{_display_filename(frame.filename, filename)}", line {frame.line}, in {frame.function_name}'
         for frame in frames
     )
+
+
+def _display_filename(frame_filename: str, display: str) -> str:
+    # the pool API names every feed "<python-input-N>" regardless of the
+    # checkout's script_name (0.0.19b4) — rewrite it so tracebacks keep
+    # pointing at the snippet file the caller's mental model has
+    if re.fullmatch(r"<python-input-\d+>", frame_filename):
+        return display
+    return frame_filename
 
 
 def _ensure_no_input_collisions(
