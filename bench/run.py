@@ -337,7 +337,17 @@ def build_code_under_test(workdir: Path) -> dict:
     python = venv / "bin" / "python"
     subprocess.run(["uv", "venv", str(venv)], check=True, capture_output=True)
     subprocess.run(
-        ["uv", "pip", "install", "--python", str(python), str(wheel)],
+        [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            str(python),
+            # BETA (#88): the ==0.0.19b4 pin's transitive runtime dep needs
+            # prerelease resolution in a cold venv; drop with the stable swap
+            "--prerelease=allow",
+            str(wheel),
+        ],
         check=True,
         capture_output=True,
     )
