@@ -339,9 +339,20 @@ resolved measurement.
 section measured is gone. The 0.0.19 monty pool API dispatches external
 calls eagerly, so a fire-then-await snippet overlaps slow tools —
 verified through the real MCP bridge at this fixture's exact shape: 30
-calls at 100ms in 0.24s vs 3.3s serial. `loop_lat100` now gates whether
-models write the pattern and the wall advantage survives them; the
-pre-port numbers above stand as the 0.0.18 measurement they are.*
+calls at 100ms in 0.24s vs 3.3s serial. The pre-port numbers above
+stand as the 0.0.18 measurement they are.*
+
+*Gate answer 2026-07-19 (run-20260719-023232, Claude Code 2.1.207,
+n=3): the bottleneck moved from machinery to adoption. With the
+fan-out teaching live in the search footer, manifest, and skill, **all
+five toolplane snippets across 3 reps still wrote the serial
+await-in-loop** — zero fire-then-await. Medians: toolplane 30.3s /
+$0.117 vs direct 28.4s / $0.161 — the cost win holds (~27%, flat
+output tokens) and wall is parity within overlapping ranges, so
+direct's batching no longer *beats* code mode here, but the N×latency
+bank the eager dispatch makes available goes uncollected when the model
+defaults to its loop idiom. Closing the adoption gap (stronger than a
+footer sentence) is the open follow-up.*
 
 ## What actually happened (read the usage data, not the folklore)
 
