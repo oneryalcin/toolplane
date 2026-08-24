@@ -410,7 +410,10 @@ def test_register_mcp_config_insertion_order_is_config_order(tmp_path: Path) -> 
             }
         )
         wall = time_mod.perf_counter() - started
-        assert wall < 3.4, f"not concurrent: {wall:.2f}s >= serial sum"
+        # concurrency proof with CI-slack: three spawns overlap, so wall is
+        # roughly max(delay)+spawn (~2-4s); sequential init would be
+        # >= sum(delays) + 3 spawns >= ~6.6s
+        assert wall < 6.0, f"not concurrent: {wall:.2f}s"
         return [c.name for c in caps]
 
     assert run(exercise()) == [
@@ -425,7 +428,8 @@ def test_unavailable_server_warns_and_does_not_block_others(
 ) -> None:
     """One hung upstream must not hold facade startup hostage (#118):
     bounded per-server wait, skip-with-warning, healthy servers still
-    register."""
+    register. The 8s bound must exceed a cold python+fastmcp spawn on
+    CI runners (~2s) while staying well under the hung server's delay."""
     server = _delay_server_script(tmp_path)
 
     async def exercise() -> tuple[list[str], list[str]]:
@@ -441,7 +445,7 @@ def test_unavailable_server_warns_and_does_not_block_others(
                         "healthy": {"command": sys.executable, "args": [str(server)]},
                     }
                 },
-                timeout_seconds=1.0,
+                timeout_seconds=8.0,
             )
         names = [c.name for c in caps]
         return names, list(runtime.registry.callable_namespace())
