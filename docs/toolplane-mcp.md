@@ -83,6 +83,31 @@ return table[["identifier", "title"]].head(10).to_dict("records")
 That is the product value: not "one MCP server to call other MCP servers", but a
 controlled Python runtime where multiple capability sources become composable.
 
+## The Stateless Turn Validates This Design
+
+The 2026-07-28 spec revision ("MCP 2.0") removed the protocol-level session:
+every request is self-contained, and servers that need cross-call state are
+told to mint explicit handles that the model passes back as ordinary
+arguments ([measured in the FastMCP 4 spike](fastmcp4-spike.md)). That is the
+convergence of the protocol on what toolplane already built:
+
+- results and artifacts are named handles (`save_result` keys,
+  `toolplane://artifacts/<id>`), not hidden transport state;
+- monty sessions are an application-level object behind one tool call, so the
+  protocol going sessionless does not touch them;
+- capability identity is per-call (`mcp:<server>/<tool>`), not negotiated once.
+
+Nothing here needs to change for 2026-07-28. The lesson cuts the other way:
+when designing new surfaces, prefer explicit model-visible state over ambient
+context, because the protocol now enforces that preference too.
+
+One boundary worth stating explicitly: the spec's new `server/discover`
+method answers "what can this server do" for protocol clients. Toolplane's
+`search_capabilities`/`get_capability_schemas` answer a different question —
+"what can this snippet call, with which shapes" — for code inside
+`execute_code`, where discovery competes with the model's context budget, not
+with connection setup. Do not collapse them; document them as layers.
+
 ## User Flow
 
 The first stable command-line surface should optimize for explicit setup. This

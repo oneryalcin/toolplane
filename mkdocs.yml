@@ -54,6 +54,7 @@ nav:
       - Monty Default Spike: monty-default-spike.md
       - Monty Session Spike: monty-session-spike.md
       - MCP Client Capability Spike: mcp-client-capability-spike.md
+      - FastMCP 4 Spike: fastmcp4-spike.md
       - Result Store Design: result-store-design.md
   - Research:
       - The Code-Mode Envelope, Measured: code-mode-benchmark.md

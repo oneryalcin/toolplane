@@ -286,8 +286,9 @@ def build_mcp_facade(
             # coroutine context has that var unset. Capture the value here,
             # inside the request, so the handler can re-seat it (empirically
             # required: without this, pyodide escalation fails closed).
-            # v1-SDK internal: gone in mcp-sdk v2 / fastmcp 4, where
-            # guard-mode MRTR tools replace this pattern (#132).
+            # v1-SDK internal: gone in mcp-sdk v2 / fastmcp 4 — port is
+            # fastmcp_request_ctx (verified in docs/fastmcp4-spike.md);
+            # modern-era connections drop ctx.elicit entirely for MRTR (#132).
             from mcp.server.lowlevel.server import request_ctx
 
             captured_request_ctx = request_ctx.get()

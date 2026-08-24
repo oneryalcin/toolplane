@@ -328,3 +328,39 @@ def test_mcp_config_accepts_fastmcp_root_server_shape_without_connecting(
             }
         }
     }
+
+
+def test_composed_output_schema_result_normalizes_to_plain_values() -> None:
+    """fastmcp deserializes structured content against the tool's output
+    schema; composed schemas ($ref/$defs) come back as generated
+    dataclasses, which must not leak into capability results (#132
+    finding 4)."""
+    from toolplane.adapters.mcp import register_mcp_server
+
+    async def exercise() -> object:
+        mcp = FastMCP("composed")
+
+        @mcp.tool(
+            output_schema={
+                "type": "object",
+                "$defs": {
+                    "item": {
+                        "type": "object",
+                        "properties": {"n": {"type": "integer"}},
+                    }
+                },
+                "properties": {
+                    "many": {"type": "array", "items": {"$ref": "#/$defs/item"}}
+                },
+            }
+        )
+        def rich_tool() -> dict:
+            return {"many": [{"n": 1}]}
+
+        registry = CapabilityRegistry()
+        (cap,) = await register_mcp_server(registry, "composed", mcp)
+        return await cap.callable()
+
+    result = run(exercise())
+
+    assert result == {"many": [{"n": 1}]}

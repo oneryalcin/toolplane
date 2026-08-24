@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
+from dataclasses import fields, is_dataclass
 from typing import Any
 
 from pydantic import BaseModel
@@ -220,6 +221,15 @@ def _content_text(result: Any) -> str | None:
 def _to_python_value(value: Any) -> Any:
     if isinstance(value, BaseModel):
         return value.model_dump(mode="json")
+    if is_dataclass(value) and not isinstance(value, type):
+        # fastmcp's client deserializes structured content against the
+        # tool's output schema, and composed schemas ($ref/$defs/oneOf —
+        # full JSON Schema 2020-12 in the 2026-07-28 spec) come back as
+        # generated dataclasses, not pydantic models (#132 finding 4)
+        return {
+            field.name: _to_python_value(getattr(value, field.name))
+            for field in fields(value)
+        }
     if isinstance(value, Mapping):
         return {str(key): _to_python_value(item) for key, item in value.items()}
     if isinstance(value, list | tuple | set | frozenset):
