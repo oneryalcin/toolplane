@@ -49,6 +49,12 @@ server mutates state on elicitation answers, tie the request's lifetime to
 the work that asked — a late answer with no witness is a silent policy
 change. (This forced run-scoped escalation cancellation in toolplane.)
 
+> Note: this hazard is an artifact of held-open SSE streams. The
+> 2026-07-28 spec ("MCP 2.0") replaces mid-call elicitation with Multi
+> Round-Trip Requests, where answers arrive as a re-issued call carrying
+> `requestState`. Impact assessment and upgrade follow-ups:
+> [#132](https://github.com/oneryalcin/toolplane/issues/132).
+
 **Synthetic cancel is indistinguishable from a real user cancel.** Headless
 surfaces answer `{"action":"cancel"}` immediately; a human pressing Esc
 sends the same thing. Servers cannot detect "this surface can't prompt" —
