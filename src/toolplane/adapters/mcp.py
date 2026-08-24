@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from collections.abc import Mapping
 from dataclasses import fields, is_dataclass
@@ -11,6 +12,11 @@ from pydantic import BaseModel
 
 from ..capabilities import Capability, JsonSchema
 from ..registry import CapabilityRegistry
+
+# per-server discovery bound for config-driven registration (#118): one
+# hung upstream must not hold facade startup hostage. Generous enough for
+# npx-style cold spawns; per-call override via register_mcp_config.
+_REGISTER_TIMEOUT_SECS = 10.0
 
 
 async def register_mcp_server(
@@ -68,6 +74,7 @@ async def register_mcp_config(
     *,
     tags: set[str] | frozenset[str] | None = None,
     source: str = "mcp",
+    timeout_seconds: float = _REGISTER_TIMEOUT_SECS,
 ) -> list[Capability]:
     """Register all tools from a standard `mcpServers` config dictionary.
 
@@ -76,27 +83,80 @@ async def register_mcp_config(
     ``auth = "oauth"`` on url servers becomes a live fastmcp OAuth object
     backed by Toolplane's encrypted token store — so tokens persist across
     restarts without ever touching the config file or process output.
+
+    Servers are discovered concurrently: sequential ``list_tools()`` calls
+    compound into a many-server cold start, and one slow upstream stalls
+    the whole facade (#118). Registry insertion order stays deterministic
+    (config order, not completion order). A server that errors or exceeds
+    ``timeout_seconds`` is skipped with a warning instead of failing
+    startup — the facade comes up with N-1 servers and says so.
     """
-    from ..credentials import prepare_server_config
+    import warnings
 
     parsed = _mcp_config(config)
-    capabilities: list[Capability] = []
-    for server_name, server_config in parsed.mcpServers.items():
-        raw = (
-            server_config.model_dump(exclude_none=True)
-            if isinstance(server_config, BaseModel)
-            else dict(server_config)
-        )
-        capabilities.extend(
-            await register_mcp_server(
-                registry,
-                server_name,
-                _single_server_config(server_name, prepare_server_config(raw)),
+    entries = list(parsed.mcpServers.items())
+
+    async def discover_one(
+        server_name: str, server_config: Any
+    ) -> list[Capability]:
+        client = _client(_prepare_server_entry(server_name, server_config))
+        async with client:
+            tools = await client.list_tools()
+        return [
+            _capability_from_mcp_tool(
+                client=client,
+                server_name=server_name,
+                tool=tool,
                 tags=tags,
                 source=source,
             )
-        )
+            for tool in tools
+        ]
+
+    outcomes = await asyncio.gather(
+        *[
+            asyncio.wait_for(discover_one(name, cfg), timeout=timeout_seconds)
+            for name, cfg in entries
+        ],
+        return_exceptions=True,
+    )
+
+    capabilities: list[Capability] = []
+    for (server_name, _), outcome in zip(entries, outcomes):
+        if isinstance(outcome, BaseException):
+            reason = (
+                f"timed out after {timeout_seconds:g}s"
+                if isinstance(outcome, TimeoutError)
+                else _one_line_exception(outcome)
+            )
+            warnings.warn(
+                f"toolplane: MCP server {server_name!r} unavailable "
+                f"during registration ({reason}); skipping it. The "
+                f"facade is starting without this server.",
+                stacklevel=2,
+            )
+            continue
+        capabilities.extend(registry.add(cap) for cap in outcome)
     return capabilities
+
+
+def _prepare_server_entry(server_name: str, server_config: Any) -> Any:
+    """Credential-prepare one config entry and wrap it as a single-server
+    config — the boundary where ``env://``/``keyring://`` references and
+    ``auth = "oauth"`` become live credentials before any connection."""
+    from ..credentials import prepare_server_config
+
+    raw = (
+        server_config.model_dump(exclude_none=True)
+        if isinstance(server_config, BaseModel)
+        else dict(server_config)
+    )
+    return _single_server_config(server_name, prepare_server_config(raw))
+
+
+def _one_line_exception(exc: BaseException) -> str:
+    message = str(exc).strip() or exc.__class__.__name__
+    return " ".join(message.split())
 
 
 def _client(server: Any) -> Any:

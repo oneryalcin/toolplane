@@ -142,37 +142,31 @@ def test_from_config_wires_direct_oauth_to_encrypted_storage(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, object] = {}
+    real_prepare = mcp_adapter._prepare_server_entry
 
-    async def fake_register_mcp_server(
-        registry: CapabilityRegistry,
-        name: str,
-        server: object,
-        **_: object,
-    ) -> list[object]:
-        captured[name] = server
-        return []
+    def fake_prepare(server_name: str, server_config: object) -> object:
+        prepared = real_prepare(server_name, server_config)
+        captured[server_name] = prepared
+        raise ConnectionError("not connecting in this test")
 
-    monkeypatch.setattr(
-        mcp_adapter,
-        "register_mcp_server",
-        fake_register_mcp_server,
-    )
+    monkeypatch.setattr(mcp_adapter, "_prepare_server_entry", fake_prepare)
 
-    run(
-        Toolplane.from_config(
-            {
-                "cli": {"mode": "disabled"},
-                "mcp": {
-                    "servers": {
-                        "linear": {
-                            "url": "https://mcp.linear.app/mcp",
-                            "auth": "oauth",
+    with pytest.warns(UserWarning, match="linear"):
+        run(
+            Toolplane.from_config(
+                {
+                    "cli": {"mode": "disabled"},
+                    "mcp": {
+                        "servers": {
+                            "linear": {
+                                "url": "https://mcp.linear.app/mcp",
+                                "auth": "oauth",
+                            }
                         }
-                    }
-                },
-            }
+                    },
+                }
+            )
         )
-    )
 
     single_server_config = captured["linear"]
 

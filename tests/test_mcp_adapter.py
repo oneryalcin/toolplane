@@ -235,34 +235,27 @@ def test_mcp_config_accepts_remote_url_shape_without_connecting(
     from toolplane.adapters import mcp as mcp_adapter
 
     captured: dict[str, object] = {}
+    real_prepare = mcp_adapter._prepare_server_entry
 
-    async def fake_register_mcp_server(
-        registry: CapabilityRegistry,
-        name: str,
-        server: object,
-        **_: object,
-    ) -> list[object]:
-        captured[name] = server
-        return []
+    def fake_prepare(server_name: str, server_config: object) -> object:
+        captured[server_name] = real_prepare(server_name, server_config)
+        raise ConnectionError("not connecting in this test")
 
-    monkeypatch.setattr(
-        mcp_adapter,
-        "register_mcp_server",
-        fake_register_mcp_server,
-    )
+    monkeypatch.setattr(mcp_adapter, "_prepare_server_entry", fake_prepare)
 
-    run(
-        mcp_adapter.register_mcp_config(
-            CapabilityRegistry(),
-            {
-                "mcpServers": {
-                    "context7": {
-                        "url": "https://mcp.context7.com/mcp",
+    with pytest.warns(UserWarning, match="context7"):
+        run(
+            mcp_adapter.register_mcp_config(
+                CapabilityRegistry(),
+                {
+                    "mcpServers": {
+                        "context7": {
+                            "url": "https://mcp.context7.com/mcp",
+                        }
                     }
-                }
-            },
+                },
+            )
         )
-    )
 
     single_server_config = captured["context7"]
 
@@ -287,32 +280,25 @@ def test_mcp_config_accepts_fastmcp_root_server_shape_without_connecting(
     from toolplane.adapters import mcp as mcp_adapter
 
     captured: dict[str, object] = {}
+    real_prepare = mcp_adapter._prepare_server_entry
 
-    async def fake_register_mcp_server(
-        registry: CapabilityRegistry,
-        name: str,
-        server: object,
-        **_: object,
-    ) -> list[object]:
-        captured[name] = server
-        return []
+    def fake_prepare(server_name: str, server_config: object) -> object:
+        captured[server_name] = real_prepare(server_name, server_config)
+        raise ConnectionError("not connecting in this test")
 
-    monkeypatch.setattr(
-        mcp_adapter,
-        "register_mcp_server",
-        fake_register_mcp_server,
-    )
+    monkeypatch.setattr(mcp_adapter, "_prepare_server_entry", fake_prepare)
 
-    run(
-        mcp_adapter.register_mcp_config(
-            CapabilityRegistry(),
-            {
-                "context7": {
-                    "url": "https://mcp.context7.com/mcp",
-                }
-            },
+    with pytest.warns(UserWarning, match="context7"):
+        run(
+            mcp_adapter.register_mcp_config(
+                CapabilityRegistry(),
+                {
+                    "context7": {
+                        "url": "https://mcp.context7.com/mcp",
+                    }
+                },
+            )
         )
-    )
 
     single_server_config = captured["context7"]
 
@@ -364,3 +350,107 @@ def test_composed_output_schema_result_normalizes_to_plain_values() -> None:
     result = run(exercise())
 
     assert result == {"many": [{"n": 1}]}
+
+
+def _delay_server_script(tmp_path: Path) -> Path:
+    server_path = tmp_path / "delay_server.py"
+    server_path.write_text(
+        textwrap.dedent(
+            """
+            import argparse
+            from fastmcp import FastMCP
+
+            parser = argparse.ArgumentParser()
+            parser.add_argument("--delay", type=float, default=0.0)
+            parser.add_argument("--name", default="Delayed")
+            args = parser.parse_args()
+
+            mcp = FastMCP(args.name)
+
+            @mcp.tool
+            def ping() -> str:
+                return "pong"
+
+            if args.delay:
+                import time
+                time.sleep(args.delay)
+            mcp.run(show_banner=False, log_level="ERROR")
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    return server_path
+
+
+def test_register_mcp_config_insertion_order_is_config_order(tmp_path: Path) -> None:
+    """Completion order must not decide registry order (#118): the slowest
+    server is listed first, so sequential init and concurrent init would
+    disagree if results were added as they finish."""
+    import time as time_mod
+
+    server = _delay_server_script(tmp_path)
+
+    async def exercise() -> list[str]:
+        runtime = Toolplane()
+        started = time_mod.perf_counter()
+        caps = await runtime.register_mcp_config(
+            {
+                "mcpServers": {
+                    "slow": {
+                        "command": sys.executable,
+                        "args": [str(server), "--delay", "1.5", "--name", "Slow"],
+                    },
+                    "medium": {
+                        "command": sys.executable,
+                        "args": [str(server), "--delay", "0.7", "--name", "Medium"],
+                    },
+                    "fast": {"command": sys.executable, "args": [str(server)]},
+                }
+            }
+        )
+        wall = time_mod.perf_counter() - started
+        # concurrency proof with CI-slack: three spawns overlap, so wall is
+        # roughly max(delay)+spawn (~2-4s); sequential init would be
+        # >= sum(delays) + 3 spawns >= ~6.6s
+        assert wall < 6.0, f"not concurrent: {wall:.2f}s"
+        return [c.name for c in caps]
+
+    assert run(exercise()) == [
+        "mcp:slow/ping",
+        "mcp:medium/ping",
+        "mcp:fast/ping",
+    ]
+
+
+def test_unavailable_server_warns_and_does_not_block_others(
+    tmp_path: Path,
+) -> None:
+    """One hung upstream must not hold facade startup hostage (#118):
+    bounded per-server wait, skip-with-warning, healthy servers still
+    register. The 8s bound must exceed a cold python+fastmcp spawn on
+    CI runners (~2s) while staying well under the hung server's delay."""
+    server = _delay_server_script(tmp_path)
+
+    async def exercise() -> tuple[list[str], list[str]]:
+        runtime = Toolplane()
+        with pytest.warns(UserWarning, match="hung"):
+            caps = await runtime.register_mcp_config(
+                {
+                    "mcpServers": {
+                        "hung": {
+                            "command": sys.executable,
+                            "args": [str(server), "--delay", "30"],
+                        },
+                        "healthy": {"command": sys.executable, "args": [str(server)]},
+                    }
+                },
+                timeout_seconds=8.0,
+            )
+        names = [c.name for c in caps]
+        return names, list(runtime.registry.callable_namespace())
+
+    names, namespace = run(exercise())
+
+    assert names == ["mcp:healthy/ping"]
+    assert any("healthy_ping" in n for n in namespace)

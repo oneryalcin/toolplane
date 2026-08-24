@@ -208,14 +208,23 @@ class Toolplane:
         config: Any,
         *,
         tags: set[str] | frozenset[str] | None = None,
+        timeout_seconds: float | None = None,
     ) -> list[Capability]:
-        """Register all tools from an `mcpServers` config dictionary."""
+        """Register all tools from an `mcpServers` config dictionary.
+
+        Servers are discovered concurrently; a server that errors or
+        exceeds ``timeout_seconds`` (default 10s) is skipped with a
+        warning instead of failing startup (#118).
+        """
         from .adapters.mcp import register_mcp_config
 
+        kwargs: dict[str, Any] = {"tags": tags}
+        if timeout_seconds is not None:
+            kwargs["timeout_seconds"] = timeout_seconds
         return await register_mcp_config(
             self.registry,
             config,
-            tags=tags,
+            **kwargs,
         )
 
     async def search(
