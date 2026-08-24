@@ -8,8 +8,9 @@ not inferred; scripts were throwaway.
 ## Setup
 
 Scratch venv, `--no-deps` editable install of toolplane over
-`fastmcp==4.0.0b3` + `pydantic-monty==0.0.19b4` (the `<4` pin from #134
-correctly refuses to co-resolve with the beta).
+`fastmcp==4.0.0b3` + `pydantic-monty==0.0.19b4` (the `<4` pin as it stood
+at spike time refuses to co-resolve with the beta; reopened after the
+gated contextvar landed).
 
 ## Findings
 

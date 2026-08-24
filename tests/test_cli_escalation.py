@@ -459,8 +459,6 @@ def test_multi_client_transport_never_elicits() -> None:
     policy, so on a multi-client transport client A's approval would let
     client B run the binary without ever seeing a prompt. Off stdio the
     facade must not elicit at all — both clients get the plain refusal."""
-    from fastmcp import Client
-
     from toolplane.mcp_facade import build_mcp_facade_from_config
 
     prompts: list[str] = []
@@ -500,8 +498,6 @@ def test_multi_client_transport_never_elicits() -> None:
 
 
 def test_stdio_transport_keeps_escalation() -> None:
-    from fastmcp import Client
-
     from toolplane.mcp_facade import build_mcp_facade_from_config
 
     prompts: list[str] = []
