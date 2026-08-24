@@ -50,11 +50,16 @@ What makes toolplane different from other code-mode runtimes:
   written back to config. (MCP elicitation; degrades to a plain refusal on
   clients that can't prompt.)
 - **A measured envelope, not a slogan.** We benchmarked code mode against
-  raw MCP tool-calling in a real client and published where it *loses*: at
-  30 tool interactions per task, plain MCP is ~20% cheaper; at 100, code
-  mode wins on median across every metric (~15% cheaper, ~32% faster, 4.3x
-  fewer output tokens) — the crossover is somewhere between, unmeasured.
-  The surprise: round-trips aren't the mechanism (clients batch tool calls
+  raw MCP tool-calling in a real client and published where it *loses*.
+  Two eras, labeled: **shipped 0.4.0** measured plain MCP ~20% cheaper at
+  30 tool interactions and code mode ~15% cheaper at 100 (crossover
+  unmeasured). **Main** (facade changes unreleased at time of writing)
+  moves the crossover below 30: code mode runs flat ~$0.18/task at every
+  task size, sits at parity with plain MCP in the 20–30 region, and wins
+  ~45% cheaper / ~2.8x faster at 100 — while single lookups still favor
+  direct calls ($0.14 vs $0.18) and a sequentially-adaptive "chain" task
+  costs code mode +38%, published with the mechanism. The surprise in
+  both eras: round-trips aren't the mechanism (clients batch tool calls
   in parallel); output-token scaling and context growth are. Harness and
   raw results in [`bench/`](bench/); numbers, variance, and limitations in
   [The Code-Mode Envelope, Measured](https://oneryalcin.github.io/toolplane/code-mode-benchmark/).
