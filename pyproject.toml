@@ -23,9 +23,11 @@ classifiers = [
 dependencies = [
     # >=0.2 for the _global (pre-subcommand flags) kwarg, cli-to-py#7
     "cli-to-py>=0.2",
-    # v4 is the line that speaks the 2026-07-28 spec ("MCP 2.0"); upgrade
-    # breaks the request_ctx elicitation hack in mcp_facade.py — plan in #132
-    "fastmcp>=3.1,<4",
+    # 4.x permitted again: the escalation contextvar is gated per line
+    # (_request_context_var) and the full suite is verified green on
+    # 3.2.0 AND 4.0.0b3 (docs/fastmcp4-spike.md). Modern-era elicitation
+    # still needs MRTR (#132); betas stay excluded by default resolution.
+    "fastmcp>=3.1",
     # we import keyring directly (credentials.py); it also arrives
     # transitively via fastmcp's storage stack
     "keyring>=25",

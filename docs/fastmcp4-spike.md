@@ -8,8 +8,9 @@ not inferred; scripts were throwaway.
 ## Setup
 
 Scratch venv, `--no-deps` editable install of toolplane over
-`fastmcp==4.0.0b3` + `pydantic-monty==0.0.19b4` (the `<4` pin from #134
-correctly refuses to co-resolve with the beta).
+`fastmcp==4.0.0b3` + `pydantic-monty==0.0.19b4` (the `<4` pin as it stood
+at spike time refuses to co-resolve with the beta; reopened after the
+gated contextvar landed).
 
 ## Findings
 
@@ -66,15 +67,15 @@ exists. No error surfaces at the server; this is the trap to document.
 
 ## Recommendation
 
-1. Now (small): replace the raw-SDK import with a gated lookup —
-   `fastmcp_request_ctx` on fastmcp ≥4, fallback to the SDK var on 3.x.
-   Re-run the escalation suite on both lines.
+1. ~~Now (small): replace the raw-SDK import with a gated lookup~~
+   **Done** — `_request_context_var()` gates per line, test clients pin
+   the handshake era, `<4` reopened; full suite green on 3.2.0 and
+   4.0.0b3 (2026-08-24).
 2. Before any client ships modern era (track in the capability matrix):
    implement escalation as an MRTR guard-mode tool for 2026-07-28
    connections, keeping `ctx.elicit` for handshake-era sessions. fastmcp
    4's guard-mode tools (PrefectHQ/fastmcp#4544) are the candidate shape.
-3. Do not upgrade the pin until 1 lands; do not promise MRTR until a
-   real modern client exists to probe against.
+3. ~~Do not upgrade the pin until 1 lands~~ — superseded by (1).
 
 ## Scorecard vs #132 predictions
 
