@@ -335,13 +335,20 @@ def _facade_client(runtime, **client_kwargs):
     return Client(build_mcp_facade(runtime), **client_kwargs)
 
 
+# fastmcp >=3.2 client contract: an elicitation handler must answer with a
+# dict (or None) matching the requested schema. The facade's
+# response_type=["allow", "deny"] wraps the scalar as {"value": ...}, so a
+# bare "allow" string now raises client-side and reaches the server as
+# INTERNAL_ERROR — indistinguishable from a refusal (#133).
+
+
 def test_facade_elicits_and_grants_over_mcp() -> None:
     runtime, spawned = _runtime_with_fake_cli()
     prompts: list[str] = []
 
     async def allow(message, response_type, params, context):
         prompts.append(message)
-        return "allow"
+        return {"value": "allow"}
 
     async def exercise():
         async with _facade_client(runtime, elicitation_handler=allow) as client:
@@ -372,7 +379,7 @@ def test_facade_elicitation_reaches_pyodide_dispatch() -> None:
     runtime, spawned = _runtime_with_fake_cli()
 
     async def allow(message, response_type, params, context):
-        return "allow"
+        return {"value": "allow"}
 
     async def exercise():
         async with _facade_client(runtime, elicitation_handler=allow) as client:
@@ -392,7 +399,7 @@ def test_facade_answer_other_than_allow_refuses() -> None:
     runtime, spawned = _runtime_with_fake_cli()
 
     async def deny(message, response_type, params, context):
-        return "deny"
+        return {"value": "deny"}
 
     async def exercise():
         async with _facade_client(runtime, elicitation_handler=deny) as client:
@@ -440,7 +447,7 @@ def test_multi_client_transport_never_elicits() -> None:
 
     async def allow(message, response_type, params, context):
         prompts.append(message)
-        return "allow"
+        return {"value": "allow"}
 
     async def exercise():
         app = await build_mcp_facade_from_config(
@@ -477,7 +484,7 @@ def test_stdio_transport_keeps_escalation() -> None:
 
     async def deny(message, response_type, params, context):
         prompts.append(message)
-        return "deny"
+        return {"value": "deny"}
 
     async def exercise():
         app = await build_mcp_facade_from_config(
