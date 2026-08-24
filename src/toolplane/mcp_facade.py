@@ -280,17 +280,15 @@ def build_mcp_facade(
         if cli_escalation and ctx is not None:
             request_context = ctx
 
-            # ctx.elicit resolves its session through the MCP SDK's
-            # request_ctx contextvar, not through the ctx object — and the
-            # pyodide RPC path dispatches from a callback thread whose
-            # coroutine context has that var unset. Capture the value here,
-            # inside the request, so the handler can re-seat it (empirically
-            # required: without this, pyodide escalation fails closed).
-            # v1-SDK internal: gone in mcp-sdk v2 / fastmcp 4 — port is
-            # fastmcp_request_ctx (verified in docs/fastmcp4-spike.md);
-            # modern-era connections drop ctx.elicit entirely for MRTR (#132).
-            from mcp.server.lowlevel.server import request_ctx
-
+            # ctx.elicit resolves its session through a request-context
+            # contextvar, not through the ctx object — and the pyodide RPC
+            # path dispatches from a callback thread whose coroutine context
+            # has that var unset. Capture the value here, inside the
+            # request, so the handler can re-seat it (empirically required:
+            # without this, pyodide escalation fails closed). The owning var
+            # moved in fastmcp 4 / mcp-sdk v2; see docs/fastmcp4-spike.md.
+            # Modern-era connections drop ctx.elicit entirely for MRTR (#132).
+            request_ctx = _request_context_var()
             captured_request_ctx = request_ctx.get()
 
             async def elicit_cli_grant(binary: str) -> bool:
@@ -510,6 +508,24 @@ def _register_hybrid_tools(
                 fn=_make_hybrid_dispatch(runtime, capability.name),
             )
         )
+
+
+def _request_context_var() -> Any:
+    """The ContextVar carrying the active MCP request context.
+
+    fastmcp 4 (mcp-sdk v2) removed the raw SDK var and owns a documented
+    replacement; both expose the same get/set/reset API. Lazy import: the
+    facade must stay importable without fastmcp installed.
+    """
+    try:
+        from fastmcp.server.dependencies import (
+            fastmcp_request_ctx as request_context_var,
+        )
+    except ImportError:
+        from mcp.server.lowlevel.server import (
+            request_ctx as request_context_var,
+        )
+    return request_context_var
 
 
 async def _elicit_cli_grant(ctx: Any, policy: Any, binary: str) -> bool:

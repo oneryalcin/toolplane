@@ -329,10 +329,30 @@ def test_retry_after_abandoned_escalation_reprompts() -> None:
 # --- facade wiring: real MCP elicitation round-trip ---------------------------
 
 
-def _facade_client(runtime, **client_kwargs):
+def _mcp_client(target, **client_kwargs):
+    """Version-tolerant Client construction, pinned to the handshake era.
+
+    Elicitation escalation exists only on initialize-era connections;
+    fastmcp >=4 clients probe for the modern era by default and would
+    silently degrade every prompt to a refusal (docs/fastmcp4-spike.md
+    F3/F5). Legacy is what real clients speak today. Older Clients have
+    no mode parameter.
+    """
+    import inspect
+
     from fastmcp import Client
 
-    return Client(build_mcp_facade(runtime), **client_kwargs)
+    if (
+        "mode" not in client_kwargs
+        and "mode"
+        in inspect.signature(Client.__init__).parameters
+    ):
+        client_kwargs["mode"] = "legacy"
+    return Client(target, **client_kwargs)
+
+
+def _facade_client(runtime, **client_kwargs):
+    return _mcp_client(build_mcp_facade(runtime), **client_kwargs)
 
 
 # fastmcp >=3.2 client contract: an elicitation handler must answer with a
@@ -456,7 +476,11 @@ def test_multi_client_transport_never_elicits() -> None:
         )
         results = []
         for _ in range(2):  # two clients sharing one facade
-            async with Client(app, elicitation_handler=allow) as client:
+            # legacy era: on the modern era elicit is protocol-dead anyway,
+            # and this test must exercise the transport gate, not ride that
+            async with _mcp_client(
+                app, elicitation_handler=allow
+            ) as client:
                 result = await client.call_tool(
                     "execute_code",
                     {
@@ -491,7 +515,9 @@ def test_stdio_transport_keeps_escalation() -> None:
             {"cli": {"mode": "allowlist", "allow": ["git"]}},
             transport="stdio",
         )
-        async with Client(app, elicitation_handler=deny) as client:
+        # legacy era, same reason as _mcp_client: exercise the stdio
+        # escalation gate, not modern-era protocol death
+        async with _mcp_client(app, elicitation_handler=deny) as client:
             result = await client.call_tool(
                 "execute_code",
                 {"code": 'return await cli_run("curl")', "backend": "monty"},
