@@ -18,6 +18,15 @@ from toolplane.cli import main
 from toolplane.config import ToolplaneConfig
 from toolplane.policy import EffectivePolicy, format_effective_policy
 
+
+def _uri_template(template: object) -> str:
+    """SDK v2 renames uriTemplate -> uri_template with a deprecation shim
+    on the old name (#142); read whichever generation this object speaks."""
+    value = getattr(template, "uri_template", None)
+    if value is None:
+        value = template.uriTemplate  # type: ignore[attr-defined]
+    return str(value)
+
 pytest.importorskip("fastmcp")
 from fastmcp import Client  # noqa: E402
 from fastmcp.client.transports import StdioTransport  # noqa: E402
@@ -109,9 +118,9 @@ def test_results_resource_serves_saved_values_and_signposts_misses() -> None:
         app = build_mcp_facade(runtime)
         async with Client(app) as client:
             templates = [
-                t.uriTemplate
+                _uri_template(t)
                 for t in await client.list_resource_templates()
-                if t.uriTemplate.startswith("toolplane://results")
+                if _uri_template(t).startswith("toolplane://results")
             ]
             content = await client.read_resource(f"toolplane://results/{handle}")
             try:
@@ -136,9 +145,9 @@ def test_config_builder_fails_closed_on_multi_client_transport() -> None:
         )
         async with Client(app) as client:
             return [
-                t.uriTemplate
+                _uri_template(t)
                 for t in await client.list_resource_templates()
-                if t.uriTemplate.startswith("toolplane://")
+                if _uri_template(t).startswith("toolplane://")
             ]
 
     # adversarial review finding: an embedder building from config for a
@@ -162,7 +171,13 @@ def test_artifact_resource_serves_saved_bytes() -> None:
             item = content[0]
             raw = base64.b64decode(item.blob)
         runtime.artifact_store.close()
-        return raw, item.mimeType
+        # mcp-sdk v2 / fastmcp>=3.4 renames mimeType -> mime_type with a
+        # deprecation shim on the old name (#142); prefer snake_case and
+        # fall back for pure v1 objects.
+        mime = getattr(item, "mime_type", None)
+        if mime is None:
+            mime = item.mimeType
+        return raw, mime
 
     raw, mime = run(exercise())
     assert raw == bytes([0, 1, 2, 255]) * 4
@@ -179,9 +194,9 @@ def test_results_resource_template_absent_when_store_disabled() -> None:
         app = build_mcp_facade(runtime)
         async with Client(app) as client:
             return [
-                t.uriTemplate
+                _uri_template(t)
                 for t in await client.list_resource_templates()
-                if t.uriTemplate.startswith("toolplane://results")
+                if _uri_template(t).startswith("toolplane://results")
             ]
 
     # a template over a disabled store would be a signpost to nowhere
@@ -658,12 +673,21 @@ def test_hybrid_off_by_default() -> None:
     ]
 
 
+def _tool_schema_field(tool: object) -> dict:
+    """SDK v2 renames inputSchema -> input_schema with a deprecation shim
+    on the old name (#142)."""
+    value = getattr(tool, "input_schema", None)
+    if value is None:
+        value = tool.inputSchema  # type: ignore[attr-defined]
+    return value
+
+
 def test_hybrid_tool_dispatches_through_call_tool_with_real_schema() -> None:
     async def exercise() -> tuple[dict, dict]:
         app = build_mcp_facade(_hybrid_runtime(), hybrid=True)
         async with Client(app) as client:
             tools = {t.name: t for t in await client.list_tools()}
-            schema = tools["orders_get_order"].inputSchema
+            schema = _tool_schema_field(tools["orders_get_order"])
             result = await client.call_tool(
                 "orders_get_order", {"order_id": "ORD-017"}
             )
@@ -710,7 +734,7 @@ def test_hybrid_tool_name_never_shadows_a_meta_tool() -> None:
             tools = {t.name: t for t in await client.list_tools()}
             # the meta-tool must still be the real execute_code (takes code),
             # the capability got a suffixed name
-            meta = tools["execute_code"].inputSchema
+            meta = _tool_schema_field(tools["execute_code"])
             suffixed = await client.call_tool("execute_code_2", {})
         return list(meta["properties"]), suffixed.content[0].text
 

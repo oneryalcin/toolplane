@@ -228,12 +228,23 @@ def _capability_from_mcp_tool(
     )
 
 
+_UNSET = object()
+
+
 def _tool_schema(tool: Any, attr: str) -> JsonSchema | None:
-    schema = getattr(tool, attr, None)
-    if schema is None:
-        return None
-    if isinstance(schema, Mapping):
-        return dict(schema)
+    # mcp-sdk v2 renames inputSchema/outputSchema to snake_case with a
+    # deprecation shim on the old names (#142); prefer snake_case when the
+    # object has it, fall back for pure v1 tools. Existence check, not a
+    # None check — a legitimately absent schema must not re-read the
+    # deprecated name.
+    snake = {"inputSchema": "input_schema", "outputSchema": "output_schema"}[
+        attr
+    ]
+    schema = getattr(tool, snake, _UNSET)
+    if schema is _UNSET:
+        schema = getattr(tool, attr)
+    if schema is None or isinstance(schema, Mapping):
+        return dict(schema) if isinstance(schema, Mapping) else None
     return None
 
 
