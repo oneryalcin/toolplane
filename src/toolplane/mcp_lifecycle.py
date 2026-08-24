@@ -572,6 +572,13 @@ def _status_probe_server_config(server_config: Mapping[str, Any]) -> dict[str, A
     if _server_kind(sanitized) == "stdio":
         env = _merged_stdio_env(sanitized.get("env"))
         env["BROWSER"] = _disabled_browser_command()
+        # $BROWSER alone does not bind children that launch the platform
+        # opener directly — mcp-remote on macOS shells out to `open`,
+        # which ignores it (#93). A PATH shim makes `open`/`xdg-open`
+        # no-ops for the probe child regardless of its opener strategy.
+        # The login path deliberately keeps real openers: consent there
+        # is the point.
+        env["PATH"] = _browser_shim_dir() + os.pathsep + env.get("PATH", "")
         sanitized["env"] = env
     return sanitized
 
@@ -622,6 +629,39 @@ def _disabled_browser_command() -> str:
     if os.path.exists("/usr/bin/false"):
         return "/usr/bin/false"
     return "false"
+
+
+_BROWSER_SHIM_NAMES = ("open", "xdg-open")
+_browser_shim_dir_cached: str | None = None
+
+
+def _browser_shim_dir() -> str:
+    """Directory of no-op `open`/`xdg-open` executables, prepended to the
+    status probe child's PATH (#93).
+
+    Scripts exit 0 silently: the child is told its page "opened" so it
+    proceeds normally instead of erroring on a refused opener. The dir
+    lives for the process lifetime — `mcp status` is short-lived, and
+    atexit removes it.
+    """
+    global _browser_shim_dir_cached
+    if _browser_shim_dir_cached is not None:
+        return _browser_shim_dir_cached
+    import atexit
+    import shutil
+    import stat
+    import tempfile
+
+    shim_dir = tempfile.mkdtemp(prefix="toolplane-no-browser-")
+    script = "#!/bin/sh\nexit 0\n"
+    for name in _BROWSER_SHIM_NAMES:
+        path = os.path.join(shim_dir, name)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(script)
+        os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    atexit.register(shutil.rmtree, shim_dir, ignore_errors=True)
+    _browser_shim_dir_cached = shim_dir
+    return shim_dir
 
 
 def _server_kind(server_config: Mapping[str, Any]) -> McpServerKind:

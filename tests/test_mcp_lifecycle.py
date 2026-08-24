@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 import textwrap
 from pathlib import Path
@@ -547,7 +548,9 @@ def test_mcp_status_stdio_probe_neutralizes_browser_and_preserves_env(
 
     assert code == 0
     assert captured.err == ""
-    assert env["PATH"] == "/toolplane/test/path"
+    # the probe prepends the no-op opener shim dir (#93); the configured
+    # PATH must survive behind it so `npx` etc. still resolve
+    assert env["PATH"].endswith(os.pathsep + "/toolplane/test/path")
     assert env["FASTMCP_REMOTE_CONFIG_DIR"] == "/project/fastmcp"
     assert env["LINEAR_REGION"] == "eu"
     assert env["BROWSER"] == lifecycle._disabled_browser_command()
@@ -1289,3 +1292,41 @@ def test_mcp_add_then_remove_round_trips_byte_identical(
     assert main(["mcp", "remove", "ctx", "--config", str(config_path)]) == 0
 
     assert config_path.read_text(encoding="utf-8") == original
+
+
+def test_status_probe_shim_neutralizes_platform_openers() -> None:
+    """#93: mcp-remote on macOS launches `open` directly, which ignores
+    $BROWSER. The status probe prepends a PATH shim dir whose openers are
+    silent no-ops; login keeps real openers."""
+    import os
+    import subprocess
+
+    shim_dir = lifecycle._browser_shim_dir()
+    for name in lifecycle._BROWSER_SHIM_NAMES:
+        path = os.path.join(shim_dir, name)
+        assert os.path.isfile(path) and os.access(path, os.X_OK)
+        # exit 0, no output: the child believes its page opened
+        result = subprocess.run([path], capture_output=True, text=True)
+        assert result.returncode == 0
+        assert result.stdout == "" and result.stderr == ""
+
+    probe = lifecycle._status_probe_server_config(
+        {"command": "npx", "args": ["-y", "mcp-remote", "https://x/mcp"]}
+    )
+    assert probe["env"]["PATH"].startswith(shim_dir + os.pathsep)
+
+    # the login path must keep real openers — consent there is the point
+    login = lifecycle._login_server_config(
+        {"command": "npx", "args": ["-y", "mcp-remote", "https://x/mcp"]}
+    )
+    assert "PATH" not in login or not login["PATH"].startswith(shim_dir)
+
+    # url servers are untouched by the stdio-only env wiring
+    url_probe = lifecycle._status_probe_server_config({"url": "https://x/mcp"})
+    assert "PATH" not in url_probe
+
+
+def test_browser_shim_dir_is_cached_per_process() -> None:
+    first = lifecycle._browser_shim_dir()
+    second = lifecycle._browser_shim_dir()
+    assert first == second
