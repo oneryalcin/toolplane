@@ -118,11 +118,20 @@ async def _self_test() -> None:
         resources = await client.list_resources()
         print("resources:", [str(r.uri) for r in resources])
         templates = await client.list_resource_templates()
-        print("templates:", [str(t.uriTemplate) for t in templates])
+        # SDK v2 renames these fields to snake_case (#142): prefer the new
+        # name, fall back so one probe binary serves both server eras
+        print(
+            "templates:",
+            [
+                str(getattr(t, "uri_template", None) or t.uriTemplate)
+                for t in templates
+            ],
+        )
         print("static:", (await client.read_resource("probe://static"))[0].text)
         print("template:", (await client.read_resource("probe://item/7"))[0].text)
         blob = (await client.read_resource("probe://blob"))[0]
-        print("blob:", base64.b64decode(blob.blob), blob.mimeType)
+        mime = getattr(blob, "mime_type", None) or blob.mimeType
+        print("blob:", base64.b64decode(blob.blob), mime)
         for tool in (
             "client_capabilities",
             "try_sampling",
