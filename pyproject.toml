@@ -23,7 +23,11 @@ classifiers = [
 dependencies = [
     # >=0.2 for the _global (pre-subcommand flags) kwarg, cli-to-py#7
     "cli-to-py>=0.2",
-    "fastmcp>=3.1",
+    # <4 / mcp<2: fastmcp 4 + mcp 2 drop mcp.server.lowlevel.server.request_ctx,
+    # which CLI escalation re-seats on the pyodide dispatch thread (#144).
+    # We import mcp directly, so bound it here rather than via fastmcp-slim.
+    "fastmcp>=3.1,<4",
+    "mcp<2",
     # we import keyring directly (credentials.py); it also arrives
     # transitively via fastmcp's storage stack
     "keyring>=25",
