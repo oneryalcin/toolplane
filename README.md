@@ -255,7 +255,7 @@ and runnable `as_tool` examples for all three frameworks.
 
 | Backend | Use | Status |
 | --- | --- | --- |
-| `monty` | Default. Sandboxed by construction (no filesystem/network), pure pip install. Flat callable namespace — no classes, no third-party imports. | Active |
+| `monty` | Default. Sandboxed by construction (no filesystem/network), pure pip install. Flat Toolplane callable namespace; no third-party imports. | Active |
 | `pyodide-deno` | Opt-in for package-capable snippets (pandas/NumPy-style) via Pyodide in Deno. | Supported, feature-frozen |
 | `local_unsafe` | In-process execution for development only. | Dev only |
 

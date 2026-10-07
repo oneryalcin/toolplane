@@ -146,6 +146,9 @@ The contract, chosen from the [#77 spike](monty-session-spike.md):
 - The memory cap is enforced cumulatively; hitting it is a catchable
   `MemoryError` and the session survives — reassign large variables to
   `None` (monty has no `del`) or reset.
+- Captured stdout/stderr has a separate 10 MiB cap per run. Hitting it returns
+  a structured `MemoryError` and the session survives; print less data or
+  summarize it instead. Resetting the session does not help with this cap.
 - Snippets that assign to a Toolplane binding name (`save_result = ...`)
   are rejected up front: in a session the assignment would persist and
   mask the binding — including `reset_session` itself — until reset.

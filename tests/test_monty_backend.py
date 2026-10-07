@@ -70,6 +70,50 @@ def test_monty_reports_snippet_error_with_original_type() -> None:
     assert "toolplane_snippet.py" in result.error.traceback
 
 
+def test_monty_output_cap_is_structured_and_backend_recovers() -> None:
+    async def case() -> None:
+        backend = MontyBackend()
+        try:
+            capped = await backend.run(
+                "print('x' * 11_000_000)", bridge=_StubBridge()
+            )
+            assert capped.error is not None
+            assert capped.error.type == "MemoryError"
+            assert "10 MiB per-run output limit" in capped.error.message
+            assert "session memory cap" not in capped.error.message
+
+            after = await backend.run("return 42", bridge=_StubBridge())
+            assert after.error is None
+            assert after.value == 42
+        finally:
+            await backend.aclose()
+
+    run(case())
+
+
+def test_monty_run_may_make_more_than_1000_tool_calls() -> None:
+    # monty 1.x defaults max_suspensions to 1000 per checkout; a tool loop
+    # past it died with an uncatchable "suspension limit 1000 exceeded"
+    backend = MontyBackend()
+    bridge = _StubBridge({"mcp.math.multiply": _multiply})
+
+    result = run(
+        backend.run(
+            """
+total = 0
+for i in range(1200):
+    total += await math_multiply(x=i, y=1)
+return total
+""",
+            bridge=bridge,
+            namespace={"math_multiply": "mcp.math.multiply"},
+        )
+    )
+
+    assert result.error is None, result.error
+    assert result.value == sum(range(1200))
+
+
 def test_monty_tool_error_is_catchable_in_snippet() -> None:
     async def explode() -> None:
         raise RuntimeError("tool exploded")
@@ -99,6 +143,19 @@ def test_monty_times_out_hot_loop() -> None:
 
     result = run(
         backend.run("while True:\n    pass", bridge=_StubBridge())
+    )
+
+    assert result.error is not None
+    assert result.error.type == "TimeoutError"
+
+
+def test_monty_times_out_sandbox_sleep() -> None:
+    # monty 1.x sleeps for real but excludes sleep from its own duration
+    # limits; only the host wall-clock timeout bounds it
+    backend = MontyBackend(timeout_seconds=0.5)
+
+    result = run(
+        backend.run("import time\ntime.sleep(1000)", bridge=_StubBridge())
     )
 
     assert result.error is not None

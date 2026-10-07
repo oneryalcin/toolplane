@@ -8,8 +8,12 @@ and cannot be faked.
 from __future__ import annotations
 
 import asyncio
+import os
+import signal
 from collections.abc import Coroutine
 from typing import Any
+
+import pytest
 
 from toolplane import Toolplane
 from toolplane.backends import MontyBackend
@@ -175,6 +179,76 @@ def test_memory_cap_fires_and_the_session_survives() -> None:
 
         after = await runtime.execute("return len(a)")
         assert after.value == 100
+
+    _run(case())
+
+
+def test_output_cap_is_not_reported_as_session_heap_exhaustion() -> None:
+    async def case() -> None:
+        runtime = _session_runtime()
+        await runtime.execute("marker = 'still-usable'")
+
+        capped = await runtime.execute("print('x' * 11_000_000)")
+        assert capped.error is not None
+        assert capped.error.type == "MemoryError"
+        assert "10 MiB per-run output limit" in capped.error.message
+        assert "session memory cap" not in capped.error.message
+        assert "reset_session" not in capped.error.message
+
+        after = await runtime.execute("return marker")
+        assert after.error is None
+        assert after.value == "still-usable"
+
+    _run(case())
+
+
+@pytest.mark.parametrize("memory_cap", [512 * 1024 * 1024, None])
+def test_tool_calls_past_1000_across_runs_keep_working(
+    memory_cap: int | None,
+) -> None:
+    # a session is one checkout, and monty 1.x counts every tool call
+    # against max_suspensions (default 1000) cumulatively across runs.
+    # memory_cap=None covers the limits path that used to pass no limits.
+    async def case() -> None:
+        runtime = _session_runtime(session_max_memory_bytes=memory_cap)
+
+        def ping(i: int) -> int:
+            return i
+
+        runtime.register(ping, description="echo")
+        for _ in range(3):
+            result = await runtime.execute(
+                "t = 0\nfor i in range(400):\n    t += await ping(i=i)\nreturn t"
+            )
+            assert result.error is None, result.error
+
+    _run(case())
+
+
+def test_worker_crash_rolls_back_instead_of_bricking_the_session() -> None:
+    # a dead worker finishes the checkout; without recovery every later run
+    # failed with "this checkout has already been finished" until restart.
+    # The kill stands in for an external crash (OOM killer, segfault).
+    async def case() -> None:
+        backend = MontyBackend(session=True)
+        runtime = Toolplane(
+            backends=[backend], default_backend="monty", ambient_cli=False
+        )
+
+        def crash_worker() -> str:
+            assert backend._worker_pid is not None
+            os.kill(backend._worker_pid, signal.SIGKILL)
+            return "killed"
+
+        runtime.register(crash_worker, description="kills the worker")
+        await runtime.execute("kept = 41")
+        crashed = await runtime.execute("kept = 0\nawait crash_worker()")
+        assert crashed.error is not None
+        assert crashed.error.type == "MontyCrashedError"
+
+        after = await runtime.execute("return kept + 1")
+        assert after.error is None, after.error
+        assert after.value == 42
 
     _run(case())
 

@@ -106,6 +106,8 @@ return [r for r in rows if r["score"] > 0.5]
 - The session has a memory cap. A `MemoryError` names the fix: reassign
   large variables (`big = None` — monty has no `del`) or reset, then
   re-run.
+- Captured stdout/stderr is capped separately at 10 MiB per run. If that cap
+  fires, print less data or summarize it; resetting the session is unnecessary.
 - Don't name variables after Toolplane bindings (`save_result = ...`);
   the run is rejected up front because the assignment would mask the
   binding for the rest of the session.

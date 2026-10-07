@@ -32,13 +32,9 @@ dependencies = [
     # transitively via fastmcp's storage stack
     "keyring>=25",
     "pydantic>=2.0",
-    # BETA pin (monty-0.0.19-port branch, #88): the session backend runs on
-    # the AsyncMonty subprocess-pool API. Exact pin because the beta API may
-    # still churn — reopen to >=0.0.19,<0.0.20 once 0.0.19 stable lands.
-    # uv resolves this fine from package metadata (verified: make test /
-    # --with-editable), but if a release ever ships on a beta pin, re-check
-    # plain `uvx --no-config --refresh-package toolplane` first.
-    "pydantic-monty==0.0.19b4",
+    # Keep the default backend inside the tested stable API line. Monty's
+    # Python package pins its worker runtime to the exact same version.
+    "pydantic-monty>=1.1,<2",
     "tomlkit>=0.15.0",
 ]
 
