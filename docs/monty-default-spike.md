@@ -29,6 +29,29 @@ Monty is the only candidate that satisfies "always available + safe":
 `pyodide-deno` remains the opt-in answer for package-capable snippets;
 `local_unsafe` remains dev-only and keeps requiring `--unsafe` everywhere.
 
+## 1.1 envelope delta (2026-10-08, #145)
+
+Probed through Toolplane's real `monty` backend, same snippets on both
+versions:
+
+| Feature | 0.0.19 | 1.1.0 |
+|---|---|---|
+| decorators, `@dataclass` | no | yes |
+| `collections`, `itertools`, `functools` | no | yes |
+| `str.format`, `%` formatting | no | yes |
+| `random`, `copy`, `base64` | no | yes |
+| `eval` / `exec`, `complex` | no | yes |
+| classes, f-strings, `datetime`, `json`, `re`, try/except | yes | yes |
+| `del`, `match`, generators (`yield`) | no | no |
+| third-party imports (`pandas`), `open()` on host files | denied | denied |
+
+The sandbox boundary did not move. Two 1.x behaviors the backend now owns:
+`max_duration_secs` became `max_feed_duration_secs` (its clock runs only
+while sandbox code executes, so the host `asyncio.wait_for` stays the
+wall-clock bound), and `max_suspensions` caps host round trips at 1000 per
+checkout by default — every capability call counts, cumulatively across a
+session's runs — so the backend sets it out of reach.
+
 ## Empirical capability envelope (pydantic-monty 0.0.18 baseline)
 
 This section preserves the original 0.0.18 decision evidence. Stable 0.0.19
@@ -92,8 +115,8 @@ would require a separate design and compatibility decision.
   `(default_backend,)`, so `execute_code(backend="local_unsafe")` stays
   blocked (fail-closed, #24/#25). Allowing `pyodide-deno` as a safe override
   under default policy is a possible follow-up, deliberately not this slice.
-- Version pin `pydantic-monty>=0.0.19,<0.0.20`: pre-0.1 API churn must not be
-  able to brick the default backend via an unconstrained resolve.
-- Timeout enforcement is belt-and-braces: `ResourceLimits.max_duration_secs`
+- Version pin `pydantic-monty>=1.1,<2`: API churn must not be able to brick
+  the default backend via an unconstrained resolve.
+- Timeout enforcement is belt-and-braces: `ResourceLimits.max_feed_duration_secs`
   bounds VM time, an outer `asyncio.wait_for` bounds wall clock including
   time spent inside external tool calls.

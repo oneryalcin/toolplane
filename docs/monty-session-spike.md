@@ -39,6 +39,21 @@ implementation and regressions cover both. The cancellation, checkout-close,
 session-duration, and unknown-limit-key workarounds remain because their
 upstream issues are still open.*
 
+*1.1 status (2026-10-08, #145): Toolplane targets `pydantic-monty>=1.1,<2`.
+[#551](https://github.com/pydantic/monty/issues/551) is fixed upstream
+(raw repro: `__aexit__` after a cancelled CPU-busy feed returns in 0.00s, was
+>10s); the pid-capture + SIGKILL path stays as a backstop.
+[#534](https://github.com/pydantic/monty/issues/534) is fixed: unknown limit
+keys raise `ValueError`. [#533](https://github.com/pydantic/monty/issues/533)
+is still open, so the pre-run snapshot stays. #483 is addressed by the new
+per-feed `max_feed_duration_secs`, but sessions deliberately don't set it: a
+sandbox-side timeout leaves the heap without guarantees yet surfaces as an
+ordinary snippet error, and its clock skips time suspended on host calls.
+New in 1.x: `max_suspensions` (default 1000 per checkout, not disableable)
+counts every capability call cumulatively across a session's runs; the
+backend sets it out of reach (regressions: >1000 calls in one run, and
+across runs with and without a memory cap).*
+
 ## Problem
 
 Every `execute_code` run today gets a fresh interpreter. Variables,
@@ -179,8 +194,8 @@ run are visible in the audit log (`run_end.ok=false` + the run's
   concurrent `feed_run` calls serialize. Fine for the stdio/single-agent
   case; a shared-runtime transport must key sessions per client or
   disable them (same shape as the #71 stdio-only escalation gate).
-- `pydantic-monty` is pre-1.0 (0.0.19); `MontyRepl` is newer surface than
-  `Monty` and the API may shift. Pin and re-verify on upgrade.
+- `pydantic-monty` was pre-1.0 when this was written (1.1 since #145); the
+  session API has shifted before. Pin and re-verify on upgrade.
 
 ## Decision
 

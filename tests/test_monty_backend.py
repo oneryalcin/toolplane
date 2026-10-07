@@ -91,6 +91,29 @@ def test_monty_output_cap_is_structured_and_backend_recovers() -> None:
     run(case())
 
 
+def test_monty_run_may_make_more_than_1000_tool_calls() -> None:
+    # monty 1.x defaults max_suspensions to 1000 per checkout; a tool loop
+    # past it died with an uncatchable "suspension limit 1000 exceeded"
+    backend = MontyBackend()
+    bridge = _StubBridge({"mcp.math.multiply": _multiply})
+
+    result = run(
+        backend.run(
+            """
+total = 0
+for i in range(1200):
+    total += await math_multiply(x=i, y=1)
+return total
+""",
+            bridge=bridge,
+            namespace={"math_multiply": "mcp.math.multiply"},
+        )
+    )
+
+    assert result.error is None, result.error
+    assert result.value == sum(range(1200))
+
+
 def test_monty_tool_error_is_catchable_in_snippet() -> None:
     async def explode() -> None:
         raise RuntimeError("tool exploded")
