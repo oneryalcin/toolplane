@@ -8,6 +8,8 @@ and cannot be faked.
 from __future__ import annotations
 
 import asyncio
+import os
+import signal
 from collections.abc import Coroutine
 from typing import Any
 
@@ -219,6 +221,34 @@ def test_tool_calls_past_1000_across_runs_keep_working(
                 "t = 0\nfor i in range(400):\n    t += await ping(i=i)\nreturn t"
             )
             assert result.error is None, result.error
+
+    _run(case())
+
+
+def test_worker_crash_rolls_back_instead_of_bricking_the_session() -> None:
+    # a dead worker finishes the checkout; without recovery every later run
+    # failed with "this checkout has already been finished" until restart.
+    # The kill stands in for an external crash (OOM killer, segfault).
+    async def case() -> None:
+        backend = MontyBackend(session=True)
+        runtime = Toolplane(
+            backends=[backend], default_backend="monty", ambient_cli=False
+        )
+
+        def crash_worker() -> str:
+            assert backend._worker_pid is not None
+            os.kill(backend._worker_pid, signal.SIGKILL)
+            return "killed"
+
+        runtime.register(crash_worker, description="kills the worker")
+        await runtime.execute("kept = 41")
+        crashed = await runtime.execute("kept = 0\nawait crash_worker()")
+        assert crashed.error is not None
+        assert crashed.error.type == "MontyCrashedError"
+
+        after = await runtime.execute("return kept + 1")
+        assert after.error is None, after.error
+        assert after.value == 42
 
     _run(case())
 

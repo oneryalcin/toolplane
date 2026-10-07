@@ -14,6 +14,7 @@ from pydantic_monty import (
     AsyncMonty,
     AsyncMontySession,
     CollectStreams,
+    MontyCrashedError,
     MontyError,
     MontyRuntimeError,
     ResourceLimits,
@@ -323,22 +324,7 @@ class MontyBackend:
                 # namespace is as if the run never happened. Host-side
                 # effects are NOT rolled back; the message must say so
                 # instead of promising a transaction.
-                # The reset flag is namespace state too: a reset requested by
-                # the timed-out run must not fire after "rolled back" was
-                # reported (Codex adversarial finding on #86)
-                self._pending_reset = pending_reset_before
-                await self._discard_session()
-                if snapshot is not None:
-                    await self._restore_session(snapshot)
-                    recovery = (
-                        "Session variables were rolled back to the state "
-                        "before this run"
-                    )
-                else:
-                    recovery = (
-                        "The session could not be checkpointed, so its "
-                        "variables were cleared"
-                    )
+                recovery = await self._roll_back(snapshot, pending_reset_before)
                 return self._result(
                     started,
                     streams,
@@ -374,6 +360,23 @@ class MontyBackend:
                         type=type(cause).__name__,
                         message=message,
                         traceback=_format_frames(exc, "toolplane_session.py"),
+                    ),
+                )
+            except MontyCrashedError as exc:
+                # the worker died mid-run: the checkout is finished, and every
+                # later feed would raise "this checkout has already been
+                # finished" until the process restarts. Same recovery as a
+                # timeout — the pre-run snapshot is the last trusted heap.
+                recovery = await self._roll_back(snapshot, pending_reset_before)
+                return self._result(
+                    started,
+                    streams,
+                    error=ExecutionError(
+                        type=type(exc).__name__,
+                        message=(
+                            f"{exc}. {recovery}; host-side effects of this "
+                            "run stand. Execute again to retry."
+                        ),
                     ),
                 )
             except MontyError as exc:
@@ -477,6 +480,23 @@ class MontyBackend:
             self._pending_reset = False
         assert self._checkout_session is not None
         return self._checkout_session
+
+    async def _roll_back(
+        self, snapshot: bytes | None, pending_reset_before: bool
+    ) -> str:
+        """Replace an aborted run's checkout with its pre-run snapshot.
+
+        Returns the sentence describing what happened to session variables.
+        The reset flag is namespace state too: a reset requested by the
+        aborted run must not fire after "rolled back" was reported (Codex
+        adversarial finding on #86).
+        """
+        self._pending_reset = pending_reset_before
+        await self._discard_session()
+        if snapshot is not None:
+            await self._restore_session(snapshot)
+            return "Session variables were rolled back to the state before this run"
+        return "The session could not be checkpointed, so its variables were cleared"
 
     async def _restore_session(self, snapshot: bytes) -> None:
         # load_session() is only accepted on a fresh checkout ("only valid on
