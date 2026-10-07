@@ -40,9 +40,13 @@ session-duration, and unknown-limit-key workarounds remain because their
 upstream issues are still open.*
 
 *1.1 status (2026-10-08, #145): Toolplane targets `pydantic-monty>=1.1,<2`.
-[#551](https://github.com/pydantic/monty/issues/551) is fixed upstream
-(raw repro: `__aexit__` after a cancelled CPU-busy feed returns in 0.00s, was
->10s); the pid-capture + SIGKILL path stays as a backstop.
+[#551](https://github.com/pydantic/monty/issues/551)'s hang no longer
+reproduces on 1.1 (raw repro: `__aexit__` after a cancelled CPU-busy feed
+returns in 0.00s, was >10s), though the issue is still open; `worker_pid`
+still reads `None` after a cancel, so the pid-capture + SIGKILL path stays.
+A worker crash (`MontyCrashedError`) now takes the timeout path's recovery —
+discard the checkout, restore the pre-run snapshot — instead of leaving the
+session on a finished checkout (pre-existing; found in the #146 gauntlet).
 [#534](https://github.com/pydantic/monty/issues/534) is fixed: unknown limit
 keys raise `ValueError`. [#533](https://github.com/pydantic/monty/issues/533)
 is still open, so the pre-run snapshot stays. #483 is addressed by the new

@@ -149,6 +149,19 @@ def test_monty_times_out_hot_loop() -> None:
     assert result.error.type == "TimeoutError"
 
 
+def test_monty_times_out_sandbox_sleep() -> None:
+    # monty 1.x sleeps for real but excludes sleep from its own duration
+    # limits; only the host wall-clock timeout bounds it
+    backend = MontyBackend(timeout_seconds=0.5)
+
+    result = run(
+        backend.run("import time\ntime.sleep(1000)", bridge=_StubBridge())
+    )
+
+    assert result.error is not None
+    assert result.error.type == "TimeoutError"
+
+
 def test_monty_times_out_hanging_tool_call() -> None:
     async def hang() -> None:
         await asyncio.sleep(30)

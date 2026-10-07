@@ -45,7 +45,16 @@ versions:
 | `del`, `match`, generators (`yield`) | no | no |
 | third-party imports (`pandas`), `open()` on host files | denied | denied |
 
-The sandbox boundary did not move. Two 1.x behaviors the backend now owns:
+Filesystem, environment, network, and subprocess access did not move: a
+31-probe sweep (`open`, `pathlib`, `os.listdir`/`stat`/`mkdir`, `os.environ`,
+`os.getenv`, `os.urandom`, `subprocess`, `socket`, `__import__`, …) is denied
+or unsupported on both versions, in one-shot and session mode. What 1.x newly
+exposes by default (Toolplane passes no `os_policy`): the worker's wall clock
+(`time.time()`, `datetime.now()`, `date.today()`, UTC), worker OS entropy for
+`random`, and real `time.sleep` / `asyncio.sleep` (pool-capped at 10s per
+call, not counted by monty's duration limits — the host timeout cuts them
+off; regression-tested). `time.process_time()` stays `0.0`. Two 1.x behaviors
+the backend now owns:
 `max_duration_secs` became `max_feed_duration_secs` (its clock runs only
 while sandbox code executes, so the host `asyncio.wait_for` stays the
 wall-clock bound), and `max_suspensions` caps host round trips at 1000 per
@@ -117,6 +126,8 @@ would require a separate design and compatibility decision.
   under default policy is a possible follow-up, deliberately not this slice.
 - Version pin `pydantic-monty>=1.1,<2`: API churn must not be able to brick
   the default backend via an unconstrained resolve.
-- Timeout enforcement is belt-and-braces: `ResourceLimits.max_feed_duration_secs`
-  bounds VM time, an outer `asyncio.wait_for` bounds wall clock including
-  time spent inside external tool calls.
+- Timeout enforcement is belt-and-braces for one-shot runs:
+  `ResourceLimits.max_feed_duration_secs` bounds VM time, an outer
+  `asyncio.wait_for` bounds wall clock including time spent inside external
+  tool calls and sleeps. Sessions use only the outer `asyncio.wait_for` (see
+  `docs/monty-session-spike.md` for why).
