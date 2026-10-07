@@ -70,6 +70,27 @@ def test_monty_reports_snippet_error_with_original_type() -> None:
     assert "toolplane_snippet.py" in result.error.traceback
 
 
+def test_monty_output_cap_is_structured_and_backend_recovers() -> None:
+    async def case() -> None:
+        backend = MontyBackend()
+        try:
+            capped = await backend.run(
+                "print('x' * 11_000_000)", bridge=_StubBridge()
+            )
+            assert capped.error is not None
+            assert capped.error.type == "MemoryError"
+            assert "10 MiB per-run output limit" in capped.error.message
+            assert "session memory cap" not in capped.error.message
+
+            after = await backend.run("return 42", bridge=_StubBridge())
+            assert after.error is None
+            assert after.value == 42
+        finally:
+            await backend.aclose()
+
+    run(case())
+
+
 def test_monty_tool_error_is_catchable_in_snippet() -> None:
     async def explode() -> None:
         raise RuntimeError("tool exploded")

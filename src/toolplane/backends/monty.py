@@ -45,19 +45,24 @@ from ._python import (
 # out-of-band. Anchoring keeps the false-positive window to a string that is
 # meaningless as data.
 _UNAWAITED_FUTURE = re.compile(r"^<coroutine external_future\(\d+\)>$")
+_OUTPUT_MAX_BYTES = 10 * 1024 * 1024
+_OUTPUT_LIMIT_HINT = (
+    " — captured stdout/stderr exceeded Toolplane's 10 MiB per-run output "
+    "limit; print less data or summarize it, then re-run"
+)
 
 
 class MontyBackend:
     """Run code in the Monty sandboxed Python interpreter.
 
     Monty is a pure-wheel dependency with no filesystem or network access, so
-    it is safe to serve by default. Its Python subset has no class definitions,
-    so capabilities are exposed as flat callables (e.g. ``math_multiply``) and
-    ``call_tool`` rather than scoped ``math.multiply`` namespaces. Ambient CLI
-    binaries follow the same shape: ``await git("status", short=True)`` per
-    allowed binary, plus ``cli_run(binary, subcommand, options)`` for names
-    that are not Python identifiers. Allowlist policy is enforced host-side by
-    the bridge, not by these sandbox bindings.
+    it is safe to serve by default. Toolplane exposes capabilities as flat
+    callables (e.g. ``math_multiply``) and ``call_tool`` rather than scoped
+    ``math.multiply`` namespaces. Ambient CLI binaries follow the same shape:
+    ``await git("status", short=True)`` per allowed binary, plus
+    ``cli_run(binary, subcommand, options)`` for names that are not Python
+    identifiers. Allowlist policy is enforced host-side by the bridge, not by
+    these sandbox bindings.
     """
 
     name = "monty"
@@ -158,7 +163,10 @@ class MontyBackend:
             external_functions.setdefault(name, fn)
         _ensure_no_input_collisions(input_namespace, set(external_functions))
 
-        streams = CollectStreams()
+        # Stable 0.0.19 caps captured output by default. Pass the value
+        # explicitly so Toolplane owns the user-facing 10 MiB contract and can
+        # distinguish it from the persistent session heap cap below.
+        streams = CollectStreams(max_bytes=_OUTPUT_MAX_BYTES)
         preflight = find_unawaited_calls(code, set(external_functions))
         if preflight:
             return self._result(
@@ -174,8 +182,8 @@ class MontyBackend:
                 code, started, streams, input_namespace, external_functions
             )
         # one-shot = a fresh checkout per run: the pool reuses worker
-        # processes, but each checkout starts a clean namespace (verified
-        # on 0.0.19b4), so runs stay isolated without session state
+        # processes, but each checkout starts a clean namespace, so runs stay
+        # isolated without session state.
         pool = await self._ensure_pool()
         ctx = pool.checkout(
             script_name="toolplane_snippet.py",
@@ -209,12 +217,15 @@ class MontyBackend:
         except MontyRuntimeError as exc:
             await self._close_healthy(ctx)
             cause = exc.exception()
+            message = str(cause)
+            if _is_output_limit_error(cause):
+                message += _OUTPUT_LIMIT_HINT
             return self._result(
                 started,
                 streams,
                 error=ExecutionError(
                     type=type(cause).__name__,
-                    message=str(cause),
+                    message=message,
                     traceback=_format_frames(exc, "toolplane_snippet.py"),
                 ),
             )
@@ -338,7 +349,9 @@ class MontyBackend:
                 # and statements completed before the raise persist too
                 cause = exc.exception()
                 message = str(cause)
-                if isinstance(cause, MemoryError):
+                if _is_output_limit_error(cause):
+                    message += _OUTPUT_LIMIT_HINT
+                elif isinstance(cause, MemoryError):
                     # NOT `del x` — monty's parser has no del statement
                     message += (
                         " — the session memory cap was hit; free space by "
@@ -372,8 +385,8 @@ class MontyBackend:
                 if "No pending async tasks" in str(exc):
                     # on the pool API this error FINISHES the checkout — later
                     # feeds raise "this checkout has already been finished"
-                    # (0.0.18 kept the session alive). Discard and restore
-                    # the pre-run snapshot so the session survives as before.
+                    # Discard and restore the pre-run snapshot so the session
+                    # survives as before.
                     await self._discard_session()
                     if snapshot is not None:
                         await self._restore_session(snapshot)
@@ -414,8 +427,8 @@ class MontyBackend:
         if self._pool is None:
             # lazy: the pool spawns worker subprocesses and needs a running
             # event loop, so it is created on first run, not in __init__.
-            # Workers self-reap when the host process exits (verified on
-            # 0.0.19b4); aclose() is the clean shutdown path.
+            # Workers self-reap when the host process exits; aclose() is the
+            # clean shutdown path.
             self._pool = AsyncMonty()
             await self._pool.__aenter__()
         return self._pool
@@ -457,10 +470,10 @@ class MontyBackend:
         return self._checkout_session
 
     async def _restore_session(self, snapshot: bytes) -> None:
-        # load() is only accepted on a fresh checkout ("only valid on a
-        # fresh session"), which _checkout_fresh just made
+        # load_session() is only accepted on a fresh checkout ("only valid on
+        # a fresh session"), which _checkout_fresh just made
         session = await self._checkout_fresh()
-        await session.load(snapshot)
+        await session.load_session(snapshot)
 
     async def _discard_session(self) -> None:
         """Drop a wedged or finished checkout without trusting its close.
@@ -565,6 +578,13 @@ def _printed_unawaited_future(streams: CollectStreams) -> bool:
     most often hit the missing-await bug, and the printed repr is the trace."""
     stdout, _ = _split_streams(streams)
     return any(_UNAWAITED_FUTURE.match(line) for line in stdout.splitlines())
+
+
+def _is_output_limit_error(cause: BaseException) -> bool:
+    """Identify CollectStreams' cap without conflating it with VM memory."""
+    return isinstance(cause, MemoryError) and (
+        f"> {_OUTPUT_MAX_BYTES} bytes" in str(cause)
+    )
 
 
 def _contains_unawaited_future(value: Any) -> bool:
@@ -691,7 +711,7 @@ def _format_frames(exc: MontyRuntimeError, filename: str) -> str:
 
 def _display_filename(frame_filename: str, display: str) -> str:
     # the pool API names every feed "<python-input-N>" regardless of the
-    # checkout's script_name (0.0.19b4) — rewrite it so tracebacks keep
+    # checkout's script_name (0.0.19+ API) — rewrite it so tracebacks keep
     # pointing at the snippet file the caller's mental model has
     if re.fullmatch(r"<python-input-\d+>", frame_filename):
         return display

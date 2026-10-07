@@ -179,6 +179,25 @@ def test_memory_cap_fires_and_the_session_survives() -> None:
     _run(case())
 
 
+def test_output_cap_is_not_reported_as_session_heap_exhaustion() -> None:
+    async def case() -> None:
+        runtime = _session_runtime()
+        await runtime.execute("marker = 'still-usable'")
+
+        capped = await runtime.execute("print('x' * 11_000_000)")
+        assert capped.error is not None
+        assert capped.error.type == "MemoryError"
+        assert "10 MiB per-run output limit" in capped.error.message
+        assert "session memory cap" not in capped.error.message
+        assert "reset_session" not in capped.error.message
+
+        after = await runtime.execute("return marker")
+        assert after.error is None
+        assert after.value == "still-usable"
+
+    _run(case())
+
+
 def test_overlapping_runs_serialize_instead_of_erroring() -> None:
     # MontyRepl rejects concurrent feeds; the backend lock must queue
     # them so both callers succeed
