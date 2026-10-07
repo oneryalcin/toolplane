@@ -46,6 +46,12 @@ from ._python import (
 # meaningless as data.
 _UNAWAITED_FUTURE = re.compile(r"^<coroutine external_future\(\d+\)>$")
 _OUTPUT_MAX_BYTES = 10 * 1024 * 1024
+# monty 1.x counts every host round trip (each capability call) against
+# max_suspensions, default 1000 per checkout and not disableable. A session
+# is one long-lived checkout, so the count accumulates across runs and a
+# loop of tool calls would die with an uncatchable RuntimeError. Toolplane
+# bounds runs by wall-clock timeout instead, so set the cap out of reach.
+_MAX_SUSPENSIONS = 10**9
 _OUTPUT_LIMIT_HINT = (
     " — captured stdout/stderr exceeded Toolplane's 10 MiB per-run output "
     "limit; print less data or summarize it, then re-run"
@@ -187,7 +193,10 @@ class MontyBackend:
         pool = await self._ensure_pool()
         ctx = pool.checkout(
             script_name="toolplane_snippet.py",
-            limits=ResourceLimits(max_duration_secs=self.timeout_seconds),
+            limits=ResourceLimits(
+                max_feed_duration_secs=self.timeout_seconds,
+                max_suspensions=_MAX_SUSPENSIONS,
+            ),
         )
         one_shot = await ctx.__aenter__()
         worker_pid = one_shot.worker_pid
@@ -203,8 +212,8 @@ class MontyBackend:
             )
         except TimeoutError:
             # the worker is wedged (suspended mid-call or CPU-busy): kill
-            # before close — closing a CPU-busy wedged checkout hangs the
-            # event loop uncancellably (pydantic/monty#551)
+            # before close — closing a CPU-busy wedged checkout hung the
+            # event loop uncancellably before monty 1.x (pydantic/monty#551)
             await self._kill_and_close(ctx, worker_pid)
             return self._result(
                 started,
@@ -433,19 +442,19 @@ class MontyBackend:
             await self._pool.__aenter__()
         return self._pool
 
-    def _session_limits(self) -> ResourceLimits | None:
-        if self.session_max_memory_bytes is None:
-            return None
-        # literal key only: ResourceLimits silently ignores unknown keys
-        # (pydantic/monty#534), so the cap is also asserted empirically in
-        # tests, not trusted from construction
-        return ResourceLimits(max_memory=self.session_max_memory_bytes)
+    def _session_limits(self) -> ResourceLimits:
+        limits = ResourceLimits(max_suspensions=_MAX_SUSPENSIONS)
+        if self.session_max_memory_bytes is not None:
+            limits["max_memory"] = self.session_max_memory_bytes
+        return limits
 
     async def _checkout_fresh(self) -> AsyncMontySession:
         pool = await self._ensure_pool()
-        # no max_duration_secs: the checkout clock runs from construction,
-        # not per feed (pydantic/monty#483) — per-run timeouts are the
-        # host's asyncio.wait_for
+        # no max_feed_duration_secs: a sandbox-side timeout leaves the heap
+        # without guarantees ("discard the session"), but it surfaces as a
+        # MontyRuntimeError that the session path treats as a healthy heap.
+        # Its clock also skips time suspended on host calls. Per-run timeouts
+        # stay the host's asyncio.wait_for, which discards and restores.
         ctx = pool.checkout(
             script_name="toolplane_session.py", limits=self._session_limits()
         )
@@ -479,9 +488,9 @@ class MontyBackend:
         """Drop a wedged or finished checkout without trusting its close.
 
         A cancelled feed leaves the worker either suspended awaiting an
-        answer or CPU-busy; closing the latter hangs the event loop
-        uncancellably (pydantic/monty#551), so the worker is always killed
-        before the close is attempted.
+        answer or CPU-busy; closing the latter hung the event loop
+        uncancellably before monty 1.x (pydantic/monty#551). The worker is
+        still killed before the close is attempted, as a backstop.
         """
         ctx, pid = self._checkout_ctx, self._worker_pid
         self._checkout_session = None

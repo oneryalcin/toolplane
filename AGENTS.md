@@ -50,8 +50,11 @@ more custom code around it.
 - Monty (`pydantic-monty`) is the default backend: safe by construction, pure
   pip install, with Toolplane capabilities exposed through a flat callable
   namespace (no scoped `ns.member` sugar; CLI access is flat per-binary
-  functions plus `cli_run`). Monty 0.0.19 supports user-defined classes; the
-  flat capability shape remains Toolplane's binding contract.
+  functions plus `cli_run`). Monty 1.x supports user-defined classes; the
+  flat capability shape remains Toolplane's binding contract. Monty 1.x caps
+  host round trips per checkout (`max_suspensions`, default 1000, not
+  disableable) — the backend sets it out of reach; never drop that, or tool
+  loops and long sessions die with an uncatchable `RuntimeError`.
   See `docs/monty-default-spike.md` for the decision record and its empirical
   capability envelope.
 - Pyodide+Deno is the opt-in sandbox for package-capable snippets, especially

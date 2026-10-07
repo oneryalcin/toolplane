@@ -34,7 +34,7 @@ dependencies = [
     "pydantic>=2.0",
     # Keep the default backend inside the tested stable API line. Monty's
     # Python package pins its worker runtime to the exact same version.
-    "pydantic-monty>=0.0.19,<0.0.20",
+    "pydantic-monty>=1.1,<2",
     "tomlkit>=0.15.0",
 ]
 

@@ -11,6 +11,8 @@ import asyncio
 from collections.abc import Coroutine
 from typing import Any
 
+import pytest
+
 from toolplane import Toolplane
 from toolplane.backends import MontyBackend
 from toolplane.config import load_toolplane_config
@@ -194,6 +196,29 @@ def test_output_cap_is_not_reported_as_session_heap_exhaustion() -> None:
         after = await runtime.execute("return marker")
         assert after.error is None
         assert after.value == "still-usable"
+
+    _run(case())
+
+
+@pytest.mark.parametrize("memory_cap", [512 * 1024 * 1024, None])
+def test_tool_calls_past_1000_across_runs_keep_working(
+    memory_cap: int | None,
+) -> None:
+    # a session is one checkout, and monty 1.x counts every tool call
+    # against max_suspensions (default 1000) cumulatively across runs.
+    # memory_cap=None covers the limits path that used to pass no limits.
+    async def case() -> None:
+        runtime = _session_runtime(session_max_memory_bytes=memory_cap)
+
+        def ping(i: int) -> int:
+            return i
+
+        runtime.register(ping, description="echo")
+        for _ in range(3):
+            result = await runtime.execute(
+                "t = 0\nfor i in range(400):\n    t += await ping(i=i)\nreturn t"
+            )
+            assert result.error is None, result.error
 
     _run(case())
 
