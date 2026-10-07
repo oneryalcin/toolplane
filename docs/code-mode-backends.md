@@ -108,7 +108,7 @@ another backend.
 | Backend | Use | Strengths | Limits |
 | --- | --- | --- | --- |
 | Local unsafe | Development only | Full local Python, imports, files, fastest to debug | Not a sandbox; never production for untrusted code |
-| Monty | Default: safe tool orchestration | Pure pip install, very low latency, resource limits, explicit external functions | Limited Python/runtime surface (no classes, flat call names); not for pandas or arbitrary packages |
+| Monty | Default: safe tool orchestration | Pure pip install, very low latency, resource limits, explicit external functions | Deliberately flat Toolplane call names; not for pandas or arbitrary packages |
 | Pyodide+Deno | Package-capable sandbox | WebAssembly isolation, pandas/numpy-style package support, good local/edge fit | Needs Deno on PATH; not arbitrary Linux CPython; limited native/system/subprocess support |
 | Local subprocess/venv | Trusted or semi-trusted local work | Real CPython, third-party packages, easy package resolution | Weak isolation unless wrapped with OS controls |
 | Docker | Default production-ish local backend | Real CPython, third-party packages, filesystem/network controls | Higher startup latency; requires Docker/runtime management |

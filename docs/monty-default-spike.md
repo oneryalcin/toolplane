@@ -29,7 +29,11 @@ Monty is the only candidate that satisfies "always available + safe":
 `pyodide-deno` remains the opt-in answer for package-capable snippets;
 `local_unsafe` remains dev-only and keeps requiring `--unsafe` everywhere.
 
-## Empirical capability envelope (pydantic-monty 0.0.18)
+## Empirical capability envelope (pydantic-monty 0.0.18 baseline)
+
+This section preserves the original 0.0.18 decision evidence. Stable 0.0.19
+subsequently added class definitions and removed `max_allocations` from
+`ResourceLimits`; Toolplane still uses flat capability bindings by design.
 
 Verified working:
 
@@ -44,7 +48,8 @@ Verified working:
 - Stdout capture via `CollectStreams`; f-strings, comprehensions; a stdlib
   shim subset (`json`, `math`, `re`, `datetime` — NOT `types`/`collections`).
 - `ResourceLimits`: `max_duration_secs=0.5` killed a hot loop at 0.51s;
-  also `max_memory`, `max_recursion_depth`, `max_allocations`.
+  also `max_memory`, `max_recursion_depth`, and (in 0.0.18 only)
+  `max_allocations`.
 - True concurrency: 5 parallel `run_async` calls with async externals
   completed in one 0.1s sleep window (VM resume offloaded to threads).
 - Structured errors: `MontyRuntimeError.exception()` returns the real Python
@@ -52,8 +57,9 @@ Verified working:
 
 Verified NOT working (each probed directly):
 
-- Class definitions: `NotImplementedError` from the parser. This kills the
-  `__getattr__` shim used by the other backends for scoped namespaces.
+- Class definitions: `NotImplementedError` in the 0.0.18 parser snapshot. Class
+  definitions are supported in stable 0.0.19, but that does not itself supply
+  scoped host-call bindings.
 - Scoped namespace emulation attempts, all dead ends:
   dotted external names don't bind a root name; `SimpleNamespace` inputs are
   not convertible; dataclass inputs preserve attribute access but callable
@@ -73,8 +79,9 @@ r2 = await call_tool("mcp.math.multiply", {"x": 6, "y": 7})
 
 Scoped sugar (`await math.multiply(...)`) remains available on `local_unsafe`
 and `pyodide-deno`. Capability schemas already expose `aliases` as data, so
-flat names are discoverable through `get_capability_schemas`. Revisit if Monty
-gains class support (it is under active development).
+flat names are discoverable through `get_capability_schemas`. Stable 0.0.19's
+class syntax does not change that host-binding contract; scoped Monty bindings
+would require a separate design and compatibility decision.
 
 ## Scope decisions
 
@@ -85,7 +92,7 @@ gains class support (it is under active development).
   `(default_backend,)`, so `execute_code(backend="local_unsafe")` stays
   blocked (fail-closed, #24/#25). Allowing `pyodide-deno` as a safe override
   under default policy is a possible follow-up, deliberately not this slice.
-- Version pin `pydantic-monty>=0.0.18,<0.1`: pre-0.1 API churn must not be
+- Version pin `pydantic-monty>=0.0.19,<0.0.20`: pre-0.1 API churn must not be
   able to brick the default backend via an unconstrained resolve.
 - Timeout enforcement is belt-and-braces: `ResourceLimits.max_duration_secs`
   bounds VM time, an outer `asyncio.wait_for` bounds wall clock including

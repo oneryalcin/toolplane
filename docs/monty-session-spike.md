@@ -32,6 +32,13 @@ suite 20/20, one-shot suite 23/23, full suite green on 0.0.19b4; the
 pin is exact (`==0.0.19b4`) and must not be published to PyPI (uv/uvx
 needs `--prerelease=allow` for the beta's transitive runtime dep).*
 
+*Stable status (2026-07-26): Toolplane now targets
+`pydantic-monty>=0.0.19,<0.0.20`. Stable renamed the fresh-checkout restore
+method to `load_session()` and caps captured output at 10 MiB per run; the
+implementation and regressions cover both. The cancellation, checkout-close,
+session-duration, and unknown-limit-key workarounds remain because their
+upstream issues are still open.*
+
 ## Problem
 
 Every `execute_code` run today gets a fresh interpreter. Variables,
@@ -172,7 +179,7 @@ run are visible in the audit log (`run_end.ok=false` + the run's
   concurrent `feed_run` calls serialize. Fine for the stdio/single-agent
   case; a shared-runtime transport must key sessions per client or
   disable them (same shape as the #71 stdio-only escalation gate).
-- `pydantic-monty` is pre-1.0 (0.0.18); `MontyRepl` is newer surface than
+- `pydantic-monty` is pre-1.0 (0.0.19); `MontyRepl` is newer surface than
   `Monty` and the API may shift. Pin and re-verify on upgrade.
 
 ## Decision
