@@ -410,3 +410,18 @@ def test_unique_request_ids_matches_committed_transcripts() -> None:
     toolplane = (transcripts / "single-toolplane-m1-rep1.jsonl").read_text()
     assert _unique_request_ids(direct) == 3
     assert _unique_request_ids(toolplane) == 5
+
+
+def test_bootstrap_prices_failures_in_so_a_cheap_wrong_answer_never_wins() -> None:
+    # #116: a raw-spend bootstrap called toolplane "resolved cheaper" at N=5
+    # on the 0.5.0 re-run purely because its failed runs were cheap; the CI
+    # must be over cost-of-pass (spend / correct runs), like the table
+    from run import _bootstrap_cost_of_pass_diff
+
+    direct = [(0.10, True)] * 4
+    cheap_failure = [(0.05, False), (0.11, True), (0.11, True), (0.11, True)]
+
+    point, low, _ = _bootstrap_cost_of_pass_diff(cheap_failure, direct)
+
+    assert point == pytest.approx((0.05 + 3 * 0.11) / 3 - 0.10)
+    assert low > -1e-9  # never "resolved cheaper"
