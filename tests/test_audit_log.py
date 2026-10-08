@@ -338,3 +338,36 @@ def test_unserializable_field_disables_instead_of_raising(
 
     assert log.enabled is False
     assert "audit log disabled" in capsys.readouterr().err
+
+
+def test_discovery_receipts_hash_exactly_what_the_agent_saw(tmp_path: Path) -> None:
+    # #108: "what did the agent know when it wrote this?" — each discovery
+    # surface leaves a receipt whose hash matches the exact text returned,
+    # and, like every audit event, never the query or the content
+    import hashlib
+
+    from fastmcp import Client
+
+    from toolplane.mcp_facade import build_mcp_facade
+
+    runtime, log_path = _runtime(tmp_path)
+
+    async def exercise():
+        async with Client(build_mcp_facade(runtime)) as c:
+            search = await c.call_tool(
+                "search_capabilities", {"query": "QUERY_MARKER greet"}
+            )
+            schemas = await c.call_tool(
+                "get_capability_schemas", {"names": ["greet"]}
+            )
+            manifest = await c.read_resource("toolplane://namespace")
+            return search.data, schemas.data, manifest[0].text
+
+    seen = run(exercise())
+
+    receipts = [e for e in _events(log_path) if e["event"] == "discovery"]
+    assert [r["surface"] for r in receipts] == ["search", "schemas", "namespace"]
+    assert [r["result_sha256"] for r in receipts] == [
+        hashlib.sha256(text.encode()).hexdigest()[:12] for text in seen
+    ]
+    assert "QUERY_MARKER" not in log_path.read_text()
