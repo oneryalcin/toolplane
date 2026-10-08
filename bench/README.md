@@ -131,6 +131,62 @@ Requires the `claude` CLI on PATH and an authenticated session. Results
 land in `bench/results/run-<stamp>.json`; the summary table prints at the
 end (medians across reps).
 
+## Codex CLI lane (#113)
+
+`--client codex` runs the same tasks, fixtures, validators, and frozen code
+under test through `codex exec --json` instead of Claude Code. Each isolation
+setting was found necessary by a probe, not added on spec:
+
+- `--ignore-user-config` keeps `~/.codex` MCP servers out of the run (the
+  equivalent of `--strict-mcp-config`).
+- `mcp_servers.<name>.default_tools_approval_mode="approve"`: headless Codex
+  otherwise fails every MCP call ("requires approval, but approval policy is
+  never").
+- `features.shell_tool=false` and `features.unified_exec=false`: with a shell,
+  Codex read the fixture **source** and derived answers from the data
+  generator, a cheat that is not a measurement.
+- `features.apps=false` and `features.plugins=false`: account connectors
+  otherwise join the tool surface and cost turns.
+- `mcp_servers.<name>.required=true`: without it, a short prompt once answered
+  "unknown" from an empty tool list before the frozen-venv server had started.
+- Server names are passed as **bare** TOML keys. In a `-c` override, quotes
+  become part of the name (`'"orders"'`, which is invalid). With `required=true`
+  Codex aborts; without it the server silently never starts and the agent
+  answers from zero tools.
+
+- An isolated `HOME` and `CODEX_HOME` per matrix, holding only a copy of the
+  login (deleted with the run's temp dir), plus multi-agent, memories, hooks,
+  host skill discovery, skill search, and web search off. Without this, the
+  operator's `~/.codex/AGENTS.md` and `~/.agents/skills` rode in every
+  request: a minimal prompt measured 20.7k input tokens instead of 9.3k.
+
+**What `direct` means depends on the model.** Codex 0.160.0 gates its
+built-in JavaScript code mode on per-model metadata. `gpt-6.1-sol` and
+`gpt-6-luna` reach MCP tools only through a code-mode tool, `exec`: the model
+writes JS that calls `tools.mcp__<server>__<tool>(...)`, discovers tools over
+`ALL_TOOLS`, fans out with `Promise.allSettled`, and persists with
+`store()`/`load()`. On those models `direct` is Codex-native code mode, and
+`toolplane` is that same JS calling `execute_code`. `gpt-5.5` does not
+advertise code mode and makes ordinary per-tool calls, so it is the
+plain-tool-calling baseline. Each row records `codex_mode`
+(`code_mode`/`direct_calls`) and `model_call_names`, read from Codex's
+session rollout. That rollout is the only place the model's calls appear,
+because `--json` hides the `exec` layer. The rollout is written into the
+private home and never saved; the rows keep only derived metadata, including
+`model_requests` and `peak_context_tokens` from its per-request usage events.
+
+Codex on a ChatGPT plan reports tokens, not dollars, so `cost_usd` is `None`,
+never estimated, and the comparison is by tokens and wall time. `input_tokens`
+is the sum over the run's model requests, not a context size;
+`peak_context_tokens` is the largest single request. `tool_calls` counts the
+MCP invocations the run made (from `--json`); `model_call_names` counts what
+the model itself called.
+
+```bash
+uv run python bench/run.py --client codex --model gpt-6.1-sol --reps 4 \
+    --tasks single,loop,loop100
+```
+
 ## Transcripts and classification (#104)
 
 Every run's full stream-json transcript is persisted under

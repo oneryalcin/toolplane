@@ -425,3 +425,48 @@ def test_bootstrap_prices_failures_in_so_a_cheap_wrong_answer_never_wins() -> No
 
     assert point == pytest.approx((0.05 + 3 * 0.11) / 3 - 0.10)
     assert low > -1e-9  # never "resolved cheaper"
+
+
+def test_codex_server_flags_use_bare_keys() -> None:
+    # a quoted -c key (mcp_servers."orders") puts the quotes in the server
+    # name; without required=true the server silently never starts and the
+    # agent answers "unknown" (#113) — emit bare keys, refuse non-bare names
+    from run import _codex_mcp_flags
+
+    flags = _codex_mcp_flags(
+        {"crm-eu": {"command": "/py", "args": ["s.py"], "env": {"N": "30"}}}
+    )
+    keys = {f.split("=", 1)[0] for f in flags if f != "-c"}
+
+    assert keys == {
+        f"mcp_servers.crm-eu.{k}"
+        for k in ("command", "args", "env", "default_tools_approval_mode", "required")
+    }
+    with pytest.raises(ValueError):
+        _codex_mcp_flags({"bad name": {"command": "/py"}})
+
+
+def test_codex_rollout_facts_tell_code_mode_from_direct_calls(tmp_path) -> None:
+    # the Codex write-up's central distinction rests on this classifier:
+    # `exec` = Codex-native code mode, namespaced function_calls = plain
+    # per-tool calls (gpt-5.5); one token_count per model request (#113)
+    import json as _json
+
+    from run import _codex_rollout_facts
+
+    def rollout(thread, payloads):
+        path = tmp_path / "sessions" / "2026" / f"rollout-x-{thread}.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("\n".join(_json.dumps({"payload": p}) for p in payloads))
+
+    def usage(n):
+        return {"type": "token_count", "info": {"last_token_usage": {"input_tokens": n}}}
+
+    rollout("t-code", [usage(9000), {"type": "custom_tool_call", "name": "exec"}, usage(12000)])
+    rollout("t-direct", [usage(8000), {"type": "function_call", "namespace": "mcp__orders", "name": "get_order"}])
+
+    code = _codex_rollout_facts(tmp_path, '{"type":"thread.started","thread_id":"t-code"}')
+    direct = _codex_rollout_facts(tmp_path, '{"type":"thread.started","thread_id":"t-direct"}')
+
+    assert (code["model_call_names"], code["model_requests"], code["peak_context_tokens"]) == (["exec"], 2, 12000)
+    assert direct["model_call_names"] == ["mcp__orders__get_order"]
