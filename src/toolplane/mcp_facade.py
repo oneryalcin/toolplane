@@ -318,7 +318,9 @@ def build_mcp_facade(
             # ctx.elicit is dead; escalation goes through MRTR (#139)
             if ctx.request_state is not None:
                 return await parked.resume(ctx.request_state, ctx.input_responses)
-            return await parked.start(run_snippet)
+            return await parked.start(
+                run_snippet, _run_timeout_seconds(runtime, backend)
+            )
         if cli_escalation and ctx is not None:
             request_context = ctx
 
@@ -568,6 +570,13 @@ def _receipt(runtime: Toolplane, surface: str, text: str) -> str:
     return text
 
 
+def _run_timeout_seconds(runtime: Toolplane, backend: str | None) -> float | None:
+    """The wall-clock timeout the run's backend will enforce, if it has one."""
+    runner = runtime.backends.get(backend or runtime.default_backend)
+    timeout = getattr(runner, "timeout_seconds", None)
+    return float(timeout) if timeout else None
+
+
 def _is_modern_connection(ctx: Any) -> bool:
     """True on a 2026-07-28-era connection (no server-initiated requests)."""
     try:
@@ -602,9 +611,10 @@ class _ParkedRuns:
     def __init__(self, runtime: Toolplane) -> None:
         self._runtime = runtime
         self._parked: dict[str, tuple[asyncio.Task, asyncio.Queue, asyncio.Future]] = {}
+        self._deadlines: dict[asyncio.Task, float] = {}
         self._slot = asyncio.Lock()
 
-    async def start(self, run_snippet: Any) -> Any:
+    async def start(self, run_snippet: Any, timeout_seconds: float | None) -> Any:
         asks: asyncio.Queue = asyncio.Queue()
         policy = self._runtime.cli_policy
         await self._slot.acquire()
@@ -615,13 +625,21 @@ class _ParkedRuns:
             return await granted
 
         policy.escalation_handler = mrtr_grant
+        loop = asyncio.get_running_loop()
+        # measured from just BEFORE the backend starts its own clock, so this
+        # deadline can only fall early, never late: an answer past it lands
+        # after (or racing) the backend timeout and must not grant (#159)
+        deadline = loop.time() + timeout_seconds if timeout_seconds else None
         task = asyncio.ensure_future(run_snippet())
+        if deadline is not None:
+            self._deadlines[task] = deadline
 
         def release(_: asyncio.Future) -> None:
             if policy.escalation_handler is mrtr_grant:
                 policy.escalation_handler = None
             for token in [k for k, v in self._parked.items() if v[0] is task]:
                 del self._parked[token]
+            self._deadlines.pop(task, None)
             self._slot.release()
 
         task.add_done_callback(release)
@@ -634,6 +652,12 @@ class _ParkedRuns:
 
     async def resume(self, token: str, responses: Any) -> Any:
         entry = self._parked.pop(token, None)
+        if entry is not None:
+            deadline = self._deadlines.get(entry[0])
+            if deadline is not None and asyncio.get_running_loop().time() >= deadline:
+                # the run is timing out (or rolling back): granting now would
+                # let the binary spawn after the client was told it timed out
+                entry = None
         if entry is None:
             return ExecutionResult(
                 backend="",

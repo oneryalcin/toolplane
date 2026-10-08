@@ -808,3 +808,33 @@ def test_unanswered_park_expires_with_the_request_state_ttl(monkeypatch) -> None
     assert isinstance(first, mcp_types.InputRequiredResult)
     assert spawned == []
     assert after.structured_content["value"] == 7
+
+
+def test_answer_after_the_run_deadline_never_grants(monkeypatch) -> None:
+    # an accept landing as the backend times out (during its rollback,
+    # before pending escalations are cancelled) still granted, and the
+    # binary spawned after the client was told the run timed out (#159).
+    # The facade's deadline is pinned below the backend's real timeout so
+    # the "after the deadline, run still parked" window is deterministic.
+    runtime, spawned, _ = _modern_runtime(timeout_seconds=10.0)
+    from fastmcp import Client
+
+    import toolplane.mcp_facade as facade
+
+    monkeypatch.setattr(facade, "_run_timeout_seconds", lambda *_: 0.3)
+
+    async def exercise():
+        async with Client(build_mcp_facade(runtime)) as c:
+            first = await _raw_leg(c, 'return await cli_run("curl")')
+            await asyncio.sleep(0.5)
+            return await _raw_leg(
+                c,
+                'return await cli_run("curl")',
+                request_state=first.request_state,
+                input_responses=_grant_answer(),
+            )
+
+    late = run(exercise())
+
+    assert spawned == []
+    assert late.structured_content["error"]["type"] == "EscalationExpiredError"
