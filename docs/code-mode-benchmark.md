@@ -960,6 +960,91 @@ not tested. Raw data: `run-20261008-082359.json` (Haiku A/B, $1.04) and
 Raw data: `bench/results/run-20261008-012307.json` (the 2-run `single`
 smoke that preceded it, `run-20261008-012230.json`, is in no cell).
 
+## Codex: the envelope survives a second client (2026-10-08)
+
+[#113](https://github.com/oneryalcin/toolplane/issues/113) asked whether the
+results hold outside Claude Code. On Codex CLI 0.160.0 the answer depends on
+the model, because **Codex gates its own built-in code mode per model**:
+
+- `gpt-6.1-sol` and `gpt-6-luna` reach MCP tools only through a code-mode
+  tool, `exec`. The model writes JavaScript that discovers tools
+  (`ALL_TOOLS.filter(...)`), calls them (`tools.mcp__orders__get_order(...)`),
+  fans out (`Promise.allSettled`), and persists between steps
+  (`store()`/`load()`). With the code-mode host disabled, Codex fails closed
+  and makes zero MCP calls.
+- `gpt-5.5` does not advertise code mode and makes ordinary per-tool calls.
+  It is the plain-tool-calling baseline the question was about.
+
+Each row records what the model itself called (`codex_mode`,
+`model_call_names`), read from Codex's session rollout. `codex exec --json`
+shows the resulting MCP calls but hides the `exec` layer. Same harness
+(`--client codex`), same tasks and fixtures, 4 counterbalanced reps per cell,
+48 runs, 48/48 correct, zero shell calls. Codex ran
+with an isolated `HOME`/`CODEX_HOME` and its host features off
+(`bench/README.md`). Without that, the operator's global Codex instructions
+and skills rode in every request and roughly doubled the prompt. Codex on a
+ChatGPT plan reports tokens, not dollars. `input` is summed over the run's
+model requests; `peak` is the largest single request.
+
+**`gpt-5.5`, plain tool calls: the Claude Code envelope, sharper.**
+
+| task | arm | model calls | requests | input | peak | output | wall |
+|---|---|---|---|---|---|---|---|
+| single | direct | 1 | 3 | 24.1k | 8.1k | 77 | 5.4s |
+| single | toolplane | 3.5 | 6 | 57.0k | 11.3k | 275 | 12.0s |
+| loop (30) | direct | 31 | 4 | 34.6k | 10.3k | 1,083 | 13.9s |
+| loop (30) | toolplane | 1 | 3 | 26.0k | 9.1k | 260 | 8.3s |
+| loop100 | direct | 101 | 6 | 64.0k | 15.4k | 3,874 | 36.5s |
+| loop100 | toolplane | 1 | 3 | 26.1k | 9.2k | 315 | 9.3s |
+
+Medians; every cell's arms separate (disjoint ranges) on input, output, and
+wall. Single lookups lose: 2.4x the input and 2.2x the wall, with the
+discovery overhead plainly visible (3.5 model calls versus 1). Loops win, and
+the win grows with N. At 30 records toolplane uses 25% less input, 76% less
+output, and finishes 1.7x faster. At 100 it uses 59% less input, 92% less
+output, and is 3.9x faster. Direct's cost is output tokens: every call is
+emitted text, 3,874 output tokens for 101 calls. That is the same mechanism
+the Claude Code tables found.
+
+**`gpt-6.1-sol`, Codex-native code mode: little left to gain.** Here
+`direct` is Codex's own JavaScript loop, and `toolplane` is that JavaScript
+calling `execute_code`, code mode calling code mode. Every cell took the same
+4 model calls (2 on `single`) and 5 requests (3 on `single`):
+
+| task | direct input | toolplane input | direct output | toolplane output | wall (direct / toolplane) |
+|---|---|---|---|---|---|
+| single | 33.4k | 34.3k | 92 | 99 | 11.6s / 11.0s |
+| loop (30) | 61.5k | 64.3k | 299 | 370 | 19.2s / 19.2s |
+| loop100 | 73.7k | 71.4k | 309 | 316 | 19.0s / 18.9s |
+
+Isolated, run-to-run variance is small enough that some of these modest gaps
+do separate. Toolplane uses 3–5% more input on `single` and `loop`, 3% less
+on `loop100`, and 8% / 24% more output on `single` / `loop`: Python wrapped
+in JavaScript costs a few tokens. Walls overlap everywhere. There is no
+efficiency case for toolplane on a code-mode client, and no material penalty
+either.
+
+What this means: where the client calls tools one at a time, toolplane's
+envelope holds across clients. That covers Claude Code and Codex with a
+non-code-mode model, where it loses on single lookups and wins increasingly
+on loops. Where the client already runs code mode, the loop savings are
+absorbed and toolplane's case is what the client does not provide: a pip-only
+Python sandbox, CLI binaries behind an allowlist with human escalation, an
+audit log at the execution bridge, and one configured surface shared across
+clients. The survey records the Codex finding in
+[Code Mode in the Wild](code-mode-landscape.md).
+
+Raw data: `bench/results/run-20261008-202709.json` (`gpt-6.1-sol`) and
+`run-20261008-203351.json` (`gpt-5.5`). The `gpt-5.5` rows record
+`git_dirty=true`. The cause is the first matrix's untracked result files in
+the same tree; wheel, harness, and fixture hashes are identical across both
+files. The harness now excludes its own output directory from the dirty
+check. The rows name `e76b836`, a pre-squash commit. Its `src/` and fixtures
+equal the committed harness commit's, and its `bench/run.py` (hash
+`62cecc606795`, as recorded in every row) differs only by that dirty-check
+change and a comment. Isolation flags and why each is needed are in
+`bench/README.md`.
+
 ## The envelope
 
 Two measured points; nothing measured between them:

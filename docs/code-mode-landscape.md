@@ -61,6 +61,20 @@ Microsoft Agent Framework's "code-first" means developer DX, not
 agent-written code [S]; AWS Bedrock AgentCore has a code-interpreter
 primitive and an API→MCP gateway — adjacent infrastructure [S].
 
+**OpenAI Codex CLI (observed 2026-10-08).** [V, firsthand] Codex 0.160.0
+ships native code mode, gated per model. With `gpt-6.1-sol` and `gpt-6-luna`,
+the model reaches MCP tools only through a built-in JavaScript tool, `exec`.
+It writes programs that discover tools in-sandbox (`ALL_TOOLS.filter(...)`
+over names and descriptions), call them as async functions
+(`tools.mcp__<server>__<tool>(...)`), fan out with `Promise.allSettled`, and
+persist between steps with `store()`/`load()`. Disabling the code-mode host
+makes it fail closed. `gpt-5.5` does not advertise code mode and makes
+ordinary per-tool calls. So on code-mode models Codex is Cloudflare-style
+discovery-in-sandbox plus a result store, client-side and on by default.
+`codex exec --json` hides the `exec` layer; only the session rollout shows
+the code. Measured against toolplane in
+[the benchmark](code-mode-benchmark.md#codex-the-envelope-survives-a-second-client-2026-10-08).
+
 **MCP spec.** Dynamic tool discovery (SEP-1821) is still a draft seeking a
 sponsor [V]; the 2026 roadmap targets transport/caching of discovery
 (`ttlMs` on list results, `server/discover`), not model-facing search [V];
@@ -217,3 +231,12 @@ measurement, not a final one.
 - Security patterns from the field (network-layer credential injection,
   validate/execute split, discovery receipts) — tracked in
   [#108](https://github.com/oneryalcin/toolplane/issues/108).
+- **Clients are absorbing the efficiency half of code mode.** On its
+  code-mode models Codex routes every MCP call through native JS code mode,
+  and toolplane measured within a few percent of it on tokens and wall (with
+  a plain-calling model, the usual loop savings reappear). On such clients
+  toolplane's
+  case rests on what the client does not provide: a pip-only sandbox,
+  CLI binaries behind an allowlist with human escalation, an audit log at
+  the execution bridge, and one configured surface shared across clients.
+  It no longer rests on loop savings.
