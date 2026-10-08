@@ -53,5 +53,22 @@ docs = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/toolplane"]
 
+# An allowlist, not the default "everything not gitignored": a working-tree
+# build once swept untracked local dirs (paper/, .codex/) into the sdist.
+# bench/results is ~20 MB of committed run data; the code stays so the
+# bench validator tests run from an unpacked sdist.
+[tool.hatch.build.targets.sdist]
+only-include = [
+    "src",
+    "tests",
+    "examples",
+    "bench",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md",
+    "pyproject.toml",
+]
+exclude = ["bench/results"]
+
 [tool.hatch.version]
 path = "src/toolplane/__init__.py"

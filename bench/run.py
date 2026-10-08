@@ -343,9 +343,6 @@ def build_code_under_test(workdir: Path) -> dict:
             "install",
             "--python",
             str(python),
-            # BETA (#88): the ==0.0.19b4 pin's transitive runtime dep needs
-            # prerelease resolution in a cold venv; drop with the stable swap
-            "--prerelease=allow",
             str(wheel),
         ],
         check=True,
