@@ -201,9 +201,13 @@ disabled automatically rather than shared across clients.
 
 An opt-in JSONL event stream recording what actually ran: every run
 (snippet hash, backend, duration, outcome), every dispatch through the
-bridge (capability or CLI binary, duration, error type), and every
-escalation decision (granted / declined / abandoned / error). Everything
-flows through one choke point, so the log is structurally complete.
+bridge (capability or CLI binary, duration, error type), every
+escalation decision (granted / declined / abandoned / error), and a
+**discovery receipt** for each `search_capabilities`,
+`get_capability_schemas`, or `toolplane://namespace` read: the surface, a
+12-hex SHA-256 of the exact text the agent received, and its size.
+Everything flows through one choke point, so the log is structurally
+complete.
 
 ```toml
 [audit]
@@ -214,6 +218,12 @@ enabled = true
 **Events are metadata only.** Call arguments and results are never
 written — payloads can carry secrets. What a human approved, when, and
 what the snippet touched is on the record; the data that moved is not.
+
+Discovery receipts answer "what did the agent know when it wrote this
+run?": the receipts preceding a `run_start` are what it had seen. Compare
+a receipt's hash against a re-run of the same surface to tell whether the
+agent saw today's catalog or a stale one. The query itself is never
+recorded.
 
 Run and dispatch events carry a `run_id`; escalation events do not —
 they can resolve after their run has ended (an abandoned prompt's
@@ -234,6 +244,9 @@ jq 'select(.event == "escalation")' ~/.toolplane/audit.jsonl
 
 # slow runs
 jq 'select(.event == "run_end" and .duration_ms > 5000)' ~/.toolplane/audit.jsonl
+
+# what the agent looked at before running code
+jq 'select(.event == "discovery" or .event == "run_start")' ~/.toolplane/audit.jsonl
 ```
 
 A write failure (unwritable path, full disk) disables the log with one

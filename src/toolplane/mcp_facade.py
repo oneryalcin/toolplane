@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import inspect
 import os
 import re
@@ -128,7 +129,7 @@ def build_mcp_facade(
         mime_type="text/markdown",
     )
     def namespace_manifest() -> str:
-        return runtime.describe_namespace()
+        return _receipt(runtime, "namespace", runtime.describe_namespace())
 
     # advertised only when the store is live: resolve_serve_config disables
     # the store on multi-client transports before the facade is built, and a
@@ -199,11 +200,15 @@ def build_mcp_facade(
         detail: SchemaDetail = "brief",
         limit: int | None = None,
     ) -> str:
-        return await runtime.search(
-            query,
-            tags=frozenset(tags or ()),
-            detail=detail,
-            limit=limit,
+        return _receipt(
+            runtime,
+            "search",
+            await runtime.search(
+                query,
+                tags=frozenset(tags or ()),
+                detail=detail,
+                limit=limit,
+            ),
         )
 
     @mcp.tool
@@ -217,7 +222,9 @@ def build_mcp_facade(
         search_capabilities (e.g. "mcp:server/tool") — guessed or
         abbreviated names will not resolve.
         """
-        return await runtime.get_schema(names, detail=detail)
+        return _receipt(
+            runtime, "schemas", await runtime.get_schema(names, detail=detail)
+        )
 
     _EXECUTE_DOC = """Execute Python against the configured Toolplane namespace.
 
@@ -544,6 +551,23 @@ def _request_state_security() -> dict[str, Any]:
             ttl=_PARK_TTL_SECONDS
         )
     }
+
+
+def _receipt(runtime: Toolplane, surface: str, text: str) -> str:
+    """Record what discovery surface the agent saw, then return it (#108).
+
+    Metadata only, like every audit event: a hash of the exact text the
+    agent received and its size — never the query or the content — so
+    "what did the agent know when it wrote this?" is answerable by event
+    order plus hash comparison.
+    """
+    runtime.audit_log.emit(
+        "discovery",
+        surface=surface,
+        result_sha256=hashlib.sha256(text.encode()).hexdigest()[:12],
+        result_chars=len(text),
+    )
+    return text
 
 
 def _run_timeout_seconds(runtime: Toolplane, backend: str | None) -> float | None:
