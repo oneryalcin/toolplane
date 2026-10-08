@@ -103,6 +103,7 @@ class MontyBackend:
                 update={"persistence": "session"}
             )
         self._pool: AsyncMonty | None = None
+        self._pool_lock = asyncio.Lock()
         self._checkout_session: AsyncMontySession | None = None
         self._checkout_ctx: Any = None  # context manager owning the checkout
         # capture at checkout time: after a cancelled feed the session's
@@ -444,13 +445,19 @@ class MontyBackend:
         return self._result(started, streams, value=value)
 
     async def _ensure_pool(self) -> AsyncMonty:
-        if self._pool is None:
-            # lazy: the pool spawns worker subprocesses and needs a running
-            # event loop, so it is created on first run, not in __init__.
-            # Workers self-reap when the host process exits; aclose() is the
-            # clean shutdown path.
-            self._pool = AsyncMonty()
-            await self._pool.__aenter__()
+        if self._pool is not None:
+            return self._pool
+        # lazy: the pool spawns worker subprocesses and needs a running
+        # event loop, so it is created on first run, not in __init__.
+        # Workers self-reap when the host process exits; aclose() is the
+        # clean shutdown path. Locked, and published only once entered:
+        # concurrent first runs otherwise checked out of a pool that was
+        # assigned but not yet started ("the pool is not active", #158).
+        async with self._pool_lock:
+            if self._pool is None:
+                pool = AsyncMonty()
+                await pool.__aenter__()
+                self._pool = pool
         return self._pool
 
     def _session_limits(self) -> ResourceLimits:

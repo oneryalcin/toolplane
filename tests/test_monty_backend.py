@@ -114,6 +114,23 @@ return total
     assert result.value == sum(range(1200))
 
 
+def test_concurrent_first_runs_share_one_started_pool() -> None:
+    # the lazy pool was assigned before it was entered, so overlapping
+    # first runs checked out of an unstarted pool and crashed with "the
+    # pool is not active" (#158) — the HTTP serving shape, sessions off
+    async def case() -> None:
+        backend = MontyBackend()
+        try:
+            results = await asyncio.gather(
+                *(backend.run(f"return {i}", bridge=_StubBridge()) for i in range(4))
+            )
+            assert [r.value for r in results] == [0, 1, 2, 3]
+        finally:
+            await backend.aclose()
+
+    run(case())
+
+
 def test_monty_tool_error_is_catchable_in_snippet() -> None:
     async def explode() -> None:
         raise RuntimeError("tool exploded")
