@@ -5,9 +5,8 @@ harness and raw results in [`bench/`](https://github.com/oneryalcin/toolplane/tr
 
 *Release status (2026-10-08): the follow-up sections below measured
 pre-release main; that facade (search hits and tool descriptions carrying
-call shapes) shipped in **toolplane 0.5.0**. They were not re-run on
-0.5.0's Monty 1.1 backend. The costs measured are model tokens, which a
-backend swap is not expected to move — expected, not verified.*
+call shapes) shipped in **toolplane 0.5.0**, and the headline cells were
+re-run on 0.5.0 — see [Re-run on 0.5.0](#re-run-on-050-the-backend-holds-a-new-abstention-failure-2026-10-08).*
 
 The code-mode thesis — one Python snippet looping over tools beats N
 individual tool calls — is repeated in vendor blog posts and was the
@@ -856,6 +855,95 @@ post-hoc correction replaces the per-turn token fields with the verbatim
 `usage` object from each recorded result event: the first harness incorrectly
 differenced those already-per-turn counters. Costs, peak context, answers, and
 every published table value were unaffected; no run was re-executed.
+
+## Re-run on 0.5.0: the backend holds; a new abstention failure (2026-10-08)
+
+The headline cells above were measured on pre-release main in July. This
+re-run measures **0.5.0 as shipped**: the same seven cells,
+`claude-sonnet-5`, 4 reps (counterbalanced), 56 runs, $6.98. Provenance:
+code under test `f0cecbb`, whose `src/` is byte-identical to the `v0.5.0`
+tag. The rows record `git_dirty=true` — the cause is the untracked result
+files of the 2-run smoke that ran 37 seconds earlier in the same worktree
+(the smoke's own rows read `git_dirty=false`); the wheel, harness, and
+fixture sha256s in every row match `f0cecbb`, and the wheel rebuilds
+byte-identically from a clean `git archive f0cecbb`.
+
+Three things changed since July: the Monty 1.1 backend, the facade
+teaching (#115 tool descriptions carrying call shapes, #109 fan-out), and
+the client (Claude Code **2.1.293** vs 2.1.205). The model string is
+identical; whether the snapshot behind it is, is unknown. Both arms ran
+inside the operator's global Claude Code setup (plugins, skills,
+session-start hooks; 31 tools at init), symmetric across arms.
+
+**The question this re-run was for — does the Monty 1.1 backend change
+the result — has a clean answer: 24 of 24 toolplane runs that reached
+the backend were correct.** Every non-chain run was exactly one
+`ToolSearch` then one `execute_code` (chain: 4–6 executes; July always
+5), and the passing loop runs cost a flat $0.105–$0.107 at every N.
+
+**One change is separable from the transcripts: the discovery turn is
+gone.** All 21 July toolplane runs called `search_capabilities` once
+(14 of them also opened with `Bash`); none of the 24 October runs did —
+the call shapes in the facade's tool descriptions (#115) let the agent
+go straight from `ToolSearch` to `execute_code` in 3 model requests.
+That is why toolplane's wall roughly halved at *every* task size (N=5
+27.0s → 10.4s, N=30 20.9s → 9.9s, single 15.1s → 9.6s) while direct's
+N=100 wall did not move (57.3s → 56.2s), and why toolplane's costs fell
+further than direct's client drift.
+
+**Absolute dollars are not comparable to July** (direct got 15–32%
+cheaper in every cell — client drift), so the same-day direct arm is the
+control. All costs are **cost-of-pass** (total spend ÷ correct runs) in
+both eras, so failures are priced in; July's cells therefore differ by
+up to two cents from the medians quoted in earlier sections (e.g. chain
++36% here vs +38% by median above):
+
+| records touched | 5 | 10 | 20 | 30 | 100 | single | chain |
+|---|---|---|---|---|---|---|---|
+| July toolplane ÷ direct | 1.42 | 1.23 | 1.01 | 0.87 | 0.50 | 1.35 | 1.36 |
+| **Oct toolplane ÷ direct** | **1.19** | **1.13** | **1.01** | **0.74** | **0.55** | **1.28** | **1.07** |
+| Oct, passing runs only | 0.95 | 0.90 | 0.81 | 0.74 | 0.44 | 1.28 | 1.07 |
+| Oct direct | $0.112 | $0.117 | $0.130 | $0.142 | $0.239 | $0.097 | $0.135 |
+| Oct toolplane | $0.133 | $0.133 | $0.132 | $0.106 | $0.132 | $0.124 | $0.145 |
+| Oct toolplane correct | 3/4 | 3/4 | 3/4 | 4/4 | 3/4 | 4/4 | 4/4 |
+| Oct wall direct / toolplane | 11.4 / 10.4s | 22.1 / 10.2s | 22.8 / 11.4s | 35.9 / 9.9s | 56.2 / 10.9s | 9.4 / 9.6s | 15.8 / 21.8s |
+
+Walls are medians over correct runs.
+
+**Read the loop cells as reliability, not a crossover curve.** Every
+passing toolplane run was cheaper than every direct run at every loop
+size, N=5 included ($0.105 vs $0.112; at N=20 the passing ranges are
+disjoint). With n=4 a loop cell's cost-of-pass is $0.106 (no abstention)
+or ~$0.132 (one abstention), so the row's shape — above direct at 5–10,
+level at 20, below at 30 — tracks which cells happened to draw an
+abstention (only `loop` drew none), not token economics. What is robust:
+toolplane is ~45% cheaper at N=100 even with an abstention priced in,
+and ~5x faster (56.2s vs 10.9s; July 2.8x). Single lookups still cost
+toolplane more (1.35 → 1.28). Chain's cost gap narrowed to +7% with
+ranges overlapping through one rep (the other three sit above direct's
+range), and it is still slower (21.8s vs 15.8s, ranges disjoint).
+
+**The new failure: abstention.** 4 of 28 toolplane runs (`loop5`,
+`loop10`, `loop20`, `loop100`; 3 direct-first, 1 toolplane-first) ended
+in one turn with **zero tool calls** — the agent replied that it had no
+access to any order data, and never invoked `ToolSearch`, so the backend
+never ran. Every other toolplane run opened with `ToolSearch`, as did all
+28 direct runs. 0 of 21 July toolplane runs and 0 of 28 same-day direct
+runs abstained; neither difference is resolved at these counts (Fisher
+p=0.125 and p=0.111). One observation narrows the hypothesis without
+confirming it: July's agent opened 14 of 21 toolplane runs with `Bash`
+(exploring the shell when unsure) and never abstained, while today's
+opens with `ToolSearch` or gives up. Under deferred tool loading, the
+model sees tool *names* before deciding to search; direct's
+`mcp__orders__get_order` names the domain, toolplane's generic
+`execute_code`/`search_capabilities` do not — the server-qualifier
+hypothesis #127 left untested. When the agent did search, `ToolSearch`
+returned client built-ins alongside the facade tools (`CronDelete` in
+15 of 24 results). Tracked as an open question, not a fix
+([#150](https://github.com/oneryalcin/toolplane/issues/150)).
+
+Raw data: `bench/results/run-20261008-012307.json` (the 2-run `single`
+smoke that preceded it, `run-20261008-012230.json`, is in no cell).
 
 ## The envelope
 

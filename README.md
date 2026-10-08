@@ -53,13 +53,20 @@ What makes toolplane different from other code-mode runtimes:
   raw MCP tool-calling in a real client and published where it *loses*.
   Two eras, labeled: **0.4.0** measured plain MCP ~20% cheaper at
   30 tool interactions and code mode ~15% cheaper at 100 (crossover
-  unmeasured). **0.5.0** ships the call-shape facade (measured on
-  pre-release main, July 2026; not re-run on 0.5.0's Monty 1.1 backend),
-  which moves the crossover below 30: code mode runs flat ~$0.18/task at every
-  task size, sits at parity with plain MCP in the 20–30 region, and wins
-  ~45% cheaper / ~2.8x faster at 100 — while single lookups still favor
-  direct calls ($0.14 vs $0.18) and a sequentially-adaptive "chain" task
-  costs code mode +38%, published with the mechanism. The surprise in
+  unmeasured). **0.5.0** ships the call-shape facade, which moves the
+  crossover below 30: code mode runs flat per task at every task size
+  (~$0.18 in July), sits at parity with plain MCP around 20, and wins ~45%
+  cheaper at 100 — while single lookups still favor direct calls (~+28%)
+  and a sequentially-adaptive "chain" task cost code mode +38% in July.
+  Re-run on the shipped 0.5.0 (Oct 2026, newer client): every run that
+  reached the backend was correct, and with the discovery turn gone,
+  passing code-mode runs undercut plain MCP at every loop size and beat
+  it on wall time from 10 records up (~5x at 100; still ~45% cheaper
+  there). But 4 of 28 code-mode runs gave up without searching for the
+  tools — an open question
+  ([#150](https://github.com/oneryalcin/toolplane/issues/150)) that,
+  priced in, keeps small tasks cheaper on plain MCP. Chain's cost
+  gap narrowed to +7%, though it stays slower. The surprise in
   both eras: round-trips aren't the mechanism (clients batch tool calls
   in parallel); output-token scaling and context growth are. Harness and
   raw results in [`bench/`](bench/); numbers, variance, and limitations in
