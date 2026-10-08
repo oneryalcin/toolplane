@@ -633,10 +633,14 @@ def _free_port() -> int:
         return int(sock.getsockname()[1])
 
 
+# Pinned: each run gets a fresh Deno cache, so an unpinned "npm:pyodide"
+# resolved the newest release (and its package builds, e.g. pandas) on
+# every run — upstream releases could break the backend with no change
+# here (#21). Bump deliberately and re-run the pyodide suite.
 _RUNNER_TEMPLATE = Template(
     r"""
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { loadPyodide } from "npm:pyodide";
+import { loadPyodide } from "npm:pyodide@314.0.7";
 
 const AUTH_TOKEN = "$auth_token";
 const pyodidePromise = loadPyodide();
