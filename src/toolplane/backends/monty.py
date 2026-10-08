@@ -362,6 +362,14 @@ class MontyBackend:
                         traceback=_format_frames(exc, "toolplane_session.py"),
                     ),
                 )
+            except asyncio.CancelledError:
+                # the caller went away (client cancel or disconnect): the
+                # cancelled feed finishes the checkout, so without a restore
+                # every later run — reset_session included — fails with "this
+                # checkout has already been finished". Same recovery as a
+                # timeout, then let the cancellation propagate.
+                await self._roll_back(snapshot, pending_reset_before)
+                raise
             except MontyCrashedError as exc:
                 # the worker died mid-run: the checkout is finished, and every
                 # later feed would raise "this checkout has already been

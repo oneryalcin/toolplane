@@ -542,3 +542,269 @@ def test_unrestricted_runtime_facade_does_not_advertise_escalation() -> None:
     build_mcp_facade(runtime)
 
     assert runtime.cli_policy.escalation_available is False
+
+
+# --- 2026-07-28 era: escalation over MRTR (#139, #155) ----------------------
+#
+# Modern connections have no server-initiated requests, so ctx.elicit is dead
+# and escalation rides Multi Round-Trip Requests. These clients are NOT pinned
+# to the legacy era — that pin (#138) is exactly what hid #155.
+
+
+def _modern_runtime(**backend_kwargs):
+    import fastmcp
+
+    if int(fastmcp.__version__.split(".")[0]) < 4:
+        # the 2026-07-28 era (MRTR, sealed requestState) is fastmcp 4 /
+        # mcp-sdk v2 only; mcp_types alone is importable on older lines
+        pytest.skip("MRTR needs fastmcp>=4")
+    from toolplane.backends import MontyBackend
+
+    backends = [MontyBackend(**backend_kwargs)] if backend_kwargs else None
+    runtime, spawned = _runtime_with_fake_cli(backends=backends)
+    bumps: list[int] = []
+
+    def bump() -> int:
+        bumps.append(1)
+        return len(bumps)
+
+    runtime.register(bump, description="side effect counter")
+
+    async def pause(seconds: float) -> None:
+        await asyncio.sleep(seconds)
+
+    runtime.register(pause, description="sleeps")
+    return runtime, spawned, bumps
+
+
+def _answer(value):
+    async def handler(message, response_type, params, context):
+        return {"value": value}
+
+    return handler
+
+
+def _modern_call(runtime, code, handler):
+    from fastmcp import Client
+
+    async def exercise():
+        async with Client(build_mcp_facade(runtime), elicitation_handler=handler) as c:
+            result = await c.call_tool(
+                "execute_code", {"code": code, "backend": "monty"}
+            )
+            return result.data
+
+    return run(exercise())
+
+
+def test_modern_era_escalation_prompts_and_grants() -> None:
+    runtime, spawned, _ = _modern_runtime()
+    data = _modern_call(runtime, 'return await cli_run("curl")', _answer("allow"))
+
+    assert data["error"] is None, data["error"]
+    assert spawned == ["curl"]
+
+
+def test_modern_era_denied_escalation_never_spawns() -> None:
+    runtime, spawned, _ = _modern_runtime()
+    data = _modern_call(runtime, 'return await cli_run("curl")', _answer("deny"))
+
+    assert spawned == []
+    assert data["error"]["type"] == "PermissionError"
+
+
+def test_modern_era_side_effects_before_the_ask_run_exactly_once() -> None:
+    # the reason runs are parked, not re-executed: re-running the snippet on
+    # the re-issued call would repeat every capability call before the ask
+    runtime, spawned, bumps = _modern_runtime()
+    data = _modern_call(
+        runtime,
+        'await bump()\nreturn await cli_run("curl")',
+        _answer("allow"),
+    )
+
+    assert data["error"] is None, data["error"]
+    assert (len(bumps), spawned) == (1, ["curl"])
+
+
+def _raw_leg(client, code, request_state=None, input_responses=None):
+    return client.session.call_tool(
+        name="execute_code",
+        arguments={"code": code, "backend": "monty"},
+        request_state=request_state,
+        input_responses=input_responses,
+        allow_input_required=True,
+    )
+
+
+def _grant_answer():
+    import mcp_types
+
+    return {"grant": mcp_types.ElicitResult(action="accept", content={"value": "allow"})}
+
+
+def test_forged_request_state_executes_nothing() -> None:
+    # mcp-sdk v2 seals requestState (AES-GCM, request-bound, TTL): a forged
+    # handle is rejected at the protocol boundary and must never fall
+    # through to a fresh execution of the supplied code
+    runtime, spawned, bumps = _modern_runtime()
+    from fastmcp import Client
+    from mcp.shared.exceptions import MCPError
+
+
+    async def exercise():
+        async with Client(build_mcp_facade(runtime)) as c:
+            with pytest.raises(MCPError):
+                await _raw_leg(
+                    c,
+                    'await bump()\nreturn await cli_run("curl")',
+                    request_state="forged",
+                    input_responses=_grant_answer(),
+                )
+
+    run(exercise())
+
+    assert (bumps, spawned) == ([], [])
+
+
+def test_approval_token_cannot_be_replayed_with_different_code() -> None:
+    # identity confusion (#114 lesson): the human approved the run that
+    # asked; a genuine token re-issued with other code must not execute it
+    runtime, spawned, bumps = _modern_runtime(timeout_seconds=1.0)
+    from fastmcp import Client
+    from mcp.shared.exceptions import MCPError
+
+
+    async def exercise():
+        async with Client(build_mcp_facade(runtime)) as c:
+            first = await _raw_leg(c, 'return await cli_run("curl")')
+            with pytest.raises(MCPError):
+                await _raw_leg(
+                    c,
+                    'await bump()\nreturn await cli_run("wget")',
+                    request_state=first.request_state,
+                    input_responses=_grant_answer(),
+                )
+
+    run(exercise())
+
+    assert (bumps, spawned) == ([], [])
+
+
+def test_abandoned_park_times_out_and_a_late_answer_executes_nothing() -> None:
+    # a client that never re-issues must not wedge the run forever, and its
+    # late answer must not grant anything (the #71 late-answer hazard)
+    import mcp_types
+    from fastmcp import Client
+
+    runtime, spawned, _ = _modern_runtime(timeout_seconds=1.0)
+
+    async def exercise():
+        async with Client(build_mcp_facade(runtime)) as c:
+            first = await _raw_leg(c, 'return await cli_run("curl")')
+            await asyncio.sleep(1.5)  # backend timeout fires while parked
+            late = await _raw_leg(
+                c,
+                'return await cli_run("curl")',
+                request_state=first.request_state,
+                input_responses=_grant_answer(),
+            )
+            return first, late
+
+    first, late = run(exercise())
+
+    assert isinstance(first, mcp_types.InputRequiredResult)
+    assert spawned == []
+    assert late.structured_content["error"]["type"] == "EscalationExpiredError"
+    assert runtime.cli_policy.escalation_handler is None
+
+
+def _prompt(first) -> str:
+    return first.input_requests["grant"].params.message
+
+
+def test_overlapping_runs_each_ask_through_their_own_call() -> None:
+    # the grant handler is runtime-wide; without serialization run B's
+    # handler replaced run A's, so A's ask surfaced on B's call and B's
+    # approval let A spawn (Codex adversarial, #156)
+    runtime, spawned, _ = _modern_runtime(timeout_seconds=10.0)
+    from fastmcp import Client
+
+    code_a = 'await pause(seconds=0.3)\nreturn await cli_run("curl")'
+    code_b = 'return await cli_run("wget")'
+
+    async def exercise():
+        async with Client(build_mcp_facade(runtime)) as c:
+            leg_a = asyncio.ensure_future(_raw_leg(c, code_a))
+            await asyncio.sleep(0.05)
+            leg_b = asyncio.ensure_future(_raw_leg(c, code_b))
+            first_a = await leg_a
+            b_waited = not leg_b.done()
+            done_a = await _raw_leg(
+                c, code_a, first_a.request_state, _grant_answer()
+            )
+            first_b = await leg_b
+            return first_a, b_waited, done_a, first_b
+
+    first_a, b_waited, done_a, first_b = run(exercise())
+
+    assert "'curl'" in _prompt(first_a)
+    assert b_waited
+    assert done_a.structured_content["error"] is None
+    assert "'wget'" in _prompt(first_b)
+    assert spawned == ["curl"]
+
+
+@pytest.mark.parametrize("session", [False, True])
+def test_client_cancelling_a_leg_stops_the_run(session: bool) -> None:
+    # a disconnected client can never answer or read the result; the run
+    # must not keep executing toward an ask (Codex adversarial, #156), and
+    # in session mode — the stdio default — the cancel must not wedge the
+    # session for every later run (Fable review, #156)
+    runtime, spawned, bumps = _modern_runtime(timeout_seconds=10.0, session=session)
+    from fastmcp import Client
+
+    code = 'await pause(seconds=0.5)\nawait bump()\nreturn await cli_run("curl")'
+
+    async def exercise():
+        async with Client(build_mcp_facade(runtime)) as c:
+            leg = asyncio.ensure_future(_raw_leg(c, code))
+            await asyncio.sleep(0.1)
+            leg.cancel()
+            await asyncio.sleep(1.0)  # past the point the run would bump
+            # the escalation slot is free again: a new run is not blocked
+            after = await asyncio.wait_for(
+                _raw_leg(c, "return 7"), timeout=5
+            )
+            return after
+
+    after = run(exercise())
+
+    assert (bumps, spawned) == ([], [])
+    assert after.structured_content["value"] == 7
+
+
+def test_unanswered_park_expires_with_the_request_state_ttl(monkeypatch) -> None:
+    # past the sealed-token TTL no answer can verify; a parked run on a
+    # backend without its own run timeout (local_unsafe) held the
+    # escalation slot forever (Fable review, #156)
+    runtime, spawned, _ = _modern_runtime(timeout_seconds=30.0)
+    import mcp_types
+    from fastmcp import Client
+
+    import toolplane.mcp_facade as facade
+
+    monkeypatch.setattr(facade, "_PARK_TTL_SECONDS", 0.5)
+
+    async def exercise():
+        async with Client(build_mcp_facade(runtime)) as c:
+            first = await _raw_leg(c, 'return await cli_run("curl")')
+            await asyncio.sleep(1.0)  # TTL lapses; backend timeout has not
+            after = await asyncio.wait_for(_raw_leg(c, "return 7"), timeout=5)
+            return first, after
+
+    first, after = run(exercise())
+
+    assert isinstance(first, mcp_types.InputRequiredResult)
+    assert spawned == []
+    assert after.structured_content["value"] == 7
