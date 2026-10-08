@@ -318,19 +318,19 @@ def build_code_under_test(workdir: Path) -> dict:
         capture_output=True,
         text=True,
     ).stdout.strip()
-    # the harness's own output directory is excluded: an earlier matrix's
+    # the harness's own NEW output files are excluded: an earlier matrix's
     # result files (or a smoke's) in the same tree marked every following
     # run dirty, twice, while the code under test was byte-identical. Any
     # change to code, harness, or fixtures still counts.
-    git_dirty = bool(
-        subprocess.run(
-            [
-                "git", "-C", str(REPO_DIR), "status", "--porcelain",
-                "--", ".", ":(exclude)bench/results",
-            ],
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
+    status = subprocess.run(
+        ["git", "-C", str(REPO_DIR), "status", "--porcelain"],
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    # only NEW output files are ignored: an edit to a tracked (published)
+    # result file still marks the run dirty
+    git_dirty = any(
+        not line.startswith("?? bench/results/") for line in status if line
     )
     dist = workdir / "dist"
     subprocess.run(
@@ -999,8 +999,9 @@ def _codex_rollout_facts(home: Path, stdout: str) -> dict:
     """Derived metadata from this run's session rollout; the rollout itself
     (it carries Codex's developer instructions) is never saved.
 
-    model_call_names: what the model invoked — `exec` (code mode) or
-    `mcp__<server>__<tool>` (a direct call). model_requests / peak context:
+    model_call_names: what the model invoked — `exec` (code mode),
+    `mcp__<server>__<tool>` (a direct MCP call), or an un-namespaced Codex
+    built-in such as `list_mcp_resources` / `read_mcp_resource`. model_requests / peak context:
     one token_count event with last_token_usage per model request.
     """
     thread_id = None
@@ -1023,7 +1024,10 @@ def _codex_rollout_facts(home: Path, stdout: str) -> dict:
     calls: list[str] = []
     contexts: list[int] = []
     for line in rollouts[0].read_text(encoding="utf-8").splitlines():
-        payload = json.loads(line).get("payload") or {}
+        try:
+            payload = json.loads(line).get("payload") or {}
+        except json.JSONDecodeError:
+            continue  # a killed Codex can leave a truncated last line
         kind = payload.get("type")
         if kind == "custom_tool_call":
             calls.append(payload.get("name") or "?")
@@ -1056,9 +1060,10 @@ def run_case_codex(
 ) -> dict:
     """One run through `codex exec`; same row shape as run_case.
 
-    Codex on a ChatGPT plan reports tokens, not USD, and its events carry no
-    request ids or per-request usage: cost_usd, model_requests, and
-    peak_context_tokens stay None rather than being estimated.
+    Codex on a ChatGPT plan reports tokens, not USD: cost_usd stays None
+    rather than being estimated. model_requests, peak_context_tokens, and
+    what the model itself called come from the session rollout (see
+    _codex_rollout_facts), since `--json` carries none of them.
     """
     orders_n = TASKS[task]["orders_n"]
     servers = mcp_config(
@@ -1135,6 +1140,8 @@ def run_case_codex(
         "codex_mode": (
             None
             if facts["model_call_names"] is None
+            else "no_calls"
+            if not facts["model_call_names"]
             else "code_mode"
             if "exec" in facts["model_call_names"]
             else "direct_calls"

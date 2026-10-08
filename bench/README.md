@@ -156,9 +156,13 @@ setting was found necessary by a probe, not added on spec:
 
 - An isolated `HOME` and `CODEX_HOME` per matrix, holding only a copy of the
   login (deleted with the run's temp dir), plus multi-agent, memories, hooks,
-  host skill discovery, skill search, and web search off. Without this, the
-  operator's `~/.codex/AGENTS.md` and `~/.agents/skills` rode in every
+  host skill discovery, skill search, and web search flags off. Without this,
+  the operator's `~/.codex/AGENTS.md` and `~/.agents/skills` rode in every
   request: a minimal prompt measured 20.7k input tokens instead of 9.3k.
+  Not everything goes away: Codex's collaboration tools and its four
+  built-in skills (`imagegen`, `openai-docs`, `skill-creator`,
+  `skill-installer`) remain in both arms. `skip_host_skill_discovery` is an
+  under-development flag, and every transcript carries its warning item.
 
 **What `direct` means depends on the model.** Codex 0.160.0 gates its
 built-in JavaScript code mode on per-model metadata. `gpt-6.1-sol` and

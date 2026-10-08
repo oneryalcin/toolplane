@@ -980,11 +980,18 @@ Each row records what the model itself called (`codex_mode`,
 shows the resulting MCP calls but hides the `exec` layer. Same harness
 (`--client codex`), same tasks and fixtures, 4 counterbalanced reps per cell,
 48 runs, 48/48 correct, zero shell calls. Codex ran
-with an isolated `HOME`/`CODEX_HOME` and its host features off
-(`bench/README.md`). Without that, the operator's global Codex instructions
-and skills rode in every request and roughly doubled the prompt. Codex on a
-ChatGPT plan reports tokens, not dollars. `input` is summed over the run's
-model requests; `peak` is the largest single request.
+with an isolated `HOME`/`CODEX_HOME` and host features off where the flags
+take effect (`bench/README.md`). Codex's collaboration tools and its four
+built-in skills stayed in both arms. Without the isolation, the operator's
+global Codex instructions and skills rode in every request. An earlier
+`gpt-6.1-sol` matrix run that way (unpublished) measured 1.8–2.2x the input
+of the isolated one, cell for cell, with outputs and walls unchanged. Codex
+on a ChatGPT plan reports tokens, not dollars. `input` is summed over the
+run's model requests; `peak` is the largest single request. Scope: one
+server (M=1), small records, the `fetch-one` API, no `chain` task, n=4,
+Codex 0.160.0, both models on the same evening. Reasoning effort was left
+at each model's default (`gpt-6.1-sol` low, `gpt-5.5` medium), which
+matters for cross-model comparisons, not within-model ones.
 
 **`gpt-5.5`, plain tool calls: the Claude Code envelope, sharper.**
 
@@ -999,17 +1006,23 @@ model requests; `peak` is the largest single request.
 
 Medians; every cell's arms separate (disjoint ranges) on input, output, and
 wall. Single lookups lose: 2.4x the input and 2.2x the wall, with the
-discovery overhead plainly visible (3.5 model calls versus 1). Loops win, and
-the win grows with N. At 30 records toolplane uses 25% less input, 76% less
-output, and finishes 1.7x faster. At 100 it uses 59% less input, 92% less
-output, and is 3.9x faster. Direct's cost is output tokens: every call is
-emitted text, 3,874 output tokens for 101 calls. That is the same mechanism
-the Claude Code tables found.
+discovery overhead plainly visible (3.5 model calls versus 1). On Codex that
+overhead came through Codex's MCP-resource path: the model read toolplane's
+`skill://` guide and `toolplane://namespace` manifest before
+`execute_code`, never toolplane's `search_capabilities`. Loops win, and the
+win grows with N. At 30 records toolplane uses 25% less input, 76% less
+output, and finishes 1.7x faster. At 100 it uses 92% less output and is 3.9x
+faster. The direct runs there were bimodal (5 or 7 requests; 51.9k or 76.1k
+input), so the input saving is 50–66% rather than the 59% the medians
+suggest. Direct's cost is output tokens. 3,874 for 101 calls, about 45% of
+it reasoning and the rest call text, against 315 for toolplane's one call.
+That is the same mechanism the Claude Code tables found.
 
 **`gpt-6.1-sol`, Codex-native code mode: little left to gain.** Here
 `direct` is Codex's own JavaScript loop, and `toolplane` is that JavaScript
-calling `execute_code`, code mode calling code mode. Every cell took the same
-4 model calls (2 on `single`) and 5 requests (3 on `single`):
+calling `execute_code`, code mode calling code mode. Every run took 4 model
+calls (2 on `single`), and every run but one took 5 requests (3 on `single`;
+one direct `single` run took 4):
 
 | task | direct input | toolplane input | direct output | toolplane output | wall (direct / toolplane) |
 |---|---|---|---|---|---|
@@ -1036,10 +1049,10 @@ clients. The survey records the Codex finding in
 
 Raw data: `bench/results/run-20261008-202709.json` (`gpt-6.1-sol`) and
 `run-20261008-203351.json` (`gpt-5.5`). The `gpt-5.5` rows record
-`git_dirty=true`. The cause is the first matrix's untracked result files in
-the same tree; wheel, harness, and fixture hashes are identical across both
-files. The harness now excludes its own output directory from the dirty
-check. The rows name `e76b836`, a pre-squash commit. Its `src/` and fixtures
+`git_dirty=true`. That is consistent with the first matrix's untracked
+result files in the same tree; wheel, harness, and fixture hashes are
+identical across both files. The harness now ignores only its own new
+output files in the dirty check. The rows name `e76b836`, a pre-squash commit. Its `src/` and fixtures
 equal the committed harness commit's, and its `bench/run.py` (hash
 `62cecc606795`, as recorded in every row) differs only by that dirty-check
 change and a comment. Isolation flags and why each is needed are in

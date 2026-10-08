@@ -233,8 +233,9 @@ measurement, not a final one.
   [#108](https://github.com/oneryalcin/toolplane/issues/108).
 - **Clients are absorbing the efficiency half of code mode.** On its
   code-mode models Codex routes every MCP call through native JS code mode,
-  and toolplane measured within a few percent of it on tokens and wall (with
-  a plain-calling model, the usual loop savings reappear). On such clients
+  and toolplane measured within 5% of it on input tokens with equal walls
+  (output ran +8% to +24%, a few dozen tokens). With a plain-calling model,
+  the usual loop savings reappear. On such clients
   toolplane's
   case rests on what the client does not provide: a pip-only sandbox,
   CLI binaries behind an allowlist with human escalation, an audit log at

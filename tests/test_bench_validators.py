@@ -470,3 +470,17 @@ def test_codex_rollout_facts_tell_code_mode_from_direct_calls(tmp_path) -> None:
 
     assert (code["model_call_names"], code["model_requests"], code["peak_context_tokens"]) == (["exec"], 2, 12000)
     assert direct["model_call_names"] == ["mcp__orders__get_order"]
+
+
+def test_codex_rollout_facts_survive_a_truncated_line(tmp_path) -> None:
+    # a timeout-killed Codex can leave a half-written last line; raising
+    # there aborted the matrix and lost every row collected so far (#113)
+    from run import _codex_rollout_facts
+
+    path = tmp_path / "sessions" / "rollout-x-t-cut.jsonl"
+    path.parent.mkdir(parents=True)
+    path.write_text('{"payload": {"type": "custom_tool_call", "name": "exec"}}\n{"payload": {"ty')
+
+    facts = _codex_rollout_facts(tmp_path, '{"type":"thread.started","thread_id":"t-cut"}')
+
+    assert facts["model_call_names"] == ["exec"]
