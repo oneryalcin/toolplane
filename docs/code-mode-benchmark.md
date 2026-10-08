@@ -939,8 +939,23 @@ model sees tool *names* before deciding to search; direct's
 `execute_code`/`search_capabilities` do not — the server-qualifier
 hypothesis #127 left untested. When the agent did search, `ToolSearch`
 returned client built-ins alongside the facade tools (`CronDelete` in
-15 of 24 results). Tracked as an open question, not a fix
-([#150](https://github.com/oneryalcin/toolplane/issues/150)).
+15 of 24 results).
+
+**Follow-up (same day, pre-registered on
+[#150](https://github.com/oneryalcin/toolplane/issues/150)): abstention
+is a Sonnet 5 behavior; the newer models did not show it.** On the `loop`
+cell with Claude Code 2.1.294, the toolplane arm abstained in **0 of 60**
+Haiku 5.5 runs (rate <4.9% at 95%) and **0 of 40** Sonnet 5.5 runs
+(<7.2%), all correct. Sonnet 5.5 never used `ToolSearch` at all — it
+called `search_capabilities` first in 40/40 — so the search-or-give-up
+decision where Sonnet 5 abstained does not arise. A server-name A/B on
+Haiku (facade registered as `orders` instead of `toolplane`) could not
+test the fix, since neither arm abstained, but it did move discovery: the
+domain-named facade needed `search_capabilities` in 0/60 runs vs 7/60
+(p=0.013). Whether the name prevents abstention on Sonnet 5 itself was
+not tested. Raw data: `run-20261008-082359.json` (Haiku A/B, $1.04) and
+`run-20261008-091632.json` (Sonnet 5.5, $3.58); smokes
+`run-20261008-082248.json` and `run-20261008-091537.json` are in no cell.
 
 Raw data: `bench/results/run-20261008-012307.json` (the 2-run `single`
 smoke that preceded it, `run-20261008-012230.json`, is in no cell).

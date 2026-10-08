@@ -392,6 +392,12 @@ _CURATED_ARMS = {
     "curated_desc": "description",
 }
 
+# #150 A/B: the SAME facade and config as "toolplane", registered under the
+# target domain's server name, so a deferred-loading client lists
+# mcp__orders__execute_code instead of mcp__toolplane__execute_code. Tests
+# whether a domain-bearing server name prevents zero-tool-call abstention.
+_NAMED_ARM = "toolplane_named"
+
 
 def mcp_config(
     arm: str,
@@ -431,7 +437,7 @@ def mcp_config(
     # facade. "hybrid" adds --hybrid (re-export the WHOLE registry, #114's
     # held baseline); "curated" adds a [hybrid] config section that
     # re-exports ONLY the orders tools (#125 — the selective form).
-    if arm in ("toolplane", "hybrid") or arm in _CURATED_ARMS:
+    if arm in ("toolplane", _NAMED_ARM, "hybrid") or arm in _CURATED_ARMS:
         # generated with absolute paths: every process here runs from a
         # scratch cwd, so nothing may be cwd-relative
         toml_path = (
@@ -473,7 +479,8 @@ def mcp_config(
         signal = _CURATED_ARMS.get(arm, "control")
         if signal != "control":
             server_entry["env"] = {"TOOLPLANE_HYBRID_SIGNAL": signal}
-        return {"mcpServers": {"toolplane": server_entry}}
+        server_name = target_name if arm == _NAMED_ARM else "toolplane"
+        return {"mcpServers": {server_name: server_entry}}
     raise ValueError(arm)
 
 
@@ -791,6 +798,7 @@ def summarize(rows: list[dict]) -> str:
     arm_order_display = [
         "direct",
         "toolplane",
+        "toolplane_named",
         "hybrid",
         "curated",
         "curated_name",
@@ -891,6 +899,7 @@ def discovery_summary(rows: list[dict]) -> str:
     arm_order_display = [
         "direct",
         "toolplane",
+        "toolplane_named",
         "hybrid",
         "curated",
         "curated_name",
