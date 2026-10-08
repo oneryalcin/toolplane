@@ -11,6 +11,8 @@ uv.lock
 dist/
 build/
 site/
+tmp/pdfs/
+output/pdf/*.pdf
 *.egg-info/
 .DS_Store
 .codex/

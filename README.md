@@ -142,6 +142,15 @@ codex mcp add toolplane -- uvx toolplane serve mcp --config /path/to/toolplane.t
 }
 ```
 
+**Tip: name the registration after what it serves.** The name you register
+under becomes the tools' prefix (`mcp__toolplane__execute_code`), and
+clients that defer tool loading show the model only those names before it
+decides what to search for. If your config fronts one domain, a name like
+`orders` tells the model where that data lives: in a benchmark, the same
+facade registered as `orders` instead of `toolplane` let the agent skip a
+discovery call (0/60 vs 7/60 runs, Haiku 5.5). The effect was small, so if
+the config fronts several unrelated domains, `toolplane` is a fine default.
+
 Every client now sees the same three tools — `search_capabilities`,
 `get_capability_schemas`, `execute_code` — plus the live manifest resource
 `toolplane://namespace` and a bundled usage skill. Ask your agent to read the
