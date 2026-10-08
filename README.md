@@ -62,10 +62,10 @@ What makes toolplane different from other code-mode runtimes:
   reached the backend was correct, and with the discovery turn gone,
   passing code-mode runs undercut plain MCP at every loop size and beat
   it on wall time from 10 records up (~5x at 100; still ~45% cheaper
-  there). But 4 of 28 code-mode runs gave up without searching for the
-  tools — an open question
-  ([#150](https://github.com/oneryalcin/toolplane/issues/150)) that,
-  priced in, keeps small tasks cheaper on plain MCP. Chain's cost
+  there). But on Sonnet 5, 4 of 28 code-mode runs gave up without
+  searching for the tools, which, priced in, keeps small tasks cheaper
+  on plain MCP; Haiku 5.5 and Sonnet 5.5 never did (0/60, 0/40;
+  [#150](https://github.com/oneryalcin/toolplane/issues/150)). Chain's cost
   gap narrowed to +7%, though it stays slower. The surprise in
   both eras: round-trips aren't the mechanism (clients batch tool calls
   in parallel); output-token scaling and context growth are. Harness and
