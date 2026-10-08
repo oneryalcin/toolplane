@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import random
 import re
 import shutil
 import statistics
@@ -504,6 +505,45 @@ def _redacted_transcript(stdout: str) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _peak_context_tokens(stdout: str) -> int:
+    """Largest single-request context (input + cache write + cache read).
+
+    Summed uncached input hides context growth; the peak request is what
+    hits the context window (#116 item 4, same measure as longitudinal.py).
+    """
+    peak = 0
+    for line in stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if event.get("type") != "assistant":
+            continue
+        usage = event.get("message", {}).get("usage", {}) or {}
+        peak = max(
+            peak,
+            sum(
+                int(usage.get(key, 0) or 0)
+                for key in (
+                    "input_tokens",
+                    "cache_creation_input_tokens",
+                    "cache_read_input_tokens",
+                )
+            ),
+        )
+    return peak
+
+
+# #116 item 5: a lane with the client's general-purpose built-ins removed,
+# so shortcut behavior (Bash/Read instead of the MCP surface) is impossible
+# rather than merely auditable. ToolSearch stays: deferred tool loading
+# depends on it in BOTH arms.
+RESTRICTED_BUILTINS = (
+    "Bash", "Read", "Write", "Edit", "Glob", "Grep", "NotebookEdit",
+    "WebFetch", "WebSearch", "Task",
+)
+
+
 def _unique_request_ids(stdout: str) -> int:
     """Exact model-request count from the transcript.
 
@@ -627,6 +667,7 @@ def run_case(
     transcript_path: Path | None = None,
     record_bytes: int = 0,
     granularity: str = "fetch-one",
+    restrict_builtins: bool = False,
 ) -> dict:
     orders_n = TASKS[task]["orders_n"]
     config_path = workdir / (
@@ -664,6 +705,9 @@ def run_case(
         "--permission-mode",
         "bypassPermissions",
     ]
+    if restrict_builtins:
+        cmd += ["--disallowedTools", ",".join(RESTRICTED_BUILTINS)]
+    builtins = "restricted" if restrict_builtins else "default"
     started = time.monotonic()
     try:
         proc = subprocess.run(
@@ -685,6 +729,7 @@ def run_case(
             "m_servers": m_servers,
             "record_bytes": record_bytes,
             "granularity": granularity,
+            "builtins": builtins,
             "model": None,
             "correct": False,
             "answer": None,
@@ -697,6 +742,8 @@ def run_case(
             "output_tokens": 0,
             "cost_usd": None,
             "api_duration_ms": None,
+            "non_api_s": None,
+            "peak_context_tokens": None,
             "wall_s": round(time.monotonic() - started, 1),
             "exit_code": -1,
             "error": f"timeout after {exc.timeout}s",
@@ -740,6 +787,7 @@ def run_case(
         "m_servers": m_servers,
         "record_bytes": record_bytes,
         "granularity": granularity,
+        "builtins": builtins,
         "model": model_used,
         "correct": TASKS[task]["check"](answer or "", orders_n),
         "answer": answer,
@@ -755,11 +803,101 @@ def run_case(
         "output_tokens": usage.get("output_tokens", 0),
         "cost_usd": result_event.get("total_cost_usd"),
         "api_duration_ms": result_event.get("duration_api_ms"),
+        # #116 item 7, the part the client exposes: wall minus model-API
+        # time = client startup + MCP/tool dispatch + sandbox execution.
+        # Splitting those needs per-event timestamps stream-json lacks.
+        "non_api_s": (
+            round(wall_s - result_event["duration_api_ms"] / 1000, 1)
+            if result_event.get("duration_api_ms") is not None
+            else None
+        ),
+        "peak_context_tokens": _peak_context_tokens(proc.stdout),
         "wall_s": round(wall_s, 1),
         "exit_code": proc.returncode,
         **_first_search_discovery(proc.stdout, task_domain(task)["token"]),
         "transcript": transcript_path.name if transcript_path else None,
     }
+
+
+def _cost_of_pass(runs: list[tuple[float, bool]]) -> float:
+    passes = sum(ok for _, ok in runs)
+    return sum(cost for cost, _ in runs) / passes if passes else float("inf")
+
+
+def _bootstrap_cost_of_pass_diff(
+    arm: list[tuple[float, bool]],
+    direct: list[tuple[float, bool]],
+    resamples: int = 4000,
+    seed: int = 0,
+) -> tuple[float, float, float]:
+    """cost-of-pass(arm) - cost-of-pass(direct), 95% percentile bootstrap CI.
+
+    Bootstraps the same statistic the table reports (spend / correct runs)
+    so a cheap wrong answer can never read as a win: a raw-spend median
+    called toolplane cheaper at N=5 on the 0.5.0 re-run purely because its
+    failed runs were cheap. Each arm resamples its own runs (arm order is
+    counterbalanced by rep parity, not paired per rep); a resample with no
+    passes prices as inf. Seeded so a summary is reproducible.
+    """
+    rng = random.Random(seed)
+    point = _cost_of_pass(arm) - _cost_of_pass(direct)
+    diffs = sorted(
+        _cost_of_pass(rng.choices(arm, k=len(arm)))
+        - _cost_of_pass(rng.choices(direct, k=len(direct)))
+        for _ in range(resamples)
+    )
+    return point, diffs[int(0.025 * resamples)], diffs[int(0.975 * resamples) - 1]
+
+
+def _bootstrap_section(rows, arms, m_values, b_values, g_values) -> list[str]:
+    """#116 item 6: inference next to the descriptive † annotation."""
+    out = []
+    for task in TASKS:
+        for m in m_values:
+            for b in b_values:
+                for granularity in g_values:
+
+                    def runs(arm, task=task, m=m, b=b, granularity=granularity):
+                        return [
+                            (r["cost_usd"], bool(r["correct"]))
+                            for r in rows
+                            if r["task"] == task
+                            and r["arm"] == arm
+                            and r.get("m_servers", 1) == m
+                            and r.get("record_bytes", 0) == b
+                            and r.get("granularity", "fetch-one") == granularity
+                        ]
+
+                    direct = runs("direct")
+                    for arm in arms:
+                        group = runs(arm)
+                        if arm == "direct" or len(group) < 3 or len(direct) < 3:
+                            continue
+                        if any(cost is None for cost, _ in group + direct):
+                            continue  # unknown spend (timeout): no honest CI
+                        point, lo, hi = _bootstrap_cost_of_pass_diff(group, direct)
+                        verdict = "resolved" if lo > 0 or hi < 0 else "unresolved"
+                        out.append(
+                            f"| {task} | {m} | {b} | {granularity} | {arm} | "
+                            f"{point:+.3f} | [{lo:+.3f}, {hi:+.3f}] | {verdict} |"
+                        )
+    if not out:
+        return []
+    return [
+        "\n## Cost-of-pass difference vs direct (95% bootstrap CI, #116)",
+        "",
+        "| task | M | B | granularity | arm | Δ $/pass | 95% CI | |",
+        "|---|---|---|---|---|---|---|---|",
+        *out,
+        "",
+        (
+            "Percentile bootstrap of cost-of-pass (spend / correct runs, so "
+            "failures are priced in), each arm resampled independently, 4000 "
+            "resamples, seeded; needs >=3 reps per arm. 'resolved' = the CI "
+            "excludes zero. A CI bound of inf means some resamples had no "
+            "correct run."
+        ),
+    ]
 
 
 def _cell_stats(group: list[dict], key: str) -> tuple:
@@ -878,6 +1016,7 @@ def summarize(rows: list[dict]) -> str:
             "\n† this arm's observed per-rep range overlaps direct's for "
             "this task — the median gap is unresolved at this rep count."
         )
+    lines.extend(_bootstrap_section(rows, arms, m_values, b_values, g_values))
     return "\n".join(lines)
 
 
@@ -986,6 +1125,12 @@ def main() -> int:
         "Profiles are mutually exclusive fixture surfaces, not optional "
         "endpoints presented together.",
     )
+    parser.add_argument(
+        "--restrict-builtins",
+        action="store_true",
+        help="#116: disallow the client's general-purpose built-ins "
+        f"({', '.join(RESTRICTED_BUILTINS)}) in BOTH arms; ToolSearch stays",
+    )
     args = parser.parse_args()
 
     tasks = [t for t in args.tasks.split(",") if t in TASKS]
@@ -1058,6 +1203,7 @@ def main() -> int:
                                     transcript,
                                     record_bytes=b,
                                     granularity=granularity,
+                                    restrict_builtins=args.restrict_builtins,
                                 )
                                 row["client_version"] = client_version
                                 row["arm_order"] = "->".join(ordered_arms)

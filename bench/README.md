@@ -153,7 +153,24 @@ per-surface result sizes. Its output (`classified.json`) is what turned
 Per run: correctness, tool-call count (from `stream-json` tool_use events),
 API turns, output tokens, uncached input tokens (input + cache-creation;
 cache reads reported separately since they are ~10x cheaper), cost in USD
-as billed, wall-clock.
+as billed, wall-clock. Since #116 also: `peak_context_tokens` (the largest
+single request, input + cache write + cache read: what actually hits the
+context window), `non_api_s` (wall minus model-API time: client startup,
+MCP/tool dispatch, and sandbox execution; splitting those further needs
+per-event timestamps that stream-json does not emit), and `builtins`
+(`default` or `restricted`).
+
+The summary adds a **cost-of-pass difference vs direct with a 95% bootstrap
+CI** per cell (each arm's runs resampled independently, seeded). It
+bootstraps cost-of-pass, not raw spend, so a cheap wrong answer can never
+read as a win. At 3–4 reps the intervals are wide; use 5–10 reps for
+headline cells.
+
+`--restrict-builtins` removes the client's general-purpose built-ins (Bash,
+Read, Write, Edit, Glob, Grep, NotebookEdit, WebFetch, WebSearch, Task) in
+**both** arms, so shortcuts around the MCP surface are impossible rather
+than merely auditable. `ToolSearch` stays, because deferred tool loading
+depends on it.
 
 ## Honesty notes
 
