@@ -49,10 +49,18 @@ def blob_res() -> bytes:
 async def client_capabilities(ctx: Context) -> dict:
     """Return the capabilities the client declared during initialize."""
     params = ctx.session.client_params
+
+    def field(v1: str, v2: str):
+        # mcp-sdk v2 (fastmcp 4) renamed protocol fields to snake_case
+        value = getattr(params, v2, None) or getattr(params, v1, None)
+        return value.model_dump() if hasattr(value, "model_dump") else value
+
     return {
-        "clientInfo": params.clientInfo.model_dump() if params else None,
-        "protocolVersion": params.protocolVersion if params else None,
-        "capabilities": params.capabilities.model_dump() if params else None,
+        "clientInfo": field("clientInfo", "client_info") if params else None,
+        "protocolVersion": field("protocolVersion", "protocol_version")
+        if params
+        else None,
+        "capabilities": field("capabilities", "capabilities") if params else None,
     }
 
 

@@ -28,7 +28,7 @@ transport throughout.
 | Elicitation: string-enum rendering | yes — `["allow", "deny"]` renders as a selectable option list, not free text (2.1.201) | untested (blocked by the schema bug) |
 | Skills over MCP (fastmcp `SkillsDirectoryProvider`) | skill's static resources (`skill://<name>/SKILL.md`) appear in resource listing; `download_skill` works; the `list_skills`/`sync_skills` tool layer is **not** surfaced (2026-07-03) | untested |
 | Progress / log notifications | accepted, never surfaced to the headless agent | not observed |
-| Protocol version | 2025-11-25 | 2025-06-18 |
+| Protocol version | 2025-11-25 (2.1.198); **2026-07-28** against a fastmcp 4 server (2.1.294, 2026-10-08) | 2025-06-18 (0.142.4; 0.160.0 re-probed 2026-10-08) |
 
 ## Behavioral findings the table can't hold
 
@@ -54,6 +54,17 @@ change. (This forced run-scoped escalation cancellation in toolplane.)
 > Round-Trip Requests, where answers arrive as a re-issued call carrying
 > `requestState`. Impact assessment and upgrade follow-ups:
 > [#132](https://github.com/oneryalcin/toolplane/issues/132).
+
+**Era re-probe (2026-10-08).** Against a server on fastmcp 4.0.11 / mcp
+2.3.0, **Claude Code 2.1.294 negotiates `2026-07-28`** (it still sends
+`initialize`, declaring `elicitation: {form}`); **Codex 0.160.0 stays on
+`2025-06-18`**. On a 2026-07-28 connection, server-initiated elicitation is
+unavailable, so a server that asks for input mid-call via `ctx.elicit`
+gets nothing from Claude Code — in Toolplane that turned CLI-escalation
+prompts into plain refusals (fail-closed). The replacement is MRTR (SEP-2322):
+return `InputRequiredResult` and read the answer on the re-issued call.
+Whether Claude Code completes that round trip is tracked in
+[#139](https://github.com/oneryalcin/toolplane/issues/139).
 
 **Synthetic cancel is indistinguishable from a real user cancel.** Headless
 surfaces answer `{"action":"cancel"}` immediately; a human pressing Esc
