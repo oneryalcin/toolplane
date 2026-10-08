@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import random
 import re
 import shutil
@@ -317,12 +318,19 @@ def build_code_under_test(workdir: Path) -> dict:
         capture_output=True,
         text=True,
     ).stdout.strip()
-    git_dirty = bool(
-        subprocess.run(
-            ["git", "-C", str(REPO_DIR), "status", "--porcelain"],
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
+    # the harness's own NEW output files are excluded: an earlier matrix's
+    # result files (or a smoke's) in the same tree marked every following
+    # run dirty, twice, while the code under test was byte-identical. Any
+    # change to code, harness, or fixtures still counts.
+    status = subprocess.run(
+        ["git", "-C", str(REPO_DIR), "status", "--porcelain"],
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    # only NEW output files are ignored: an edit to a tracked (published)
+    # result file still marks the run dirty
+    git_dirty = any(
+        not line.startswith("?? bench/results/") for line in status if line
     )
     dist = workdir / "dist"
     subprocess.run(
@@ -900,6 +908,260 @@ def _bootstrap_section(rows, arms, m_values, b_values, g_values) -> list[str]:
     ]
 
 
+# #113 item 1: the same tasks, fixtures, and frozen code under test through
+# Codex CLI. Isolation, each flag measured necessary in probes:
+#   --ignore-user-config     keep ~/.codex MCP servers out (like
+#                            --strict-mcp-config)
+#   approval_mode="approve"  headless Codex otherwise fails every MCP call
+#                            ("requires approval, but approval policy is never")
+#   shell_tool/unified_exec  off: with a shell, Codex read the fixture SOURCE
+#                            and derived answers from the data generator
+#   apps/plugins             off: account connectors otherwise join the surface
+#   multi_agent/memories/hooks/skill discovery/web search off: host state and
+#                            extra tools that are not part of the comparison
+# plus an isolated HOME and CODEX_HOME (see _codex_home): with the real ones,
+# ~/.codex/AGENTS.md and ~/.agents/skills rode in every request's context
+# (a minimal prompt measured 20.7k input tokens vs 9.3k isolated)
+# no --ephemeral: the session rollout (written into the private home, deleted
+# with it) is the only record of what the MODEL called — `--json` shows the
+# resulting MCP calls but hides Codex's code-mode `exec` layer entirely
+CODEX_FLAGS = (
+    "--json",
+    "--skip-git-repo-check",
+    "--ignore-user-config",
+    "-s",
+    "read-only",
+    "-c",
+    "features.shell_tool=false",
+    "-c",
+    "features.unified_exec=false",
+    "-c",
+    "features.apps=false",
+    "-c",
+    "features.plugins=false",
+    "-c",
+    "features.multi_agent=false",
+    "-c",
+    "features.memories=false",
+    "-c",
+    "features.hooks=false",
+    "-c",
+    "features.skip_host_skill_discovery=true",
+    "-c",
+    "features.skill_search=false",
+    "-c",
+    'web_search="disabled"',
+)
+
+
+def _codex_home(workdir: Path) -> Path:
+    """A private HOME/CODEX_HOME holding only the login, per matrix.
+
+    Lives in the matrix's TemporaryDirectory, so the copied auth file is
+    deleted with it. Every fixture and toolplane path in the harness is
+    absolute, so moving HOME affects only what Codex itself loads.
+    """
+    home = workdir / "codex-home"
+    if not home.exists():
+        home.mkdir(mode=0o700)
+        auth = home / "auth.json"
+        shutil.copyfile(Path.home() / ".codex" / "auth.json", auth)
+        auth.chmod(0o600)
+    return home
+
+
+def _codex_mcp_flags(mcp_servers: dict) -> list[str]:
+    """mcpServers JSON config -> codex -c overrides (JSON lists/strings are TOML)."""
+    flags = []
+    for name, entry in mcp_servers.items():
+        # bare keys only: in a -c override, quotes become part of the server
+        # NAME ('"orders"'), which is invalid. With required=true (always set
+        # below) Codex aborts; without it the server silently never starts
+        # and the agent answers "unknown" from zero tools (both measured)
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", name):
+            raise ValueError(f"server name {name!r} is not a bare TOML key")
+        key = f"mcp_servers.{name}"
+        flags += ["-c", f"{key}.command={json.dumps(entry['command'])}"]
+        flags += ["-c", f"{key}.args={json.dumps(entry.get('args', []))}"]
+        env = entry.get("env") or {}
+        if env:
+            table = ", ".join(f"{k} = {json.dumps(str(v))}" for k, v in env.items())
+            flags += ["-c", f"{key}.env={{ {table} }}"]
+        flags += ["-c", f'{key}.default_tools_approval_mode="approve"']
+        # wait for the server before the first turn: without it a short
+        # prompt (single) once answered "unknown" from an empty tool list —
+        # the frozen-venv server is slower to start than a warm one
+        flags += ["-c", f"{key}.required=true"]
+    return flags
+
+
+def _codex_rollout_facts(home: Path, stdout: str) -> dict:
+    """Derived metadata from this run's session rollout; the rollout itself
+    (it carries Codex's developer instructions) is never saved.
+
+    model_call_names: what the model invoked — `exec` (code mode),
+    `mcp__<server>__<tool>` (a direct MCP call), or an un-namespaced Codex
+    built-in such as `list_mcp_resources` / `read_mcp_resource`. model_requests / peak context:
+    one token_count event with last_token_usage per model request.
+    """
+    thread_id = None
+    for line in stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if event.get("type") == "thread.started":
+            thread_id = event.get("thread_id")
+            break
+    rollouts = (
+        sorted((home / "sessions").glob(f"**/*{thread_id}*.jsonl"))
+        if thread_id
+        else []
+    )
+    if not rollouts:
+        return {"model_call_names": None, "model_requests": None,
+                "peak_context_tokens": None}
+    calls: list[str] = []
+    contexts: list[int] = []
+    for line in rollouts[0].read_text(encoding="utf-8").splitlines():
+        try:
+            payload = json.loads(line).get("payload") or {}
+        except json.JSONDecodeError:
+            continue  # a killed Codex can leave a truncated last line
+        kind = payload.get("type")
+        if kind == "custom_tool_call":
+            calls.append(payload.get("name") or "?")
+        elif kind == "function_call":
+            namespace = payload.get("namespace")
+            name = payload.get("name") or "?"
+            calls.append(f"{namespace}__{name}" if namespace else name)
+        elif kind == "token_count":
+            last = (payload.get("info") or {}).get("last_token_usage")
+            if last:
+                contexts.append(int(last.get("input_tokens", 0)))
+    rollouts[0].unlink()
+    return {
+        "model_call_names": calls,
+        "model_requests": len(contexts),
+        "peak_context_tokens": max(contexts, default=0),
+    }
+
+
+def run_case_codex(
+    arm: str,
+    task: str,
+    model: str,
+    workdir: Path,
+    code: dict,
+    m_servers: int = 1,
+    transcript_path: Path | None = None,
+    record_bytes: int = 0,
+    granularity: str = "fetch-one",
+) -> dict:
+    """One run through `codex exec`; same row shape as run_case.
+
+    Codex on a ChatGPT plan reports tokens, not USD: cost_usd stays None
+    rather than being estimated. model_requests, peak_context_tokens, and
+    what the model itself called come from the session rollout (see
+    _codex_rollout_facts), since `--json` carries none of them.
+    """
+    orders_n = TASKS[task]["orders_n"]
+    servers = mcp_config(
+        arm, workdir, task, m_servers, code, record_bytes, granularity
+    )["mcpServers"]
+    cwd = workdir / f"cwd-codex-{arm}-{task}-{time.time_ns()}"
+    cwd.mkdir()
+    cmd = [
+        "codex", "exec", *CODEX_FLAGS, "-m", model,
+        *_codex_mcp_flags(servers), TASKS[task]["prompt"],
+    ]
+    home = _codex_home(workdir)
+    env = {**os.environ, "HOME": str(home), "CODEX_HOME": str(home)}
+    started = time.monotonic()
+    try:
+        proc = subprocess.run(
+            cmd, cwd=cwd, capture_output=True, text=True, timeout=900,
+            stdin=subprocess.DEVNULL, check=False, env=env,
+        )
+        stdout = proc.stdout
+        exit_code = proc.returncode
+    except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout or ""
+        if isinstance(stdout, bytes):
+            stdout = stdout.decode("utf-8", errors="replace")
+        exit_code = None
+    wall_s = time.monotonic() - started
+    if transcript_path is not None:
+        transcript_path.write_text(stdout, encoding="utf-8")
+
+    tool_calls: list[str] = []
+    messages: list[str] = []
+    usage = {"input": 0, "cached": 0, "output": 0, "reasoning": 0}
+    turns = 0
+    for line in stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        item = event.get("item") or {}
+        if event.get("type") == "item.completed":
+            if item.get("type") == "mcp_tool_call":
+                tool_calls.append(f"mcp__{item.get('server')}__{item.get('tool')}")
+            elif item.get("type") == "command_execution":
+                tool_calls.append("shell")  # must stay absent: shell is off
+            elif item.get("type") == "agent_message":
+                messages.append(item.get("text") or "")
+        if event.get("type") == "turn.completed":
+            turns += 1
+            u = event.get("usage") or {}
+            usage["input"] += u.get("input_tokens", 0)
+            usage["cached"] += u.get("cached_input_tokens", 0)
+            usage["output"] += u.get("output_tokens", 0)
+            usage["reasoning"] += u.get("reasoning_output_tokens", 0)
+
+    match = ANSWER_RE.search(messages[-1]) if messages else None
+    answer = match.group(1).strip() if match else None
+    facts = _codex_rollout_facts(home, stdout)
+    return {
+        "client": "codex",
+        "arm": arm,
+        "task": task,
+        "orders_n": orders_n,
+        "m_servers": m_servers,
+        "record_bytes": record_bytes,
+        "granularity": granularity,
+        "builtins": "codex-no-shell",
+        "model": model,
+        "correct": TASKS[task]["check"](answer or "", orders_n),
+        "answer": answer,
+        "tool_calls": len(tool_calls),
+        "tool_call_names": tool_calls,
+        "model_call_names": facts["model_call_names"],
+        "codex_mode": (
+            None
+            if facts["model_call_names"] is None
+            else "no_calls"
+            if not facts["model_call_names"]
+            else "code_mode"
+            if "exec" in facts["model_call_names"]
+            else "direct_calls"
+        ),
+        "model_requests": facts["model_requests"],
+        "num_turns": turns,
+        "input_tokens": usage["input"],
+        "uncached_input_tokens": usage["input"] - usage["cached"],
+        "output_tokens": usage["output"],
+        "reasoning_output_tokens": usage["reasoning"],
+        "cost_usd": None,
+        "api_duration_ms": None,
+        "non_api_s": None,
+        "peak_context_tokens": facts["peak_context_tokens"],
+        "wall_s": round(wall_s, 1),
+        "exit_code": exit_code,
+        "transcript": transcript_path.name if transcript_path else None,
+    }
+
+
 def _cell_stats(group: list[dict], key: str) -> tuple:
     # .get: rows from pre-#116 result files lack newer keys (model_requests)
     vals = [r.get(key) for r in group if r.get(key) is not None]
@@ -1126,6 +1388,13 @@ def main() -> int:
         "endpoints presented together.",
     )
     parser.add_argument(
+        "--client",
+        choices=("claude", "codex"),
+        default="claude",
+        help="#113: agent client. codex runs `codex exec` with shell, apps, "
+        "and plugins off and user config ignored (see CODEX_FLAGS)",
+    )
+    parser.add_argument(
         "--restrict-builtins",
         action="store_true",
         help="#116: disallow the client's general-purpose built-ins "
@@ -1149,7 +1418,7 @@ def main() -> int:
     except ValueError as exc:
         parser.error(str(exc))
     client_version = subprocess.run(
-        ["claude", "--version"], capture_output=True, text=True
+        [args.client, "--version"], capture_output=True, text=True
     ).stdout.strip()
     stamp = time.strftime("%Y%m%d-%H%M%S")
     transcripts_dir = BENCH_DIR / "results" / "transcripts" / f"run-{stamp}"
@@ -1193,18 +1462,32 @@ def main() -> int:
                                         f"rep{rep + 1}.jsonl"
                                     )
                                 )
-                                row = run_case(
-                                    arm,
-                                    task,
-                                    args.model,
-                                    workdir,
-                                    code,
-                                    m,
-                                    transcript,
-                                    record_bytes=b,
-                                    granularity=granularity,
-                                    restrict_builtins=args.restrict_builtins,
-                                )
+                                if args.client == "codex":
+                                    row = run_case_codex(
+                                        arm,
+                                        task,
+                                        args.model,
+                                        workdir,
+                                        code,
+                                        m,
+                                        transcript,
+                                        record_bytes=b,
+                                        granularity=granularity,
+                                    )
+                                else:
+                                    row = run_case(
+                                        arm,
+                                        task,
+                                        args.model,
+                                        workdir,
+                                        code,
+                                        m,
+                                        transcript,
+                                        record_bytes=b,
+                                        granularity=granularity,
+                                        restrict_builtins=args.restrict_builtins,
+                                    )
+                                    row["client"] = "claude"
                                 row["client_version"] = client_version
                                 row["arm_order"] = "->".join(ordered_arms)
                                 row.update(prov)
