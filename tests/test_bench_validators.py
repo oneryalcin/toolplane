@@ -403,6 +403,9 @@ def test_unique_request_ids_matches_committed_transcripts() -> None:
         Path(__file__).resolve().parent.parent
         / "bench/results/transcripts/run-20260709-221840"
     )
+    if not transcripts.is_dir():
+        # the sdist ships bench code but not bench/results run data
+        pytest.skip("committed bench transcripts not present (sdist)")
     direct = (transcripts / "single-direct-m1-rep1.jsonl").read_text()
     toolplane = (transcripts / "single-toolplane-m1-rep1.jsonl").read_text()
     assert _unique_request_ids(direct) == 3

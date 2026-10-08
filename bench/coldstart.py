@@ -4,7 +4,7 @@ Times ``register_mcp_config`` over real stdio subprocesses as the server
 count grows, with and without one artificially slow upstream. Local and
 free: no model client involved. Run:
 
-    uv run --no-project --prerelease=allow --with-editable . \
+    uv run --no-project --with-editable . \
         python bench/coldstart.py
 """
 
