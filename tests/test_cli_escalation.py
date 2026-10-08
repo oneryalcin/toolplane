@@ -755,10 +755,13 @@ def test_overlapping_runs_each_ask_through_their_own_call() -> None:
     assert spawned == ["curl"]
 
 
-def test_client_cancelling_a_leg_stops_the_run() -> None:
+@pytest.mark.parametrize("session", [False, True])
+def test_client_cancelling_a_leg_stops_the_run(session: bool) -> None:
     # a disconnected client can never answer or read the result; the run
-    # must not keep executing toward an ask (Codex adversarial, #156)
-    runtime, spawned, bumps = _modern_runtime(timeout_seconds=10.0)
+    # must not keep executing toward an ask (Codex adversarial, #156), and
+    # in session mode — the stdio default — the cancel must not wedge the
+    # session for every later run (Fable review, #156)
+    runtime, spawned, bumps = _modern_runtime(timeout_seconds=10.0, session=session)
     from fastmcp import Client
 
     code = 'await pause(seconds=0.5)\nawait bump()\nreturn await cli_run("curl")'
@@ -778,4 +781,30 @@ def test_client_cancelling_a_leg_stops_the_run() -> None:
     after = run(exercise())
 
     assert (bumps, spawned) == ([], [])
+    assert after.structured_content["value"] == 7
+
+
+def test_unanswered_park_expires_with_the_request_state_ttl(monkeypatch) -> None:
+    # past the sealed-token TTL no answer can verify; a parked run on a
+    # backend without its own run timeout (local_unsafe) held the
+    # escalation slot forever (Fable review, #156)
+    runtime, spawned, _ = _modern_runtime(timeout_seconds=30.0)
+    import mcp_types
+    from fastmcp import Client
+
+    import toolplane.mcp_facade as facade
+
+    monkeypatch.setattr(facade, "_PARK_TTL_SECONDS", 0.5)
+
+    async def exercise():
+        async with Client(build_mcp_facade(runtime)) as c:
+            first = await _raw_leg(c, 'return await cli_run("curl")')
+            await asyncio.sleep(1.0)  # TTL lapses; backend timeout has not
+            after = await asyncio.wait_for(_raw_leg(c, "return 7"), timeout=5)
+            return first, after
+
+    first, after = run(exercise())
+
+    assert isinstance(first, mcp_types.InputRequiredResult)
+    assert spawned == []
     assert after.structured_content["value"] == 7

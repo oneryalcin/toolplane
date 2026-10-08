@@ -225,6 +225,30 @@ def test_tool_calls_past_1000_across_runs_keep_working(
     _run(case())
 
 
+def test_cancelled_run_rolls_back_instead_of_bricking_the_session() -> None:
+    # a client cancel/disconnect cancels execute_code; the cancelled feed
+    # finished the checkout and every later run (reset_session too) failed
+    # with "this checkout has already been finished" (Fable review, #156)
+    async def case() -> None:
+        runtime = _session_runtime(timeout_seconds=10)
+        _register_slow(runtime, 5)
+        await runtime.execute("kept = 41")
+
+        run = asyncio.ensure_future(runtime.execute("kept = 0\nawait slow_op()"))
+        await asyncio.sleep(0.3)
+        run.cancel()
+        try:
+            await run
+        except asyncio.CancelledError:
+            pass
+
+        after = await runtime.execute("return kept + 1")
+        assert after.error is None, after.error
+        assert after.value == 42
+
+    _run(case())
+
+
 def test_worker_crash_rolls_back_instead_of_bricking_the_session() -> None:
     # a dead worker finishes the checkout; without recovery every later run
     # failed with "this checkout has already been finished" until restart.

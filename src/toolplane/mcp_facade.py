@@ -111,6 +111,7 @@ def build_mcp_facade(
             "(CLI bindings, result store), and "
             "skill://driving-toolplane/SKILL.md for conventions in depth."
         ),
+        **_request_state_security(),
     )
 
     # read-only usage guidance, versioned with the code it describes;
@@ -523,6 +524,26 @@ def _register_hybrid_tools(
         )
 
 
+# How long a parked escalation can wait for its answer. It is also the TTL
+# the SDK seals request_state with, so the two cannot drift: past it no
+# answer can verify, and a parked run that can never be answered is
+# cancelled instead of holding the escalation slot (backends without their
+# own run timeout, e.g. local_unsafe, would otherwise hold it forever).
+_PARK_TTL_SECONDS = 600.0
+
+
+def _request_state_security() -> dict[str, Any]:
+    try:
+        from mcp.server.request_state import RequestStateSecurity
+    except ImportError:  # mcp-sdk v1: no MRTR, nothing to seal
+        return {}
+    return {
+        "request_state_security": RequestStateSecurity.ephemeral(
+            ttl=_PARK_TTL_SECONDS
+        )
+    }
+
+
 def _is_modern_connection(ctx: Any) -> bool:
     """True on a 2026-07-28-era connection (no server-initiated requests)."""
     try:
@@ -582,6 +603,11 @@ class _ParkedRuns:
         task.add_done_callback(release)
         return await self._drive(task, asks)
 
+    def _expire(self, token: str) -> None:
+        entry = self._parked.pop(token, None)
+        if entry is not None:
+            entry[0].cancel()  # rolls back like a timeout (see monty backend)
+
     async def resume(self, token: str, responses: Any) -> Any:
         entry = self._parked.pop(token, None)
         if entry is None:
@@ -627,6 +653,9 @@ class _ParkedRuns:
         binary, granted = next_ask.result()
         token = secrets.token_urlsafe(16)
         self._parked[token] = (task, asks, granted)
+        asyncio.get_running_loop().call_later(
+            _PARK_TTL_SECONDS, self._expire, token
+        )
         policy = self._runtime.cli_policy
         allowed = ", ".join(sorted(policy.effective_allowlist() or ())) or "none"
         return mcp_types.InputRequiredResult(
