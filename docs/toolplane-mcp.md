@@ -220,6 +220,15 @@ or, for Claude Code:
 claude mcp add toolplane -- toolplane serve mcp --config ./toolplane.toml
 ```
 
+The registration name is the client's tool prefix
+(`mcp__<name>__execute_code`), and deferred-loading clients show the model
+only those names before it searches. For a single-domain config, a
+domain-bearing name (`claude mcp add orders -- …`) is a cheap discovery
+hint: registered as `orders` instead of `toolplane`, the same facade needed
+`search_capabilities` in 0/60 runs instead of 7/60 (Haiku 5.5, #150's
+pre-registered A/B). Measured effect is small; `toolplane` stays a fine
+name for multi-domain configs. Nothing in Toolplane depends on the name.
+
 A later Claude plugin can make this lower friction:
 
 ```text
