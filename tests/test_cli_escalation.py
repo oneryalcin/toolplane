@@ -569,6 +569,11 @@ def _modern_runtime(**backend_kwargs):
         return len(bumps)
 
     runtime.register(bump, description="side effect counter")
+
+    async def pause(seconds: float) -> None:
+        await asyncio.sleep(seconds)
+
+    runtime.register(pause, description="sleeps")
     return runtime, spawned, bumps
 
 
@@ -712,3 +717,65 @@ def test_abandoned_park_times_out_and_a_late_answer_executes_nothing() -> None:
     assert spawned == []
     assert late.structured_content["error"]["type"] == "EscalationExpiredError"
     assert runtime.cli_policy.escalation_handler is None
+
+
+def _prompt(first) -> str:
+    return first.input_requests["grant"].params.message
+
+
+def test_overlapping_runs_each_ask_through_their_own_call() -> None:
+    # the grant handler is runtime-wide; without serialization run B's
+    # handler replaced run A's, so A's ask surfaced on B's call and B's
+    # approval let A spawn (Codex adversarial, #156)
+    runtime, spawned, _ = _modern_runtime(timeout_seconds=10.0)
+    from fastmcp import Client
+
+    code_a = 'await pause(seconds=0.3)\nreturn await cli_run("curl")'
+    code_b = 'return await cli_run("wget")'
+
+    async def exercise():
+        async with Client(build_mcp_facade(runtime)) as c:
+            leg_a = asyncio.ensure_future(_raw_leg(c, code_a))
+            await asyncio.sleep(0.05)
+            leg_b = asyncio.ensure_future(_raw_leg(c, code_b))
+            first_a = await leg_a
+            b_waited = not leg_b.done()
+            done_a = await _raw_leg(
+                c, code_a, first_a.request_state, _grant_answer()
+            )
+            first_b = await leg_b
+            return first_a, b_waited, done_a, first_b
+
+    first_a, b_waited, done_a, first_b = run(exercise())
+
+    assert "'curl'" in _prompt(first_a)
+    assert b_waited
+    assert done_a.structured_content["error"] is None
+    assert "'wget'" in _prompt(first_b)
+    assert spawned == ["curl"]
+
+
+def test_client_cancelling_a_leg_stops_the_run() -> None:
+    # a disconnected client can never answer or read the result; the run
+    # must not keep executing toward an ask (Codex adversarial, #156)
+    runtime, spawned, bumps = _modern_runtime(timeout_seconds=10.0)
+    from fastmcp import Client
+
+    code = 'await pause(seconds=0.5)\nawait bump()\nreturn await cli_run("curl")'
+
+    async def exercise():
+        async with Client(build_mcp_facade(runtime)) as c:
+            leg = asyncio.ensure_future(_raw_leg(c, code))
+            await asyncio.sleep(0.1)
+            leg.cancel()
+            await asyncio.sleep(1.0)  # past the point the run would bump
+            # the escalation slot is free again: a new run is not blocked
+            after = await asyncio.wait_for(
+                _raw_leg(c, "return 7"), timeout=5
+            )
+            return after
+
+    after = run(exercise())
+
+    assert (bumps, spawned) == ([], [])
+    assert after.structured_content["value"] == 7

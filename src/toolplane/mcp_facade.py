@@ -545,15 +545,24 @@ class _ParkedRuns:
     A parked run needs no expiry of its own: the backend's wall-clock
     timeout keeps running while it waits, and a timed-out run rolls back
     exactly like any other timeout. stdio-only, like legacy escalation.
+
+    One escalation-capable run at a time: the grant handler lives on the
+    runtime-wide policy, so an overlapping run would replace it and a
+    parked run's ask would surface on (and be approved through) the other
+    run's call. A second execute_code waits until the first run ends,
+    parked time included; re-issued calls never wait, so a parked run can
+    always be answered.
     """
 
     def __init__(self, runtime: Toolplane) -> None:
         self._runtime = runtime
         self._parked: dict[str, tuple[asyncio.Task, asyncio.Queue, asyncio.Future]] = {}
+        self._slot = asyncio.Lock()
 
     async def start(self, run_snippet: Any) -> Any:
         asks: asyncio.Queue = asyncio.Queue()
         policy = self._runtime.cli_policy
+        await self._slot.acquire()
 
         async def mrtr_grant(binary: str) -> bool:
             granted = asyncio.get_running_loop().create_future()
@@ -568,6 +577,7 @@ class _ParkedRuns:
                 policy.escalation_handler = None
             for token in [k for k, v in self._parked.items() if v[0] is task]:
                 del self._parked[token]
+            self._slot.release()
 
         task.add_done_callback(release)
         return await self._drive(task, asks)
@@ -603,7 +613,14 @@ class _ParkedRuns:
         import mcp_types
 
         next_ask = asyncio.ensure_future(asks.get())
-        await asyncio.wait({task, next_ask}, return_when=asyncio.FIRST_COMPLETED)
+        try:
+            await asyncio.wait({task, next_ask}, return_when=asyncio.FIRST_COMPLETED)
+        except asyncio.CancelledError:
+            # the client went away mid-leg: nobody can answer or read the
+            # result, so the run must not keep executing toward an ask
+            next_ask.cancel()
+            task.cancel()
+            raise
         if task.done():
             next_ask.cancel()
             return task.result()
