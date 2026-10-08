@@ -51,10 +51,11 @@ What makes toolplane different from other code-mode runtimes:
   clients that can't prompt.)
 - **A measured envelope, not a slogan.** We benchmarked code mode against
   raw MCP tool-calling in a real client and published where it *loses*.
-  Two eras, labeled: **shipped 0.4.0** measured plain MCP ~20% cheaper at
+  Two eras, labeled: **0.4.0** measured plain MCP ~20% cheaper at
   30 tool interactions and code mode ~15% cheaper at 100 (crossover
-  unmeasured). **Main** (facade changes unreleased at time of writing)
-  moves the crossover below 30: code mode runs flat ~$0.18/task at every
+  unmeasured). **0.5.0** ships the call-shape facade (measured on
+  pre-release main, July 2026; not re-run on 0.5.0's Monty 1.1 backend),
+  which moves the crossover below 30: code mode runs flat ~$0.18/task at every
   task size, sits at parity with plain MCP in the 20–30 region, and wins
   ~45% cheaper / ~2.8x faster at 100 — while single lookups still favor
   direct calls ($0.14 vs $0.18) and a sequentially-adaptive "chain" task

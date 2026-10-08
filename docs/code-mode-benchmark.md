@@ -3,6 +3,12 @@
 *2026-07-08 · toolplane 0.4.0 · Claude Code 2.1.204 · claude-sonnet-5 ·
 harness and raw results in [`bench/`](https://github.com/oneryalcin/toolplane/tree/main/bench)*
 
+*Release status (2026-10-08): the follow-up sections below measured
+pre-release main; that facade (search hits and tool descriptions carrying
+call shapes) shipped in **toolplane 0.5.0**. They were not re-run on
+0.5.0's Monty 1.1 backend. The costs measured are model tokens, which a
+backend swap is not expected to move — expected, not verified.*
+
 The code-mode thesis — one Python snippet looping over tools beats N
 individual tool calls — is repeated in vendor blog posts and was the
 founding premise of this project. We had never measured it ourselves, and
@@ -174,7 +180,7 @@ client without it, or with it disabled, should reproduce the folklore
 scenario, which we did not measure. Same n=3, same machine, same day
 caveats as above. Raw data: `bench/results/run-20260709-114215.json`.
 
-## Cutting the discovery tax (2026-07-09 follow-up, toolplane 0.4.0+)
+## Cutting the discovery tax (2026-07-09 follow-up, main after 0.4.0; shipped in 0.5.0)
 
 The envelope above identified toolplane's entire small-N disadvantage as
 a fixed discovery tax: 3–5 sequential model turns (search → schemas →
