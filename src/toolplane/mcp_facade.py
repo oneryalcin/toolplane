@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import os
 import re
+import secrets
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -93,6 +95,7 @@ def build_mcp_facade(
     )
     if cli_escalation:
         runtime.cli_policy.escalation_available = True
+    parked = _ParkedRuns(runtime)
 
     mcp = FastMCP(
         "Toolplane",
@@ -277,6 +280,37 @@ def build_mcp_facade(
                 backend=backend or "",
                 error=error,
             ).model_dump(mode="json")
+        async def run_snippet() -> dict[str, Any]:
+            try:
+                result = await runtime.execute(
+                    code,
+                    backend=backend,
+                    inputs=inputs,
+                    packages=tuple(packages or ()),
+                )
+            except BackendNotFoundError:
+                # reachable when the configured default backend is unknown, or
+                # an unknown override slips past a permissive (--unsafe) policy
+                valid = ", ".join(sorted(runtime.backends))
+                requested = backend or runtime.default_backend
+                return ExecutionResult(
+                    backend=requested,
+                    error=ExecutionError(
+                        type="BackendNotFoundError",
+                        message=(
+                            f"Unknown backend '{requested}'. "
+                            f"Valid backends: {valid}."
+                        ),
+                    ),
+                ).model_dump(mode="json")
+            return result.model_dump(mode="json")
+
+        if cli_escalation and ctx is not None and _is_modern_connection(ctx):
+            # 2026-07-28 connections have no server-initiated requests, so
+            # ctx.elicit is dead; escalation goes through MRTR (#139)
+            if ctx.request_state is not None:
+                return await parked.resume(ctx.request_state, ctx.input_responses)
+            return await parked.start(run_snippet)
         if cli_escalation and ctx is not None:
             request_context = ctx
 
@@ -287,7 +321,7 @@ def build_mcp_facade(
             # request, so the handler can re-seat it (empirically required:
             # without this, pyodide escalation fails closed). The owning var
             # moved in fastmcp 4 / mcp-sdk v2; see docs/fastmcp4-spike.md.
-            # Modern-era connections drop ctx.elicit entirely for MRTR (#132).
+            # Legacy era only: modern connections take the MRTR branch above.
             request_ctx = _request_context_var()
             captured_request_ctx = request_ctx.get()
 
@@ -305,31 +339,10 @@ def build_mcp_facade(
             # fail-closed, and stdio serves one client anyway
             runtime.cli_policy.escalation_handler = elicit_cli_grant
         try:
-            result = await runtime.execute(
-                code,
-                backend=backend,
-                inputs=inputs,
-                packages=tuple(packages or ()),
-            )
-        except BackendNotFoundError:
-            # reachable when the configured default backend is unknown, or an
-            # unknown override slips past a permissive (--unsafe) policy
-            valid = ", ".join(sorted(runtime.backends))
-            requested = backend or runtime.default_backend
-            return ExecutionResult(
-                backend=requested,
-                error=ExecutionError(
-                    type="BackendNotFoundError",
-                    message=(
-                        f"Unknown backend '{requested}'. "
-                        f"Valid backends: {valid}."
-                    ),
-                ),
-            ).model_dump(mode="json")
+            return await run_snippet()
         finally:
             if cli_escalation:
                 runtime.cli_policy.escalation_handler = None
-        return result.model_dump(mode="json")
 
     if hybrid or hybrid_include:
         if hybrid_include:
@@ -510,6 +523,123 @@ def _register_hybrid_tools(
         )
 
 
+def _is_modern_connection(ctx: Any) -> bool:
+    """True on a 2026-07-28-era connection (no server-initiated requests)."""
+    try:
+        from mcp_types.version import MODERN_PROTOCOL_VERSIONS
+    except ImportError:  # mcp-sdk v1 / fastmcp 3: every connection is legacy
+        return False
+    request_context = getattr(ctx, "request_context", None)
+    version = getattr(request_context, "protocol_version", None)
+    return version in MODERN_PROTOCOL_VERSIONS
+
+
+class _ParkedRuns:
+    """CLI escalation over MRTR (SEP-2322) without re-running the snippet.
+
+    The ask happens mid-run, after earlier capability calls already had side
+    effects, so the re-issued call must not execute the snippet again. The
+    run keeps going as a task, parked on the grant future; leg 1 returns an
+    InputRequiredResult whose request_state names the parked run, and the
+    re-issued call resolves that future and returns the same run's result.
+    A parked run needs no expiry of its own: the backend's wall-clock
+    timeout keeps running while it waits, and a timed-out run rolls back
+    exactly like any other timeout. stdio-only, like legacy escalation.
+    """
+
+    def __init__(self, runtime: Toolplane) -> None:
+        self._runtime = runtime
+        self._parked: dict[str, tuple[asyncio.Task, asyncio.Queue, asyncio.Future]] = {}
+
+    async def start(self, run_snippet: Any) -> Any:
+        asks: asyncio.Queue = asyncio.Queue()
+        policy = self._runtime.cli_policy
+
+        async def mrtr_grant(binary: str) -> bool:
+            granted = asyncio.get_running_loop().create_future()
+            asks.put_nowait((binary, granted))
+            return await granted
+
+        policy.escalation_handler = mrtr_grant
+        task = asyncio.ensure_future(run_snippet())
+
+        def release(_: asyncio.Future) -> None:
+            if policy.escalation_handler is mrtr_grant:
+                policy.escalation_handler = None
+            for token in [k for k, v in self._parked.items() if v[0] is task]:
+                del self._parked[token]
+
+        task.add_done_callback(release)
+        return await self._drive(task, asks)
+
+    async def resume(self, token: str, responses: Any) -> Any:
+        entry = self._parked.pop(token, None)
+        if entry is None:
+            return ExecutionResult(
+                backend="",
+                error=ExecutionError(
+                    type="EscalationExpiredError",
+                    message=(
+                        "This answer belongs to a run that is no longer "
+                        "waiting for approval (it finished, timed out, or the "
+                        "server restarted). Nothing was executed for it; "
+                        "re-run the snippet."
+                    ),
+                ),
+            ).model_dump(mode="json")
+        task, asks, granted = entry
+        answer = (responses or {}).get("grant")
+        content = getattr(answer, "content", None) or {}
+        allowed = (
+            getattr(answer, "action", None) == "accept"
+            and content.get("value") == "allow"
+        )
+        if not granted.done():
+            granted.set_result(allowed)
+        return await self._drive(task, asks)
+
+    async def _drive(self, task: asyncio.Task, asks: asyncio.Queue) -> Any:
+        """Wait for the run to finish or to ask; park it if it asks."""
+        import mcp_types
+
+        next_ask = asyncio.ensure_future(asks.get())
+        await asyncio.wait({task, next_ask}, return_when=asyncio.FIRST_COMPLETED)
+        if task.done():
+            next_ask.cancel()
+            return task.result()
+        binary, granted = next_ask.result()
+        token = secrets.token_urlsafe(16)
+        self._parked[token] = (task, asks, granted)
+        policy = self._runtime.cli_policy
+        allowed = ", ".join(sorted(policy.effective_allowlist() or ())) or "none"
+        return mcp_types.InputRequiredResult(
+            input_requests={
+                "grant": mcp_types.ElicitRequest(
+                    params=mcp_types.ElicitRequestFormParams(
+                        mode="form",
+                        message=_escalation_prompt(binary, allowed),
+                        requested_schema={
+                            "type": "object",
+                            "properties": {
+                                "value": {"type": "string", "enum": ["allow", "deny"]}
+                            },
+                            "required": ["value"],
+                        },
+                    )
+                )
+            },
+            request_state=token,
+        )
+
+
+def _escalation_prompt(binary: str, allowed: str) -> str:
+    return (
+        f"The running snippet wants to execute the CLI binary '{binary}', "
+        f"which is outside the Toolplane allowlist (currently: {allowed}). "
+        "Allow it for the rest of this server session?"
+    )
+
+
 def _request_context_var() -> Any:
     """The ContextVar carrying the active MCP request context.
 
@@ -541,9 +671,7 @@ async def _elicit_cli_grant(ctx: Any, policy: Any, binary: str) -> bool:
     """
     allowed = ", ".join(sorted(policy.effective_allowlist() or ())) or "none"
     result = await ctx.elicit(
-        f"The running snippet wants to execute the CLI binary '{binary}', "
-        f"which is outside the Toolplane allowlist (currently: {allowed}). "
-        "Allow it for the rest of this server session?",
+        _escalation_prompt(binary, allowed),
         response_type=["allow", "deny"],
     )
     return (

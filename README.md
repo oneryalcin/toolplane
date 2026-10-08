@@ -47,8 +47,9 @@ What makes toolplane different from other code-mode runtimes:
 - **Policy escalates to a human instead of dead-ending.** If a snippet needs
   a binary outside the allowlist, your agent client shows *you* a form:
   allow it for this session, or refuse. Declines stick; nothing is ever
-  written back to config. (MCP elicitation; degrades to a plain refusal on
-  clients that can't prompt.)
+  written back to config. (MCP elicitation on handshake-era clients, Multi
+  Round-Trip Requests on 2026-07-28 ones such as current Claude Code; degrades
+  to a plain refusal on clients that can't prompt.)
 - **A measured envelope, not a slogan.** We benchmarked code mode against
   raw MCP tool-calling in a real client and published where it *loses*.
   Two eras, labeled: **0.4.0** measured plain MCP ~20% cheaper at

@@ -63,6 +63,11 @@ as a new failure mode.
 
 **Headless Claude Code can still answer elicitations** via the `Elicitation`
 hook (matcher = MCP server name), so degraded mode is scriptable, not dead.
+That includes 2026-07-28 MRTR prompts (verified 2026-10-08, Claude Code
+2.1.294): a tool's `InputRequiredResult` form request reaches the hook as
+an ordinary `Elicitation` event (`mode: "form"`, the server's message and
+schema), and the hook's `{"action": "accept", "content": {...}}` answer
+comes back on the re-issued call — undocumented, so re-check on upgrades.
 
 ## What this means if you're building an MCP server
 
