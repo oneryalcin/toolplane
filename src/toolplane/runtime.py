@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import inspect
+import re
 from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from .adapters.ambient_cli import (
     AmbientCliPolicy,
     discover_cli_names,
+    is_safe_cli_name,
     register_ambient_cli,
 )
 from .artifacts import ArtifactStore, register_artifact_capabilities
@@ -243,11 +245,15 @@ class Toolplane:
             if not total:
                 return "No capabilities are registered."
             noun = "capability is" if total == 1 else "capabilities are"
+            # a query for a CLI binary ("git") never matches the registry;
+            # without this line the signpost denies a binding that exists
+            extras = self.unlisted_surfaces()
             return (
                 f"No capabilities matched the query. {total} {noun} "
                 "registered — search again with an empty query to list "
                 "them all, or read the toolplane://namespace resource "
                 "for the full execution namespace."
+                + (f"\n{extras}" if extras else "")
             )
         rendered = render_capabilities(
             capabilities, detail=detail, reserved=self._reserved_binding_names()
@@ -292,39 +298,79 @@ class Toolplane:
                 "`futures = [fn(x=i) for i in ids]` then "
                 "`results = [await f for f in futures]`."
             )
-        extras = []
-        if self.ambient_cli:
-            if self.cli_policy.restricted:
-                names = self._get_ambient_cli_names()
-                if names:
-                    # the example must use a binding that actually exists —
-                    # advertising an unbound name is the NameError class
-                    # this footer exists to prevent
-                    extras.append(
-                        f"CLI bindings for: {', '.join(names)} — shape "
-                        f"`await {names[0]}('<subcommand>', flag=value)`, "
-                        "returning {'stdout','stderr','exit_code','ok'}"
-                    )
-            else:
-                extras.append(
-                    "CLI bindings for binaries on PATH — shape "
-                    "`await git('<subcommand>', flag=value)`, returning "
-                    "{'stdout','stderr','exit_code','ok'}"
-                )
-        if self.result_store.enabled:
-            extras.append("`save_result`/`load_result`")
+        extras = self.unlisted_surfaces()
         if extras:
-            lines.append(
-                "The namespace also binds surfaces search does not list: "
-                + "; ".join(extras)
-                + "."
-            )
+            lines.append(extras)
         lines.append(
             "Details only when needed: toolplane://namespace (full "
             "manifest) and skill://driving-toolplane/SKILL.md "
             "(conventions)."
         )
         return "\n".join(lines)
+
+    def unlisted_surfaces(self) -> str:
+        """The bound surfaces registry search cannot return, in one line.
+
+        CLI bindings and the result store live only in the namespace; this
+        line names them wherever an agent looks for tools (search footer,
+        no-match signpost, facade tool descriptions) so a configured
+        binary is never invisible to discovery.
+        """
+        extras = [cli] if (cli := self.cli_surface()) else []
+        if self.result_store.enabled:
+            extras.append("`save_result`/`load_result`")
+        if not extras:
+            return ""
+        return (
+            "The namespace also binds surfaces search does not list: "
+            + "; ".join(extras)
+            + "."
+        )
+
+    def cli_surface(self) -> str:
+        """The CLI bindings fragment of unlisted_surfaces, or "" if none.
+
+        It lands in facade tool descriptions, so it shows only shapes that
+        actually bind and never echoes a name verbatim unless it looks like
+        a binary: identifiers get the flat form, other plausible binary
+        names the cli_run form, anything else is only counted.
+        """
+        returns = "returning {'stdout','stderr','exit_code','ok'}"
+        if not self.ambient_cli:
+            return ""
+        if not self.cli_policy.restricted:
+            return (
+                "CLI bindings for binaries on PATH — shape "
+                f"`await <binary>('<subcommand>', flag=value)`, {returns}"
+            )
+        names = self._get_ambient_cli_names()
+        # capabilities bind first and shadow a same-named CLI function
+        taken = set(self.registry.callable_namespace()) | self._reserved_binding_names()
+        flat = [n for n in names if is_safe_cli_name(n) and n not in taken]
+        # cli_run is a monty binding; other backends reach these names
+        # through forms only the namespace manifest renders
+        cli_run_bound = self.default_backend == "monty" and "cli_run" not in taken
+        other = [
+            n
+            for n in names
+            if cli_run_bound and n not in flat and _BINARY_NAME.fullmatch(n)
+        ]
+        unshown = len(names) - len(flat) - len(other)
+        parts = []
+        if flat:
+            parts.append(
+                f"CLI bindings for: {', '.join(flat)} — shape "
+                f"`await {flat[0]}('<subcommand>', flag=value)`, {returns}"
+            )
+        if other:
+            parts.append(
+                f"via cli_run only: {', '.join(other)} — shape "
+                f"`await cli_run('{other[0]}', '<subcommand>', {{'flag': value}})`"
+            )
+        if unshown:
+            noun = "binary" if unshown == 1 else "binaries"
+            parts.append(f"{unshown} more allowed {noun} — see toolplane://namespace")
+        return "; ".join(parts)
 
     async def list_tools(self, *, detail: DetailLevel = "brief") -> str:
         return render_capabilities(
@@ -820,6 +866,11 @@ class Toolplane:
         if self._ambient_cli_names is None:
             self._ambient_cli_names = discover_cli_names()
         return self._ambient_cli_names
+
+
+# a binary-shaped name, safe to echo into a tool description; anything else
+# in an allowlist is counted, never printed
+_BINARY_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,63}")
 
 
 def _backend_accepts_run_kwarg(runner: CodeBackend, name: str) -> bool:

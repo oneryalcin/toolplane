@@ -18,7 +18,7 @@ from .cli_to_py import normalize_cli_result
 
 
 AMBIENT_CLI_CAPABILITY = "toolplane:cli/run"
-RESERVED_CLI_NAMES = {"call_tool", "cli"}
+RESERVED_CLI_NAMES = {"call_tool", "cli", "cli_run"}
 
 # one shape lesson for every CLI failure path: a wrong guess must teach the
 # right call, not leak the internals it tripped over
