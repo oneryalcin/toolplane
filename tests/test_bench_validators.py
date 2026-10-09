@@ -740,3 +740,20 @@ def test_prereg_report_survives_a_timeout_row() -> None:
         {**base, "arm": "toolplane", "model": None, "cost_usd": None, "correct": False},
     ]
     assert "| H1a |" in report(rows, [], "m", "s")
+
+
+def test_prereg_lists_every_imputed_timeout() -> None:
+    # the registration promises every imputation is listed, per cell
+    from analyze_prereg import report
+
+    base = {"task": "single", "m_servers": 1, "record_bytes": 0, "granularity": "fetch-one",
+            "builtins": "default", "requested_model": "m", "wall_s": 9.0, "tool_calls": 3,
+            "tool_call_names": [], "model_requests": 3, "input_tokens": 10,
+            "uncached_input_tokens": 5, "output_tokens": 2, "peak_context_tokens": 10}
+    timeout = {**base, "arm": "toolplane", "model": None, "cost_usd": None, "correct": False}
+    rows = [
+        {**base, "arm": "direct", "model": "m", "cost_usd": 0.01, "correct": True},
+        {**base, "arm": "toolplane", "model": "m", "cost_usd": 0.02, "correct": True},
+        timeout, timeout,
+    ]
+    assert '"m/single/M1/B0/fetch-one/default/toolplane": 2' in report(rows, [], "m", "s")

@@ -70,9 +70,6 @@ def _runs(group):
     ]
 
 
-def imputed(group) -> int:
-    return sum(r["cost_usd"] is None for r in group)
-
 
 def bootstrap(groups: dict[str, list], stat: Callable[[dict[str, list]], float]):
     """Point estimate and 95% percentile CI, each group resampled alone.
@@ -319,11 +316,16 @@ def report(rows, sessions, haiku: str, sonnet: str) -> str:
                 walked = chain_hop_by_hop(g)
                 ok = "HOLDS" if walked >= 7 / 8 * len(g) else "FAILS"
                 lines.append(f"- {t} {arm}: {walked}/{len(g)} {ok}")
-    timeouts = {
-        f"{r['task']}/{r['arm']}": imputed([r]) for r in rows if r["cost_usd"] is None
-    }
+    timeouts = _tally(
+        "/".join(str(x) for x in (
+            r.get("requested_model") or r["model"], r["task"], f"M{r.get('m_servers', 1)}",
+            f"B{r.get('record_bytes', 0)}", r.get("granularity", "fetch-one"),
+            r.get("builtins", "default"), r["arm"],
+        ))
+        for r in rows if r["cost_usd"] is None
+    )
     if timeouts:
-        lines += ["", f"Timeout costs imputed (cell max): {json.dumps(timeouts, sort_keys=True)}"]
+        lines += ["", f"Timeout costs imputed at the cell max (runs per cell): {json.dumps(timeouts, sort_keys=True)}"]
 
     if sessions:
         results, mechanisms = longitudinal(sessions)
