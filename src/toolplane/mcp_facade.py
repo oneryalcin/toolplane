@@ -180,8 +180,10 @@ def build_mcp_facade(
 
     # CLI bindings are not registry capabilities, so the hint above never
     # names them; an agent holding a git task searched "git", got a
-    # no-match, and shelled out instead (#113 smoke, run-20261009-120127)
-    unlisted = runtime.unlisted_surfaces()
+    # no-match, and shelled out instead (#113 smoke, run-20261009-120127).
+    # Only when CLI is bound: descriptions steer discovery measurably, so
+    # setups without CLI bindings keep their descriptions byte-identical.
+    unlisted = runtime.unlisted_surfaces() if runtime.cli_surface() else ""
 
     def _described(doc: str) -> str:
         parts = [inspect.cleandoc(doc), hint, unlisted]
