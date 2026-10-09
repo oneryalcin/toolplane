@@ -300,7 +300,7 @@ def report(rows, sessions, haiku: str, sonnet: str) -> str:
         add(f"H5 {t}", f"{t}: tp - direct", cost_diff(rows, "toolplane", m, ">0", task=t))
     add("H6a", "latency: tp - direct median wall (s)", with_verdict(wall_diff(rows, m, "loop_lat100"), "<0"))
     h6b = cost_diff(rows, "toolplane", m, "<0", task="loop_lat100")
-    if h6b:  # "not costlier": holds unless the CI is entirely above 0
+    if h6b and not math.isnan(h6b[1]):  # "not costlier": holds unless the CI is wholly above 0
         h6b = (*h6b[:3], "HOLDS" if h6b[1] <= 0 else "REVERSED", *h6b[4:])
     add("H6b", "latency: tp - direct $/pass (not costlier)", h6b)
     add("H7a", "refunds: tp_cli - direct", cost_diff(rows, "toolplane_cli", m, "<0", task="refunds"))
@@ -337,7 +337,7 @@ def report(rows, sessions, haiku: str, sonnet: str) -> str:
 
 def _cell_keys(rows):
     return sorted({
-        (r["model"], r["task"], r.get("m_servers", 1), r.get("record_bytes", 0),
+        (r.get("requested_model") or r["model"] or "?", r["task"], r.get("m_servers", 1), r.get("record_bytes", 0),
          r.get("granularity", "fetch-one"), r.get("builtins", "default"), r["arm"])
         for r in rows
     })

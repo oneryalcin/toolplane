@@ -724,3 +724,19 @@ def test_prereg_wall_time_counts_slow_failures() -> None:
     ] * 4
     point, lo, hi = wall_diff(rows, "m", "loop_lat100")
     assert verdict(lo, hi, "<0") != "HOLDS"
+
+
+def test_prereg_report_survives_a_timeout_row() -> None:
+    # model=None on a timeout must not crash the registered report
+    from analyze_prereg import report
+
+    base = {"task": "single", "m_servers": 1, "record_bytes": 0, "granularity": "fetch-one",
+            "builtins": "default", "requested_model": "m", "wall_s": 9.0, "tool_calls": 3,
+            "tool_call_names": [], "model_requests": 3, "input_tokens": 10,
+            "uncached_input_tokens": 5, "output_tokens": 2, "peak_context_tokens": 10}
+    rows = [
+        {**base, "arm": "direct", "model": "m", "cost_usd": 0.01, "correct": True},
+        {**base, "arm": "toolplane", "model": "m", "cost_usd": 0.02, "correct": True},
+        {**base, "arm": "toolplane", "model": None, "cost_usd": None, "correct": False},
+    ]
+    assert "| H1a |" in report(rows, [], "m", "s")
