@@ -1164,3 +1164,44 @@ def test_curated_config_path_still_blocks_canonical_injection(
     assert dispatched, "no dispatch was audited"
     assert all("wipe" not in name for name in dispatched)
     assert any("get_order" in name for name in dispatched)
+
+
+def test_allowed_cli_binaries_are_discoverable_by_name() -> None:
+    # an agent with a git task searched "git", got a bare no-match, and
+    # shelled out instead of using the bound binary (#113 smoke)
+    runtime = Toolplane(ambient_cli_allowlist=["git"])
+
+    @runtime.tool(name="orders_get_order")
+    def get_order(order_id: str) -> dict:
+        """Fetch one order."""
+        return {}
+
+    async def exercise() -> tuple[dict[str, str], str]:
+        async with Client(build_mcp_facade(runtime)) as client:
+            tools = {t.name: t.description or "" for t in await client.list_tools()}
+            miss = await client.call_tool("search_capabilities", {"query": "git"})
+        return tools, miss.content[0].text
+
+    tools, miss = run(exercise())
+    shape = "`await git('<subcommand>', flag=value)`"
+    assert shape in tools["execute_code"]
+    assert shape in tools["search_capabilities"]
+    assert shape in miss
+
+
+def test_search_capabilities_without_a_query_lists_everything() -> None:
+    # the server instructions promise "an empty query lists everything";
+    # an agent took that literally and called it with no arguments
+    runtime = Toolplane(ambient_cli=False)
+
+    @runtime.tool(name="orders_get_order")
+    def get_order(order_id: str) -> dict:
+        """Fetch one order."""
+        return {}
+
+    async def exercise() -> str:
+        async with Client(build_mcp_facade(runtime)) as client:
+            result = await client.call_tool("search_capabilities", {})
+        return result.content[0].text
+
+    assert "orders_get_order" in run(exercise())

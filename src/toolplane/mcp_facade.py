@@ -178,9 +178,14 @@ def build_mcp_facade(
         runtime.registry.all(), reserved=runtime._reserved_binding_names()
     )
 
+    # CLI bindings are not registry capabilities, so the hint above never
+    # names them; an agent holding a git task searched "git", got a
+    # no-match, and shelled out instead (#113 smoke, run-20261009-120127)
+    unlisted = runtime.unlisted_surfaces()
+
     def _described(doc: str) -> str:
-        base = inspect.cleandoc(doc)
-        return f"{base}\n\n{hint}" if hint else base
+        parts = [inspect.cleandoc(doc), hint, unlisted]
+        return "\n\n".join(part for part in parts if part)
 
     _SEARCH_DOC = """Search the Toolplane capability registry by keyword.
 
@@ -195,7 +200,7 @@ def build_mcp_facade(
 
     @mcp.tool(description=_described(_SEARCH_DOC))
     async def search_capabilities(
-        query: str,
+        query: str = "",
         tags: list[str] | None = None,
         detail: SchemaDetail = "brief",
         limit: int | None = None,

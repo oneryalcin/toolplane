@@ -243,11 +243,15 @@ class Toolplane:
             if not total:
                 return "No capabilities are registered."
             noun = "capability is" if total == 1 else "capabilities are"
+            # a query for a CLI binary ("git") never matches the registry;
+            # without this line the signpost denies a binding that exists
+            extras = self.unlisted_surfaces()
             return (
                 f"No capabilities matched the query. {total} {noun} "
                 "registered — search again with an empty query to list "
                 "them all, or read the toolplane://namespace resource "
                 "for the full execution namespace."
+                + (f"\n{extras}" if extras else "")
             )
         rendered = render_capabilities(
             capabilities, detail=detail, reserved=self._reserved_binding_names()
@@ -292,6 +296,24 @@ class Toolplane:
                 "`futures = [fn(x=i) for i in ids]` then "
                 "`results = [await f for f in futures]`."
             )
+        extras = self.unlisted_surfaces()
+        if extras:
+            lines.append(extras)
+        lines.append(
+            "Details only when needed: toolplane://namespace (full "
+            "manifest) and skill://driving-toolplane/SKILL.md "
+            "(conventions)."
+        )
+        return "\n".join(lines)
+
+    def unlisted_surfaces(self) -> str:
+        """The bound surfaces registry search cannot return, in one line.
+
+        CLI bindings and the result store live only in the namespace; this
+        line names them wherever an agent looks for tools (search footer,
+        no-match signpost, facade tool descriptions) so a configured
+        binary is never invisible to discovery.
+        """
         extras = []
         if self.ambient_cli:
             if self.cli_policy.restricted:
@@ -313,18 +335,13 @@ class Toolplane:
                 )
         if self.result_store.enabled:
             extras.append("`save_result`/`load_result`")
-        if extras:
-            lines.append(
-                "The namespace also binds surfaces search does not list: "
-                + "; ".join(extras)
-                + "."
-            )
-        lines.append(
-            "Details only when needed: toolplane://namespace (full "
-            "manifest) and skill://driving-toolplane/SKILL.md "
-            "(conventions)."
+        if not extras:
+            return ""
+        return (
+            "The namespace also binds surfaces search does not list: "
+            + "; ".join(extras)
+            + "."
         )
-        return "\n".join(lines)
 
     async def list_tools(self, *, detail: DetailLevel = "brief") -> str:
         return render_capabilities(
