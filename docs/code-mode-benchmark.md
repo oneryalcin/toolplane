@@ -1118,10 +1118,10 @@ chain medians were 16.9s vs 19.6s with overlapping ranges, and on
   `sonnet` alias.
 
 One fixture wrinkle: ORD-023's note says the next order "never shipped",
-while ORD-011's record says `shipped`. One direct run remarked on the
-contradiction. Every run still answered correctly, since the note's
-elimination ("ORD-027 left the warehouse on time") identifies ORD-011
-either way.
+while ORD-011's record says `shipped`. All eight runs pointed out the
+contradiction in their final answer, and all eight still answered
+correctly, since the note's elimination ("ORD-027 left the warehouse on
+time") identifies ORD-011 either way.
 
 **The CLI + MCP join: which surface the agent reaches for decides the
 winner.** This compares client *configurations*, not the git binding in
