@@ -659,3 +659,40 @@ def test_nosession_arm_turns_sessions_off(tmp_path: Path) -> None:
         toml = next(tmp_path.glob(f"toolplane-bench-{arm}-loop-*.toml"))
         config = load_toolplane_config(tomllib.loads(toml.read_text()))
         assert config.session.enabled is enabled
+
+
+def test_prereg_counts_timeouts_as_costly_failures() -> None:
+    # a timeout row has model=None; dropping it would hide a failure and
+    # flatter its arm's cost per correct answer
+    from analyze_prereg import _runs, cell
+
+    rows = [
+        {"task": "loop", "arm": "toolplane", "model": "claude-haiku-5-5",
+         "requested_model": "claude-haiku-5-5", "cost_usd": 0.02, "correct": True},
+        {"task": "loop", "arm": "toolplane", "model": None,
+         "requested_model": "claude-haiku-5-5", "cost_usd": None, "correct": False},
+    ]
+    group = cell(rows, task="loop", arm="toolplane", model="claude-haiku-5-5")
+    assert _runs(group) == [(0.02, True), (0.02, False)]
+
+
+def test_prereg_all_failure_resamples_read_unresolved() -> None:
+    # inf - inf draws must not sort into an inverted interval
+    from analyze_prereg import _cost_of_pass, bootstrap, verdict
+
+    groups = {"arm": [(0.1, True), (0.1, False)], "direct": [(0.1, True), (0.1, False)]}
+    point, lo, hi = bootstrap(
+        groups, lambda g: _cost_of_pass(g["arm"]) - _cost_of_pass(g["direct"])
+    )
+    assert verdict(lo, hi, "<0") == "UNRESOLVED"
+
+
+def test_prereg_voids_dirty_longitudinal_rows(tmp_path: Path, monkeypatch) -> None:
+    import analyze_prereg
+
+    runs = tmp_path / "run.json"
+    runs.write_text(json.dumps([]))
+    sessions = tmp_path / "longitudinal.json"
+    sessions.write_text(json.dumps({"rows": [{"arm": "toolplane", "git_dirty": True, "turns": []}]}))
+    monkeypatch.setattr(sys, "argv", ["analyze", str(runs), "--longitudinal", str(sessions)])
+    assert analyze_prereg.main() == 2

@@ -28,6 +28,12 @@ runs per cell for confidence intervals.
 - **Failures count.** A timeout, wrong answer or abstention (an answer
   given with zero tool calls) is a failed run, priced in through cost
   per correct answer.
+  - A timeout's cost is unknown, because the client never reports it.
+    It is imputed as the highest observed cost in its cell, so a
+    timeout can only make its arm look worse, and the report lists
+    every imputation.
+  - Rows are matched to cells by `requested_model`, so a timeout row
+    (`model=None`) stays in its cell.
 - **No edits while a block runs.** The working tree stays untouched for
   the duration.
 
@@ -42,6 +48,17 @@ The analysis script implements this rule exactly.
   - **HOLDS** if the CI excludes 0 in the predicted direction.
   - **REVERSED** if it excludes 0 in the other direction.
   - **UNRESOLVED** otherwise.
+- **Undefined draws.** A resample in which an arm has no passing run
+  prices that arm at infinity. A draw where both arms are infinite is
+  undefined and is discarded. If more than 5% of draws are undefined,
+  or the point estimate is, the verdict is **UNRESOLVED**.
+- **H5-walk** holds when at least 7/8 of an arm's runs walk one order
+  per call. That means:
+  - direct: at least 5 `get_order` calls;
+  - toolplane: at least 5 `execute_code` calls.
+
+  Otherwise it **FAILS**, and H5's cost verdict for that fixture is
+  reported as describing a shortcut, not a stepwise walk.
 - **Similarity predictions (~0)** are equivalence tests.
   - **HOLDS** only if the whole CI lies within ±10% of the reference
     arm's value.
@@ -146,7 +163,8 @@ The target is ≤ $5 in total, with a hard cap of $8.
 
 ## Exclusions
 
-- Rows with `git_dirty=true` are void.
+- Rows with `git_dirty=true` are void, in run files and longitudinal
+  files alike.
 - No other exclusion is allowed. Every run in a block counts,
   including failures, timeouts and abstentions.
 

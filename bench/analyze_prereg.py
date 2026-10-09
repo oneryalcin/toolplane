@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import random
 import statistics
 import sys
@@ -31,7 +32,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from run import _bootstrap_cost_of_pass_diff, _cost_of_pass
+from run import _cost_of_pass
 
 RESAMPLES = 4000
 SEED = 0
@@ -53,23 +54,45 @@ def cell(rows, *, task, arm, m=1, b=0, g="fetch-one", builtins="default", model=
         and r.get("record_bytes", 0) == b
         and r.get("granularity", "fetch-one") == g
         and r.get("builtins", "default") == builtins
-        and (model is None or r["model"] == model)
+        and (model is None or r.get("requested_model", r["model"]) == model)
     ]
 
 
 def _runs(group):
-    return [(r["cost_usd"] or 0.0, bool(r["correct"])) for r in group]
+    """(cost, passed) per run. A timeout's cost is unknown (the client never
+    reported it); the registered rule imputes the cell's highest observed
+    cost, so a timeout can only make its arm look worse, never cheaper."""
+    known = [r["cost_usd"] for r in group if r["cost_usd"] is not None]
+    fallback = max(known, default=0.0)
+    return [
+        (r["cost_usd"] if r["cost_usd"] is not None else fallback, bool(r["correct"]))
+        for r in group
+    ]
+
+
+def imputed(group) -> int:
+    return sum(r["cost_usd"] is None for r in group)
 
 
 def bootstrap(groups: dict[str, list], stat: Callable[[dict[str, list]], float]):
-    """Point estimate and 95% percentile CI, each group resampled alone."""
+    """Point estimate and 95% percentile CI, each group resampled alone.
+
+    A resample with no passes in an arm prices that arm at inf; a draw that
+    is undefined (inf - inf) is discarded. If more than 5% of draws are
+    undefined, or the point estimate is, the CI is NaN and every verdict
+    reads UNRESOLVED: too many all-failure resamples to say anything.
+    """
     rng = random.Random(SEED)
     point = stat(groups)
-    draws = sorted(
+    draws = [
         stat({k: rng.choices(v, k=len(v)) for k, v in groups.items()})
         for _ in range(RESAMPLES)
-    )
-    return point, draws[int(0.025 * RESAMPLES)], draws[int(0.975 * RESAMPLES) - 1]
+    ]
+    defined = sorted(d for d in draws if not math.isnan(d))
+    if math.isnan(point) or len(defined) < 0.95 * RESAMPLES:
+        return point, math.nan, math.nan
+    n = len(defined)
+    return point, defined[int(0.025 * n)], defined[int(0.975 * n) - 1]
 
 
 def verdict(lo: float, hi: float, predicted: str, margin: float | None = None) -> str:
@@ -96,7 +119,12 @@ def cost_diff(rows, arm, model, predicted, **where):
     d = cell(rows, arm="direct", model=model, **where)
     if not a or not d:
         return None
-    point, lo, hi = _bootstrap_cost_of_pass_diff(_runs(a), _runs(d))
+    # same statistic and draw order as run.py's _bootstrap_cost_of_pass_diff
+    # (arm resampled before direct), so all-pass cells reproduce its CIs
+    point, lo, hi = bootstrap(
+        {"arm": _runs(a), "direct": _runs(d)},
+        lambda g: _cost_of_pass(g["arm"]) - _cost_of_pass(g["direct"]),
+    )
     return point, lo, hi, verdict(lo, hi, predicted), len(a), len(d)
 
 
@@ -227,7 +255,9 @@ def _tally(values) -> dict[str, int]:
 
 
 def _fmt(x: float) -> str:
-    return "inf" if x == float("inf") else f"{x:+.4f}"
+    if math.isnan(x):
+        return "undefined"
+    return "inf" if math.isinf(x) else f"{x:+.4f}"
 
 
 def report(rows, sessions, haiku: str, sonnet: str) -> str:
@@ -277,12 +307,19 @@ def report(rows, sessions, haiku: str, sonnet: str) -> str:
     add("S1", "Sonnet 5.5 single: tp - direct", cost_diff(rows, "toolplane", sonnet, ">0", task="single"))
     add("S2", "Sonnet 5.5 chain_prose: tp - direct", cost_diff(rows, "toolplane", sonnet, ">0", task="chain_prose"))
 
-    lines += ["", "H5 no-shortcut clause (hop-by-hop runs / runs; predicted >= 7/8 per arm):", ""]
+    lines += ["", "H5-walk (hop-by-hop runs / runs; HOLDS at >= 7/8 of runs per arm):", ""]
     for t in ("chain", "chain_prose"):
         for arm in ("direct", "toolplane"):
             g = cell(rows, task=t, arm=arm, model=m)
             if g:
-                lines.append(f"- {t} {arm}: {chain_hop_by_hop(g)}/{len(g)}")
+                walked = chain_hop_by_hop(g)
+                ok = "HOLDS" if walked >= 7 / 8 * len(g) else "FAILS"
+                lines.append(f"- {t} {arm}: {walked}/{len(g)} {ok}")
+    timeouts = {
+        f"{r['task']}/{r['arm']}": imputed([r]) for r in rows if r["cost_usd"] is None
+    }
+    if timeouts:
+        lines += ["", f"Timeout costs imputed (cell max): {json.dumps(timeouts, sort_keys=True)}"]
 
     if sessions:
         results, mechanisms = longitudinal(sessions)
@@ -344,8 +381,12 @@ def main() -> int:
     parser.add_argument("--sonnet", default="claude-sonnet-5-5")
     args = parser.parse_args()
     rows = [r for p in args.runs for r in json.loads(p.read_text())]
-    dirty = sorted({p.name for p in args.runs for r in json.loads(p.read_text()) if r.get("git_dirty")})
     sessions = [s for p in args.longitudinal for s in json.loads(p.read_text())["rows"]]
+    dirty = sorted(
+        {p.name for p in args.runs for r in json.loads(p.read_text()) if r.get("git_dirty")}
+        | {p.name for p in args.longitudinal
+           for s in json.loads(p.read_text())["rows"] if s.get("git_dirty")}
+    )
     if dirty:
         print(f"VOID: git_dirty=true rows in {dirty} — the plan excludes them", file=sys.stderr)
         return 2
