@@ -344,7 +344,9 @@ class Toolplane:
                 f"`await <binary>('<subcommand>', flag=value)`, {returns}"
             )
         names = self._get_ambient_cli_names()
-        flat = [n for n in names if is_safe_cli_name(n)]
+        # capabilities bind first and shadow a same-named CLI function
+        taken = set(self.registry.callable_namespace()) | self._reserved_binding_names()
+        flat = [n for n in names if is_safe_cli_name(n) and n not in taken]
         other = [n for n in names if n not in flat and _BINARY_NAME.fullmatch(n)]
         unshown = len(names) - len(flat) - len(other)
         parts = []

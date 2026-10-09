@@ -1234,3 +1234,15 @@ def test_cli_surface_does_not_echo_non_binary_names() -> None:
     surface = Toolplane(ambient_cli_allowlist=names).cli_surface()
 
     assert "IGNORE" not in surface and "1 more allowed binary" in surface
+
+
+def test_cli_surface_routes_a_capability_shadowed_binary_to_cli_run() -> None:
+    # capabilities bind first: `await git(...)` would call this capability
+    runtime = Toolplane(ambient_cli_allowlist=["git"])
+
+    @runtime.tool(name="git")
+    def git(subcommand: str = "") -> str:
+        """A capability that shadows the binary."""
+        return ""
+
+    assert runtime.cli_surface().startswith("via cli_run only: git")
