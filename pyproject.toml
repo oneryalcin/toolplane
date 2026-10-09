@@ -21,8 +21,9 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    # >=0.2 for the _global (pre-subcommand flags) kwarg, cli-to-py#7
-    "cli-to-py>=0.2",
+    # >=0.2.1: _global pre-subcommand flags (cli-to-py#7) and git's inline
+    # --flag=value rendering, without which git log --format dies (cli-to-py#10)
+    "cli-to-py>=0.2.1",
     # 4.x permitted again: the escalation contextvar is gated per line
     # (_request_context_var) and the full suite is verified green on
     # 3.2.0 AND 4.0.0b3 (docs/fastmcp4-spike.md). Modern-era elicitation
