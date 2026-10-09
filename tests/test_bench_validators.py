@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -484,3 +485,141 @@ def test_codex_rollout_facts_survive_a_truncated_line(tmp_path) -> None:
     facts = _codex_rollout_facts(tmp_path, '{"type":"thread.started","thread_id":"t-cut"}')
 
     assert facts["model_call_names"] == ["exec"]
+
+
+# --- #113 item 3: the prose chain must stay code-resistant. The bug this
+# prevents: an edit that makes a note keyword-separable again would let a
+# one-snippet regex walk the chain, and the "code mode loses on adaptive
+# tasks" finding would again rest on what agents choose, not on the task.
+
+_ORD = re.compile(r"ORD-\d{3}")
+_NEG = re.compile(
+    r"\b(not|no|do not|don't|disregard|mistakenly|refunded|closed|"
+    r"duplicate|cancel\w*|old|unrelated|swapped)\b",
+    re.IGNORECASE,
+)
+_KW = re.compile(
+    r"\b(continue\w*|next|goes|moves|follow\w*|use|process|supersedes?|stands)\b",
+    re.IGNORECASE,
+)
+
+
+def _mentions(note: str, me: str) -> list[tuple[int, str]]:
+    return [(m.start(), m.group()) for m in _ORD.finditer(note) if m.group() != me]
+
+
+def _first(note, me):
+    found = _mentions(note, me)
+    return found[0][1] if found else None
+
+
+def _last(note, me):
+    found = _mentions(note, me)
+    return found[-1][1] if found else None
+
+
+def _nearest_keyword(note, me):
+    found, kws = _mentions(note, me), [m.start() for m in _KW.finditer(note)]
+    if not found or not kws:
+        return None
+    return min(found, key=lambda t: min(abs(t[0] - k) for k in kws))[1]
+
+
+def _first_not_negated(note, me):
+    for pos, oid in _mentions(note, me):
+        if not _NEG.search(note[max(0, pos - 40) : pos]):
+            return oid
+    return None
+
+
+def _successor_of_last(note, me):
+    oid = _last(note, me)
+    return f"ORD-{int(oid[4:]) + 1:03d}" if oid else None
+
+
+@pytest.mark.parametrize(
+    "heuristic",
+    [_first, _last, _nearest_keyword, _first_not_negated, _successor_of_last],
+)
+def test_prose_chain_defeats_named_heuristics(heuristic) -> None:
+    from orders_data import PROSE_PATH, prose_chain_notes
+
+    notes = prose_chain_notes(30)
+    hits = [
+        heuristic(notes[PROSE_PATH[k]], PROSE_PATH[k]) == PROSE_PATH[k + 1]
+        for k in range(len(PROSE_PATH) - 1)
+    ]
+    assert sum(hits) <= 2, f"{heuristic.__name__} gets {hits}"
+
+
+def test_prose_chain_has_no_terminal_marker() -> None:
+    # the templated chain's "final order" note let fetch-everything skip
+    # every hop; here every order has a note and none flags the end
+    from orders_data import prose_chain_notes
+
+    notes = prose_chain_notes(30)
+    assert len(notes) == 30
+    marker = re.compile(r"\bfinal\b|\blast order\b|\bend of\b", re.IGNORECASE)
+    assert not [n for n in notes.values() if marker.search(n)]
+
+
+def test_chain_prose_validator_wants_the_fourth_hop() -> None:
+    from run import _check_chain_prose
+
+    assert _check_chain_prose("ORD-011,shipped", 30)
+    assert not _check_chain_prose("ORD-014,shipped", 30)  # one hop too far
+    assert not _check_chain_prose("ORD-023,shipped", 30)  # one hop short
+
+
+# --- #113 item 2: the CLI + MCP join
+
+
+def test_refund_total_needs_the_refund_filter() -> None:
+    # every order id in the log is the tempting wrong set
+    from orders_data import MIXED_N, mixed_commits, orders
+    from run import _check_refund_total
+
+    amounts = {o["order_id"]: o["amount"] for o in orders(MIXED_N)}
+    every_id = {oid for msg in mixed_commits() for oid in _ORD.findall(msg)}
+    assert not _check_refund_total(f"{sum(amounts[o] for o in every_id):.2f}", MIXED_N)
+    assert _check_refund_total("5959.80", MIXED_N)
+    assert _check_refund_total("5959.8", MIXED_N)
+
+
+def test_seeded_git_history_is_byte_identical(tmp_path: Path) -> None:
+    # transcripts across runs and arms must see the same hashes
+    import subprocess
+
+    from orders_data import mixed_commits
+    from run import seed_git_repo
+
+    heads = []
+    for name in ("a", "b"):
+        (tmp_path / name).mkdir()
+        seed_git_repo(tmp_path / name, mixed_commits())
+        heads.append(
+            subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=tmp_path / name,
+                capture_output=True, text=True, check=True,
+            ).stdout
+        )
+    assert heads[0] == heads[1]
+
+
+def test_cli_tasks_refuse_lanes_without_a_direct_shell() -> None:
+    from run import validate_cli_scope
+
+    validate_cli_scope(["refunds"], "claude", False)
+    for client, restrict in (("codex", False), ("claude", True)):
+        with pytest.raises(ValueError):
+            validate_cli_scope(["refunds"], client, restrict)
+
+
+def test_cli_section_only_on_cli_tasks(tmp_path: Path) -> None:
+    from run import mcp_config
+
+    code = {"fixtures_dir": str(tmp_path), "python": "py", "toolplane_bin": "tp"}
+    for task, want in (("refunds", True), ("loop", False)):
+        mcp_config("toolplane", tmp_path, task, 1, code)
+        toml = next(tmp_path.glob(f"toolplane-bench-toolplane-{task}-*.toml")).read_text()
+        assert ('[cli]\nmode = "allowlist"\nallow = ["git"]' in toml) is want

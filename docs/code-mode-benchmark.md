@@ -1058,6 +1058,134 @@ equal the committed harness commit's, and its `bench/run.py` (hash
 change and a comment. Isolation flags and why each is needed are in
 `bench/README.md`.
 
+## A code-resistant chain and a CLI + MCP join (2026-10-09)
+
+[#113](https://github.com/oneryalcin/toolplane/issues/113) left two open
+questions. Does "code mode loses on adaptive tasks" still hold when the
+task genuinely resists code? And what does toolplane do with a task that
+needs a command-line tool and MCP tools together? Sonnet 5.5
+(`claude-sonnet-5-5`), Claude Code 2.1.295, M=1, 4 counterbalanced reps
+per cell, 28/28 correct, `git_dirty=false` on both runs, $3.03 total.
+
+**The new fixtures.**
+
+- `chain_prose`: the same 4-hop walk as `chain`, but every order carries a
+  hand-written note in free prose. Off-path notes also name orders. The
+  terminal note names a further order, so only the hop count says stop.
+  Each path hop identifies the next order by meaning: a correction
+  ("the number they gave first stands"), an oblique reference that never
+  spells the id ("the order placed immediately after ORD-016"), a
+  contrast, and an elimination. Five named heuristics (first id, last id,
+  id nearest a continuation keyword, first non-negated id, successor of
+  the last id) each walk it to the wrong order. A test pins that, so an
+  edit that makes the fixture separable again fails CI.
+- `refunds`: the run's working directory is a git repository whose
+  commit subjects say which orders were refunded; the amounts live behind
+  MCP. Non-refund commits mention orders too, so "every id in the log" is
+  the wrong set. A third arm, `toolplane_cli`, serves the same facade
+  with the client's shell and file tools removed, so the git half must go
+  through toolplane's git binding.
+
+**Adaptive chains: code mode still loses, by single digits.** Every run
+in both arms walked hop by hop, one order per call: direct made 5
+`get_order` calls, and toolplane made 5 `execute_code` calls (6 in one
+run). No snippet in any run fetched more than one order, so nobody tried a
+shortcut on either fixture. At the oblique hop of the prose fixture, all
+four toolplane runs also listed the order ids to check that ORD-017
+exists. Three folded that check into the ORD-017 snippet; one spent a
+sixth snippet on it.
+
+| task | direct $/pass | toolplane $/pass | toolplane ÷ direct | 95% CI of the gap |
+|---|---|---|---|---|
+| `chain` (templated) | $0.110 | $0.115 | 1.05 | +$0.004 to +$0.007 |
+| `chain_prose` | $0.108 | $0.116 | 1.08 | +$0.005 to +$0.014 |
+
+Median model requests were 7 in both arms. Walls are too noisy to rank:
+chain medians were 16.9s vs 19.6s with overlapping ranges, and on
+`chain_prose` the order reverses (27.7s vs 25.9s). Two conclusions:
+
+- **The July caveat is narrowed, not removed.** The templated chain was
+  regex-separable, so it measured what agents chose to do. The prose
+  chain is not heuristically separable by anything we tried (five named
+  rules, pinned in CI), and the result is the same. One shortcut stays
+  open: a single snippet could fetch all 30 notes and hand them to the
+  model to read in one go. No agent took it on either fixture. So on
+  sequentially adaptive tasks, agents use code mode as direct tool calling
+  with a slightly heavier envelope per step, and that is a measurement of
+  their choice.
+- The price is small on this model: +5% and +8%. The templated chain
+  measured +36% in July and +7% in the October re-run, both on the
+  `sonnet` alias.
+
+One fixture wrinkle: ORD-023's note says the next order "never shipped",
+while ORD-011's record says `shipped`. All eight runs pointed out the
+contradiction in their final answer, and all eight still answered
+correctly, since the note's elimination ("ORD-027 left the warehouse on
+time") identifies ORD-011 either way.
+
+**The CLI + MCP join: which surface the agent reaches for decides the
+winner.** This compares client *configurations*, not the git binding in
+isolation. Direct keeps Bash, because without a shell it has no way to
+read git. `toolplane_cli` removes the shell, so its git half has to go
+through the binding.
+
+| configuration | $/pass | ÷ direct | requests | tool calls | peak context | wall |
+|---|---|---|---|---|---|---|
+| direct (Bash + MCP) | $0.098 | 1.00 | 3.5 | 14.5 | 28.5k | 11.7s |
+| toolplane, shell available | $0.120 | **1.22** | 7 | 6.5 | 29.4k | 16.9s |
+| `toolplane_cli`, no shell | $0.092 | **0.94** | 4 | 3 | 24.1k | 11.7s |
+
+(Medians, except $/pass. Bootstrap 95% CIs of the gap vs direct:
+toolplane +$0.015 to +$0.029; `toolplane_cli` −$0.010 to −$0.002.)
+
+- **With a shell available, the agent never used the git binding.** All
+  four toolplane runs opened with 3–6 Bash calls before touching
+  toolplane: the `git log` itself, then inspection of the repository
+  (`git notes`, `git stash`, `git tag`, `git branch -a` in every run;
+  `git cat-file` and `.git/config` in one), apparently hunting for hidden
+  data. Only then did they fetch the 12 orders in one `execute_code`.
+  Some also summed in Bash afterwards, for 4–7 Bash calls in total.
+  Direct's agent read the log in a single Bash call. The exploration is
+  the likely source of the 22% premium, though not the only difference:
+  the shell arm also made one `search_capabilities` call per run, while
+  `toolplane_cli` went straight from `ToolSearch` to `execute_code`.
+- **Without a shell, the toolplane configuration beat direct.** Every
+  `toolplane_cli` run read the log through the git binding
+  (`git('log', format='%H|%s', all=True)` in two runs, `format='%s'` in
+  two) and fetched the orders in a second snippet. One run used a third
+  snippet to sum. Median 4 requests (4–5), ~15% less peak context than
+  direct, the same wall, and zero failed snippets.
+- **The join still crossed the model's context.** No run did git, the
+  filter, and the fetches in one snippet. Each read the log, then retyped
+  the 12 ids into the next snippet. On 24 commits that costs little; on
+  a long history it would not.
+
+Two bugs surfaced while building this, both fixed before the matrix:
+
+- **[#166](https://github.com/oneryalcin/toolplane/issues/166):** the
+  facade never named allowed CLI binaries in its tool descriptions, a
+  search for "git" returned a bare no-match (reproduced by hand), and
+  `search_capabilities({})` raised a missing-argument error (smoke
+  `run-20261009-120127`, where the agent then did git through Bash). Fixed
+  in #167. Descriptions are unchanged for setups without CLI tools, so
+  earlier cells stay comparable.
+- **[cli-to-py#10](https://github.com/oneryalcin/cli-to-py/issues/10):**
+  `git('log', format='%h|%s')` rendered `--format %h|%s`, which git reads
+  as a revision. In the pre-fix smoke (`run-20261009-122730`) the no-shell
+  agent had four failed snippets before falling back to `oneline=True`.
+  Three came from this rendering bug (`format=` twice, `pretty=` once);
+  the fourth was the agent's own positional misuse. cli-to-py 0.2.1
+  renders git's long flags inline (`--format=%h|%s`). Other binaries keep
+  the space form, because curl and jq reject `--flag=value`. Toolplane now
+  requires `cli-to-py>=0.2.1`.
+
+Scope: one model, one client, M=1, n=4, 24 commits. Item 4 of #113 (more
+reps in the N=20–30 parity zone) was not run. "By single digits"
+describes this model only. Raw data:
+`bench/results/run-20261009-131413.json` (chains) and
+`run-20261009-132058.json` (refunds). The three `run-20261009-12*` smokes
+are in no cell; they are the evidence for #166 and cli-to-py#10.
+
 ## The envelope
 
 Two measured points; nothing measured between them:

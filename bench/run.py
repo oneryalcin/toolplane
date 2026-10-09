@@ -40,9 +40,14 @@ REPO_DIR = BENCH_DIR.parent
 sys.path.insert(0, str(BENCH_DIR))
 
 from orders_data import (  # noqa: E402
+    MIXED_N,
+    PROSE_N,
     chain_answer,
     emea_over_500,
+    mixed_answer,
+    mixed_commits,
     orders,
+    prose_chain_answer,
     totals_by_region,
 )
 from shipment_data import shipments  # noqa: E402
@@ -96,8 +101,8 @@ def _check_filter(answer: str, n: int) -> bool:
         return False
 
 
-def _check_chain(answer: str, n: int) -> bool:
-    want = chain_answer(n)
+def _check_chain(answer: str, n: int, want: dict | None = None) -> bool:
+    want = want or chain_answer(n)
     try:
         order_id, status = (part.strip() for part in answer.strip().split(","))
     except (ValueError, AttributeError):
@@ -108,6 +113,17 @@ def _check_chain(answer: str, n: int) -> bool:
     )
 
 
+def _check_chain_prose(answer: str, n: int) -> bool:
+    return _check_chain(answer, n, prose_chain_answer(n))
+
+
+def _check_refund_total(answer: str, n: int) -> bool:
+    try:
+        return abs(float((answer or "").strip()) - mixed_answer()) < 0.005
+    except ValueError:
+        return False
+
+
 _CHAIN_PROMPT = (
     "Using the available tools, start at order ORD-001 and follow the "
     "follow-up chain for exactly 4 hops. Each order's note says which "
@@ -115,6 +131,15 @@ _CHAIN_PROMPT = (
     "cancelled order that does NOT. Reply with the final order's id and "
     "status formatted exactly as order_id,status wrapped in "
     "<answer></answer> tags."
+)
+
+_CHAIN_PROSE_PROMPT = (
+    "Using the available tools, start at order ORD-001 and follow the "
+    "case for exactly 4 hops. Each order's note, written by support staff "
+    "in their own words, says which order the case continues to; notes "
+    "also mention other orders that do not continue it. Reply with the "
+    "final order's id and status formatted exactly as order_id,status "
+    "wrapped in <answer></answer> tags."
 )
 
 TASKS = {
@@ -154,6 +179,35 @@ TASKS = {
         "check": _check_chain,
         "orders_n": 30,
         "server_env": {"BENCH_NOTES": "chain"},
+    },
+    # #113 item 3: the code-resistant counterpart. Every order has a
+    # hand-written prose note; the real next order is identified by
+    # meaning (correction, oblique reference, elimination), and named
+    # heuristics are pinned to fail on it (test_bench_validators.py).
+    "chain_prose": {
+        "prompt": _CHAIN_PROSE_PROMPT,
+        "check": _check_chain_prose,
+        "orders_n": PROSE_N,
+        "server_env": {"BENCH_NOTES": "chain_prose"},
+    },
+    # #113 item 2: a CLI + MCP join. The run's cwd is a git repo whose
+    # history says which orders were refunded; amounts live behind MCP.
+    # Direct joins with the client's Bash + MCP calls; toolplane can do
+    # both inside one snippet (git binding + order tools) — or not, and
+    # tool_call_names records which. Needs a shell in the direct arm, so
+    # no restricted-built-ins lane and no Codex lane (shell off there).
+    "refunds": {
+        "prompt": (
+            "This directory is a git repository. Each commit whose subject "
+            "line starts with 'refund:' records a refund of the order named "
+            "right after the colon. Using git and the available tools, "
+            "compute the total amount of all refunded orders. Reply with "
+            "just the number rounded to 2 decimals, wrapped in "
+            "<answer></answer> tags."
+        ),
+        "check": _check_refund_total,
+        "orders_n": MIXED_N,
+        "cli": ["git"],
     },
     # latency axis (#107 item 10 / #109 gate): 100ms per tool call.
     # Pre-port monty awaited sequentially (N x latency); the 0.0.19 pool
@@ -251,6 +305,49 @@ def distractors(m_servers: int) -> list[tuple[str, str]]:
 
 
 _GRANULARITIES = ("fetch-one", "bulk")
+
+
+def validate_cli_scope(
+    tasks: list[str], client: str, restrict_builtins: bool
+) -> None:
+    """CLI tasks need the direct arm's shell; refuse lanes that remove it."""
+    cli_tasks = [task for task in tasks if TASKS[task].get("cli")]
+    if cli_tasks and (client != "claude" or restrict_builtins):
+        raise ValueError(
+            f"{cli_tasks} need a shell in the direct arm: Claude Code only, "
+            "without --restrict-builtins"
+        )
+
+
+# fixed identity and clock: the seeded history (and its hashes) is
+# byte-identical in every run
+_GIT_ENV = {
+    "GIT_AUTHOR_NAME": "bench",
+    "GIT_AUTHOR_EMAIL": "bench@example.invalid",
+    "GIT_COMMITTER_NAME": "bench",
+    "GIT_COMMITTER_EMAIL": "bench@example.invalid",
+    "GIT_CONFIG_GLOBAL": os.devnull,
+    "GIT_CONFIG_NOSYSTEM": "1",
+}
+
+
+def seed_git_repo(cwd: Path, messages: list[str]) -> None:
+    """A deterministic git history in the run's cwd, oldest message first."""
+    env = {**os.environ, **_GIT_ENV}
+
+    def git(*args: str, **extra: str) -> None:
+        subprocess.run(
+            ["git", *args], cwd=cwd, env={**env, **extra}, check=True,
+            capture_output=True,
+        )
+
+    git("init", "-q", "-b", "main")
+    for i, message in enumerate(messages):
+        stamp = f"2026-01-01T{i // 60:02d}:{i % 60:02d}:00Z"
+        git(
+            "commit", "-q", "--allow-empty", "-m", message,
+            GIT_AUTHOR_DATE=stamp, GIT_COMMITTER_DATE=stamp,
+        )
 
 
 def validate_axis_scope(
@@ -407,6 +504,12 @@ _CURATED_ARMS = {
 # whether a domain-bearing server name prevents zero-tool-call abstention.
 _NAMED_ARM = "toolplane_named"
 
+# #113 item 2: the SAME facade with the client's shell and file built-ins
+# removed, so a CLI + MCP task must join inside the snippet (git binding +
+# order tools). The plain toolplane arm keeps the shell and records what
+# the agent chooses; this arm measures what the binding path costs.
+_NO_SHELL_ARM = "toolplane_cli"
+
 
 def mcp_config(
     arm: str,
@@ -446,7 +549,7 @@ def mcp_config(
     # facade. "hybrid" adds --hybrid (re-export the WHOLE registry, #114's
     # held baseline); "curated" adds a [hybrid] config section that
     # re-exports ONLY the orders tools (#125 — the selective form).
-    if arm in ("toolplane", _NAMED_ARM, "hybrid") or arm in _CURATED_ARMS:
+    if arm in ("toolplane", _NAMED_ARM, _NO_SHELL_ARM, "hybrid") or arm in _CURATED_ARMS:
         # generated with absolute paths: every process here runs from a
         # scratch cwd, so nothing may be cwd-relative
         toml_path = (
@@ -457,6 +560,11 @@ def mcp_config(
             )
         )
         sections = []
+        if TASKS[task].get("cli"):
+            # the CLI half of a mixed task: the facade binds exactly the
+            # binaries the task needs, nothing ambient
+            allow = ", ".join(json.dumps(b) for b in TASKS[task]["cli"])
+            sections.append(f'[cli]\nmode = "allowlist"\nallow = [{allow}]\n')
         if arm in _CURATED_ARMS:
             # curate the single/adaptive capabilities: the target server's
             # tools, by canonical-name glob. Distractors stay behind the
@@ -697,6 +805,8 @@ def run_case(
     )
     cwd = workdir / f"cwd-{arm}-{task}-{time.time_ns()}"
     cwd.mkdir()
+    if TASKS[task].get("cli"):
+        seed_git_repo(cwd, mixed_commits())
 
     cmd = [
         "claude",
@@ -713,9 +823,10 @@ def run_case(
         "--permission-mode",
         "bypassPermissions",
     ]
-    if restrict_builtins:
+    restricted = restrict_builtins or arm == _NO_SHELL_ARM
+    if restricted:
         cmd += ["--disallowedTools", ",".join(RESTRICTED_BUILTINS)]
-    builtins = "restricted" if restrict_builtins else "default"
+    builtins = "restricted" if restricted else "default"
     started = time.monotonic()
     try:
         proc = subprocess.run(
@@ -1415,6 +1526,7 @@ def main() -> int:
         )
     try:
         validate_axis_scope(tasks, b_values, g_values)
+        validate_cli_scope(tasks, args.client, args.restrict_builtins)
     except ValueError as exc:
         parser.error(str(exc))
     client_version = subprocess.run(

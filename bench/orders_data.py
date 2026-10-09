@@ -107,3 +107,124 @@ def chain_answer(n: int = DEFAULT_N) -> dict[str, str]:
         i = _chain_next(i, n)
     order = next(o for o in orders(n) if o["order_id"] == f"ORD-{i:03d}")
     return {"order_id": order["order_id"], "status": order["status"]}
+
+
+# --- code-resistant chain (#113 item 3). The templated chain above is
+# heuristically separable (a keyword regex walks it). Here EVERY order
+# carries a hand-written, frozen note in free prose — off-path notes name
+# orders too, the terminal note names a further order (only the hop count
+# says stop), and each path hop identifies the real next order by meaning:
+# a correction sequence, an oblique reference that never spells the id,
+# a contrast, an elimination. tests/test_bench_validators.py pins that
+# named heuristics (first id, last id, keyword-adjacent, negation filter,
+# the templated regex) each walk this chain to the wrong order.
+
+PROSE_PATH = ("ORD-001", "ORD-005", "ORD-017", "ORD-023", "ORD-011")
+PROSE_N = 30
+
+_PROSE_NOTES = {
+    # path
+    "ORD-001": "Spoke to the customer this morning. They first asked us to "
+    "pick this up under ORD-005, then said no, that was their sister's "
+    "account, and told us to use ORD-019 instead. An hour later they called "
+    "back: the sister had placed it after all, so the number they gave first "
+    "stands.",
+    "ORD-005": "Do not escalate to ORD-022; that ticket was closed as a "
+    "duplicate. The case moves to the order placed immediately after "
+    "ORD-016.",
+    "ORD-017": "Billing thought ORD-008 was the next step, but it was "
+    "refunded last week and is closed. ORD-023 is where this goes now.",
+    "ORD-023": "The courier swapped labels between ORD-011 and ORD-027. "
+    "ORD-027 left the warehouse on time; ours is the one that never "
+    "shipped, and that is where the case continues.",
+    "ORD-011": "Customer wants this merged into ORD-014 once the "
+    "replacement ships.",
+    # off the path: same register, same habit of naming other orders
+    "ORD-002": "Gift order. The recipient asked whether ORD-009 could ship "
+    "together with it; we said no.",
+    "ORD-003": "Address corrected by phone. Unrelated to the ORD-021 "
+    "complaint from the same street.",
+    "ORD-004": "Paid twice by mistake; the second charge was reversed "
+    "against ORD-026.",
+    "ORD-006": "Customer is waiting on ORD-012 before confirming this one.",
+    "ORD-007": "Wholesale account. Pricing follows the ORD-002 quote, not "
+    "the newer one.",
+    "ORD-008": "Refunded in full after the ORD-017 dispute. Closed.",
+    "ORD-009": "Back-ordered item. If it slips again, offer ORD-030's "
+    "substitute.",
+    "ORD-010": "No issues reported.",
+    "ORD-012": "Delivered. The customer mentioned ORD-006 is for a "
+    "different address.",
+    "ORD-013": "Fraud check passed after the ORD-024 review cleared the "
+    "card.",
+    "ORD-014": "Merge target for an older order; leave open until that one "
+    "ships.",
+    "ORD-015": "Duplicate of ORD-018 per the customer; keep both until "
+    "finance confirms.",
+    "ORD-016": "Routine. Customer also owns ORD-020.",
+    "ORD-018": "See ORD-015. Finance has not confirmed yet.",
+    "ORD-019": "Placed on the sister's account mentioned in another thread. "
+    "Nothing pending.",
+    "ORD-020": "Packed with ORD-016 to save shipping.",
+    "ORD-021": "Complaint about noise from the neighbour of ORD-003's "
+    "customer; not an order problem.",
+    "ORD-022": "Closed as a duplicate; the live case went elsewhere.",
+    "ORD-024": "Card review opened here, cleared, and noted on ORD-013.",
+    "ORD-025": "Customer asked to cancel, then kept it. ORD-029 is their "
+    "next planned purchase.",
+    "ORD-026": "Received the reversed duplicate charge from ORD-004.",
+    "ORD-027": "Shipped on time despite the label mix-up.",
+    "ORD-028": "Store credit applied from ORD-010's goodwill gesture.",
+    "ORD-029": "Pre-order. Linked to ORD-025 by the customer.",
+    "ORD-030": "Substitute stock reserved in case ORD-009 slips.",
+}
+
+
+def prose_chain_notes(n: int = DEFAULT_N) -> dict[str, str]:
+    """order_id -> note for every order; defined only at PROSE_N."""
+    if n != PROSE_N:
+        raise ValueError(f"the prose chain is hand-written for n={PROSE_N}")
+    return dict(_PROSE_NOTES)
+
+
+def prose_chain_answer(n: int = DEFAULT_N) -> dict[str, str]:
+    order = next(o for o in orders(n) if o["order_id"] == PROSE_PATH[-1])
+    return {"order_id": order["order_id"], "status": order["status"]}
+
+
+# --- CLI + MCP join (#113 item 2). A git history in the agent's cwd says
+# which orders were refunded; the order amounts live behind MCP. The log
+# decides which MCP calls happen, so the join is real: neither source
+# answers alone. Non-refund commits mention orders too (fixes, tests,
+# chores), so "every id in the log" is the wrong set.
+
+MIXED_N = 30
+
+
+def mixed_commits() -> list[str]:
+    """Commit messages, oldest first. Deterministic."""
+    out = []
+    for i in range(1, MIXED_N + 1):
+        oid = f"ORD-{i:03d}"
+        if i % 5 in (1, 3):
+            out.append(f"refund: {oid} customer return approved")
+        if i % 7 == 0:
+            out.append(f"fix: retry payment webhook for {oid}")
+        if i % 9 == 0:
+            out.append(f"test: add fixture covering {oid}")
+        if i % 10 == 4:
+            out.append(f"chore: update carrier mapping (seen on {oid})")
+    out.insert(5, "docs: describe the refund commit convention")
+    out.insert(11, "chore: bump dependencies")
+    return out
+
+
+def mixed_refunded_ids() -> list[str]:
+    return [
+        msg.split()[1] for msg in mixed_commits() if msg.startswith("refund: ")
+    ]
+
+
+def mixed_answer() -> float:
+    by_id = {o["order_id"]: o["amount"] for o in orders(MIXED_N)}
+    return round(sum(by_id[oid] for oid in mixed_refunded_ids()), 2)

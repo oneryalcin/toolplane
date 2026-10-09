@@ -17,7 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from fastmcp import FastMCP
-from orders_data import DEFAULT_N, chain_notes, orders
+from orders_data import DEFAULT_N, chain_notes, orders, prose_chain_notes
 
 mcp = FastMCP("orders")
 _N = int(os.environ.get("BENCH_ORDERS_N", str(DEFAULT_N)))
@@ -38,8 +38,9 @@ if _GRANULARITY not in {"fetch-one", "bulk"}:
 _BY_ID = {
     order["order_id"]: order for order in orders(_N, record_bytes=_RECORD_BYTES)
 }
-if os.environ.get("BENCH_NOTES") == "chain":
-    for order_id, note in chain_notes(_N).items():
+_NOTES = {"chain": chain_notes, "chain_prose": prose_chain_notes}
+if os.environ.get("BENCH_NOTES") in _NOTES:
+    for order_id, note in _NOTES[os.environ["BENCH_NOTES"]](_N).items():
         _BY_ID[order_id] = {**_BY_ID[order_id], "note": note}
 
 
