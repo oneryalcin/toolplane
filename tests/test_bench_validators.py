@@ -623,3 +623,39 @@ def test_cli_section_only_on_cli_tasks(tmp_path: Path) -> None:
         mcp_config("toolplane", tmp_path, task, 1, code)
         toml = next(tmp_path.glob(f"toolplane-bench-toolplane-{task}-*.toml")).read_text()
         assert ('[cli]\nmode = "allowlist"\nallow = ["git"]' in toml) is want
+
+
+# --- the pre-registered matrix (bench/PREREG-confirmation-2026-10.md)
+
+
+def test_prereg_verdicts_follow_the_committed_rule() -> None:
+    # a mis-coded rule would publish wrong verdicts for every hypothesis
+    from analyze_prereg import verdict
+
+    assert verdict(-0.3, -0.1, "<0") == "HOLDS"
+    assert verdict(0.1, 0.3, "<0") == "REVERSED"
+    assert verdict(-0.1, 0.1, "<0") == "UNRESOLVED"
+
+
+def test_prereg_similarity_needs_the_equivalence_margin() -> None:
+    # a noisy, wide CI must not pass a "no difference" hypothesis
+    from analyze_prereg import verdict
+
+    assert verdict(-0.01, 0.01, "~0", margin=0.02) == "HOLDS"
+    assert verdict(-0.05, 0.05, "~0", margin=0.02) == "UNRESOLVED"
+    assert verdict(0.01, 0.05, "~0", margin=0.02) == "REVERSED"
+
+
+def test_nosession_arm_turns_sessions_off(tmp_path: Path) -> None:
+    # the O2 arm silently running with sessions on would measure nothing
+    import tomllib
+
+    from run import mcp_config
+    from toolplane.config import load_toolplane_config
+
+    code = {"fixtures_dir": str(tmp_path), "python": "py", "toolplane_bin": "tp"}
+    for arm, enabled in (("toolplane_nosession", False), ("toolplane", True)):
+        mcp_config(arm, tmp_path, "loop", 1, code)
+        toml = next(tmp_path.glob(f"toolplane-bench-{arm}-loop-*.toml"))
+        config = load_toolplane_config(tomllib.loads(toml.read_text()))
+        assert config.session.enabled is enabled

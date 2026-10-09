@@ -225,6 +225,17 @@ def _tool_names(events: list[dict[str, Any]]) -> list[str]:
     return names
 
 
+def _execute_codes(events: list[dict[str, Any]]) -> list[str]:
+    return [
+        str(block.get("input", {}).get("code", ""))
+        for event in events
+        if event.get("type") == "assistant"
+        for block in event.get("message", {}).get("content", [])
+        if block.get("type") == "tool_use"
+        and block.get("name", "").endswith("execute_code")
+    ]
+
+
 def _is_dedicated_reset_code(code: str) -> bool:
     try:
         tree = ast.parse(code)
@@ -424,6 +435,7 @@ def run_session(
             prior_calls = len(calls)
             answer = _answer(result)
             used_reset_contract = _uses_reset_contract(events)
+            codes = _execute_codes(events)
             turns.append(
                 {
                     "turn": index,
@@ -440,6 +452,14 @@ def run_session(
                     "fixture_calls": turn_calls,
                     "fixture_call_count": len(turn_calls),
                     "used_reset_session": used_reset_contract,
+                    # how a turn got its data (prereg O2): fixture calls =
+                    # refetch; load_result = result store; neither = data
+                    # already in conversation or the live session
+                    "reuse_mechanism": (
+                        "refetch" if turn_calls
+                        else "result_store" if any("load_result" in c for c in codes)
+                        else "retained"
+                    ),
                     "compaction_events": sum(
                         "compact" in str(event.get("subtype", "")).lower()
                         or bool(event.get("message", {}).get("context_management"))
@@ -469,12 +489,16 @@ def run_session(
         "all_correct": all(turn["correct"] for turn in turns),
         "reuse_turns_correct": all(turn["correct"] for turn in turns[:5]),
         "reset_turn_correct": turns[-1]["correct"],
+        # the reset contract exists only where a session does: n/a (None)
+        # for the sessions-off arm, trivially met for direct
         "reset_verified": (
             (
                 turns[-1]["used_reset_session"]
                 and turns[-1]["fixture_call_count"] > 0
             )
             if arm == "toolplane"
+            else None
+            if arm == base._NO_SESSION_ARM
             else True
         ),
         "total_cost_usd": previous_cost,
@@ -608,7 +632,13 @@ def main() -> int:
         encoding="utf-8",
     )
     print(result_path)
-    return 0 if all(row["all_correct"] and row["reset_verified"] for row in rows) else 1
+    # turn 6 (reset) is unscored for the sessions-off arm: no session exists
+    return 0 if all(
+        row["reuse_turns_correct"]
+        and (row["arm"] == base._NO_SESSION_ARM or row["all_correct"])
+        and row["reset_verified"] is not False
+        for row in rows
+    ) else 1
 
 
 if __name__ == "__main__":
