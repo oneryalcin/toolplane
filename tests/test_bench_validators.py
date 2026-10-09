@@ -696,3 +696,31 @@ def test_prereg_voids_dirty_longitudinal_rows(tmp_path: Path, monkeypatch) -> No
     sessions.write_text(json.dumps({"rows": [{"arm": "toolplane", "git_dirty": True, "turns": []}]}))
     monkeypatch.setattr(sys, "argv", ["analyze", str(runs), "--longitudinal", str(sessions)])
     assert analyze_prereg.main() == 2
+
+
+def test_prereg_slope_with_an_all_failure_cell_is_unresolved() -> None:
+    # an infinite cost-per-pass cell must not read as an infinitely steep HOLDS
+    from analyze_prereg import scale_slope, verdict
+
+    rows = [
+        {"task": t, "arm": "direct", "model": "m", "cost_usd": 0.1 * n,
+         "correct": t != "loop5"}
+        for t, n in (("loop5", 5), ("loop20", 20), ("loop", 30), ("loop100", 100))
+        for _ in range(4)
+    ]
+    point, lo, hi = scale_slope(rows, "m", ("direct",))
+    assert verdict(lo, hi, ">0") == "UNRESOLVED"
+
+
+def test_prereg_wall_time_counts_slow_failures() -> None:
+    # dropping failed runs would hide a slow arm behind its fast passes
+    from analyze_prereg import verdict, wall_diff
+
+    def row(arm, wall, ok):
+        return {"task": "loop_lat100", "arm": arm, "model": "m", "wall_s": wall, "correct": ok}
+
+    rows = [row("toolplane", 1, True)] * 2 + [row("toolplane", 100, False)] * 2 + [
+        row("direct", 10, True)
+    ] * 4
+    point, lo, hi = wall_diff(rows, "m", "loop_lat100")
+    assert verdict(lo, hi, "<0") != "HOLDS"

@@ -75,14 +75,14 @@ The analysis script implements this rule exactly.
 | H1a | `single` | cost/pass diff | >0 | small tasks favor direct |
 | H1b | `loop5` | cost/pass diff | >0 | small tasks favor direct |
 | H2a | `loop100` | cost/pass diff | <0 | large fine-grained tasks favor tp |
-| H2b | `loop5`, `loop20`, `loop` (N=30 from block B's 0-byte fetch-one cell), `loop100` | slope of cost/pass on N, tp − direct | <0 | tp's cost is flatter than direct's |
+| H2b | `loop5`, `loop20`, `loop` (N=30 from block B's 0-byte fetch-one cell), `loop100` | OLS slope of cost/pass on N, tp − direct; undefined if any cell has no passing run | <0 | tp's cost is flatter than direct's |
 | H2c | as H2b, direct only | slope | >0 | direct's cost grows with N |
 | H3 | `loop` fetch-one at 0, 2,000, 20,000 bytes | cost/pass diff | <0 at each | fetch-one favors tp |
 | H3-growth | fetch-one, 20,000 vs 0 bytes | (diff at 20 KB) − (diff at 0) | <0 | tp's advantage grows with payload |
 | H4 | `loop` bulk at 0, 2,000, 20,000 bytes | cost/pass diff | >0 at each | a bulk endpoint favors direct |
 | H5 | `chain`, `chain_prose` | cost/pass diff | >0 | adaptive chains favor direct |
 | H5-walk | same | runs walking one order per call | ≥7/8 per arm | neither arm shortcuts |
-| H6a | `loop_lat100` | median wall diff (s) | <0 | taught fan-out beats native batching on wall time |
+| H6a | `loop_lat100` | median wall diff (s), over all runs including failures | <0 | taught fan-out beats native batching on wall time |
 | H6b | `loop_lat100` | cost/pass diff | not >0 (holds unless the CI lies wholly above 0) | …without costing more |
 | H7a | `refunds`: `toolplane_cli` (no shell) vs direct | cost/pass diff | <0 | CLI + MCP join without a shell favors tp |
 | H7b | `refunds`: tp (shell available) vs direct | cost/pass diff | >0 | with a shell, agents bypass the binding |

@@ -150,8 +150,10 @@ def scale_slope(rows, model, arms=("toolplane", "direct")):
 
     def slope(g, arm):
         pts = [(_SCALE[t], _cost_of_pass(g[f"{arm}:{t}"])) for t in _SCALE]
-        if any(y == float("inf") for _, y in pts):
-            return float("inf")
+        # a cell with no passing run has no cost per pass: the slope is
+        # undefined (NaN -> UNRESOLVED), never an infinitely steep HOLDS
+        if any(math.isinf(y) for _, y in pts):
+            return math.nan
         return _slope(pts)
 
     if len(arms) == 1:
@@ -174,8 +176,10 @@ def payload_growth(rows, model):
 
 
 def wall_diff(rows, model, task):
+    # every registered run counts, failures and timeouts included: a slow
+    # failure is part of what an arm costs in wall time
     groups = {
-        arm: [r["wall_s"] for r in cell(rows, task=task, arm=arm, model=model) if r["correct"]]
+        arm: [r["wall_s"] for r in cell(rows, task=task, arm=arm, model=model)]
         for arm in ("toolplane", "direct")
     }
     if not all(groups.values()):
