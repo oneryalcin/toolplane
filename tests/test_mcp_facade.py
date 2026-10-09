@@ -1257,3 +1257,17 @@ def test_cli_surface_offers_cli_run_only_where_it_binds() -> None:
     ).cli_surface()
 
     assert surface == "1 more allowed binary — see toolplane://namespace"
+
+
+def test_a_binary_named_cli_run_cannot_shadow_the_helper() -> None:
+    # a flat binding named cli_run replaced monty's helper, so the
+    # advertised cli_run('docker-compose', ...) ran the wrong binary
+    runtime = Toolplane(
+        default_backend="monty", ambient_cli_allowlist=["cli_run", "git"]
+    )
+
+    result = run(
+        runtime.execute("return (await cli_run('git', '--version', {}))['ok']")
+    )
+
+    assert result.value is True, result.error
