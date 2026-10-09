@@ -1221,7 +1221,9 @@ def test_descriptions_unchanged_without_cli_bindings() -> None:
 
 def test_cli_surface_never_advertises_an_unbound_flat_name() -> None:
     # `await docker-compose(...)` is a NameError; only cli_run reaches it
-    surface = Toolplane(ambient_cli_allowlist=["docker-compose"]).cli_surface()
+    surface = Toolplane(
+        default_backend="monty", ambient_cli_allowlist=["docker-compose"]
+    ).cli_surface()
 
     assert "`await cli_run('docker-compose'," in surface
     assert "`await docker-compose(" not in surface
@@ -1238,7 +1240,7 @@ def test_cli_surface_does_not_echo_non_binary_names() -> None:
 
 def test_cli_surface_routes_a_capability_shadowed_binary_to_cli_run() -> None:
     # capabilities bind first: `await git(...)` would call this capability
-    runtime = Toolplane(ambient_cli_allowlist=["git"])
+    runtime = Toolplane(default_backend="monty", ambient_cli_allowlist=["git"])
 
     @runtime.tool(name="git")
     def git(subcommand: str = "") -> str:
@@ -1246,3 +1248,12 @@ def test_cli_surface_routes_a_capability_shadowed_binary_to_cli_run() -> None:
         return ""
 
     assert runtime.cli_surface().startswith("via cli_run only: git")
+
+
+def test_cli_surface_offers_cli_run_only_where_it_binds() -> None:
+    # cli_run is a monty binding; on local_unsafe it is a NameError
+    surface = Toolplane(
+        default_backend="local_unsafe", ambient_cli_allowlist=["docker-compose"]
+    ).cli_surface()
+
+    assert surface == "1 more allowed binary — see toolplane://namespace"
