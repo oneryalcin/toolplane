@@ -112,10 +112,16 @@ allow = ["git", "docker-compose"]
 ```
 
 ```python
+# default monty backend
+version = await cli_run("docker-compose", "version")
+# local_unsafe / pyodide-deno
 version = await cli("docker-compose").version()
 ```
 
-Only safe Python identifiers become top-level aliases.
+Only safe Python identifiers become top-level aliases. Flag values render as
+two arguments (`--output file.txt`), except git's long flags, which bind
+inline (`await git("log", format="%h %s")` runs `git log --format=%h %s`,
+the only form git's `--format`/`--pretty` accept; cli-to-py ≥ 0.2.1).
 
 !!! warning "`ambient` is for trusted local development"
 
