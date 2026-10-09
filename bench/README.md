@@ -15,6 +15,10 @@ it lose?
   `--hybrid`, which additionally re-exports every capability as an ordinary
   MCP tool. The agent can call a native tool for single/adaptive tasks or
   `execute_code` for loops — the harness measures which it chooses.
+- **toolplane_cli** (#113): the toolplane facade with the client's shell
+  and file built-ins removed (`RESTRICTED_BUILTINS`), so a CLI + MCP task
+  must go through toolplane's CLI bindings. The plain `toolplane` arm keeps
+  the shell and records which surface the agent picks.
 
 Fairness constraints: same model, byte-identical prompts, same deterministic
 dataset (`orders_data.py`, formula-based — the server and the validator
@@ -57,6 +61,16 @@ served from the working tree and always ran direct first.
   docs piece). The templated notes are heuristically separable — a
   keyword regex can walk the chain in one snippet — so this measures
   what agents choose to do, not impossibility; disclosed in the docs.
+- `chain_prose` — the code-resistant counterpart (#113 item 3). Every
+  order has a hand-written prose note, the next order is identified by
+  meaning (correction, oblique reference, elimination), and the terminal
+  note names a further order. `tests/test_bench_validators.py` pins five
+  named heuristics to fail on it. N=30 only.
+- `refunds` — a CLI + MCP join (#113 item 2). The run's cwd is a seeded,
+  byte-identical git repo whose `refund:` commits name the refunded
+  orders; amounts live behind MCP. The toolplane arms get a `[cli]`
+  allowlist of `git`. Claude Code only, and not with `--restrict-builtins`:
+  the direct arm needs its shell, and the harness refuses those lanes.
 - `loop_lat100` — `loop` with 100ms per-call server latency
   (`BENCH_TOOL_LATENCY_MS`, async so the fixture never serializes);
   the #109 gate cell. Pre-port monty awaited sequentially (N x latency);
