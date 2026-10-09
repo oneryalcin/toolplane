@@ -623,3 +623,137 @@ def test_cli_section_only_on_cli_tasks(tmp_path: Path) -> None:
         mcp_config("toolplane", tmp_path, task, 1, code)
         toml = next(tmp_path.glob(f"toolplane-bench-toolplane-{task}-*.toml")).read_text()
         assert ('[cli]\nmode = "allowlist"\nallow = ["git"]' in toml) is want
+
+
+# --- the pre-registered matrix (bench/PREREG-confirmation-2026-10.md)
+
+
+def test_prereg_verdicts_follow_the_committed_rule() -> None:
+    # a mis-coded rule would publish wrong verdicts for every hypothesis
+    from analyze_prereg import verdict
+
+    assert verdict(-0.3, -0.1, "<0") == "HOLDS"
+    assert verdict(0.1, 0.3, "<0") == "REVERSED"
+    assert verdict(-0.1, 0.1, "<0") == "UNRESOLVED"
+
+
+def test_prereg_similarity_needs_the_equivalence_margin() -> None:
+    # a noisy, wide CI must not pass a "no difference" hypothesis
+    from analyze_prereg import verdict
+
+    assert verdict(-0.01, 0.01, "~0", margin=0.02) == "HOLDS"
+    assert verdict(-0.05, 0.05, "~0", margin=0.02) == "UNRESOLVED"
+    assert verdict(0.01, 0.05, "~0", margin=0.02) == "REVERSED"
+
+
+def test_nosession_arm_turns_sessions_off(tmp_path: Path) -> None:
+    # the O2 arm silently running with sessions on would measure nothing
+    import tomllib
+
+    from run import mcp_config
+    from toolplane.config import load_toolplane_config
+
+    code = {"fixtures_dir": str(tmp_path), "python": "py", "toolplane_bin": "tp"}
+    for arm, enabled in (("toolplane_nosession", False), ("toolplane", True)):
+        mcp_config(arm, tmp_path, "loop", 1, code)
+        toml = next(tmp_path.glob(f"toolplane-bench-{arm}-loop-*.toml"))
+        config = load_toolplane_config(tomllib.loads(toml.read_text()))
+        assert config.session.enabled is enabled
+
+
+def test_prereg_counts_timeouts_as_costly_failures() -> None:
+    # a timeout row has model=None; dropping it would hide a failure and
+    # flatter its arm's cost per correct answer
+    from analyze_prereg import _runs, cell
+
+    rows = [
+        {"task": "loop", "arm": "toolplane", "model": "claude-haiku-5-5",
+         "requested_model": "claude-haiku-5-5", "cost_usd": 0.02, "correct": True},
+        {"task": "loop", "arm": "toolplane", "model": None,
+         "requested_model": "claude-haiku-5-5", "cost_usd": None, "correct": False},
+    ]
+    group = cell(rows, task="loop", arm="toolplane", model="claude-haiku-5-5")
+    assert _runs(group) == [(0.02, True), (0.02, False)]
+
+
+def test_prereg_all_failure_resamples_read_unresolved() -> None:
+    # inf - inf draws must not sort into an inverted interval
+    from analyze_prereg import _cost_of_pass, bootstrap, verdict
+
+    groups = {"arm": [(0.1, True), (0.1, False)], "direct": [(0.1, True), (0.1, False)]}
+    point, lo, hi = bootstrap(
+        groups, lambda g: _cost_of_pass(g["arm"]) - _cost_of_pass(g["direct"])
+    )
+    assert verdict(lo, hi, "<0") == "UNRESOLVED"
+
+
+def test_prereg_voids_dirty_longitudinal_rows(tmp_path: Path, monkeypatch) -> None:
+    import analyze_prereg
+
+    runs = tmp_path / "run.json"
+    runs.write_text(json.dumps([]))
+    sessions = tmp_path / "longitudinal.json"
+    sessions.write_text(json.dumps({"rows": [{"arm": "toolplane", "git_dirty": True, "turns": []}]}))
+    monkeypatch.setattr(sys, "argv", ["analyze", str(runs), "--longitudinal", str(sessions)])
+    assert analyze_prereg.main() == 2
+
+
+def test_prereg_slope_with_an_all_failure_cell_is_unresolved() -> None:
+    # an infinite cost-per-pass cell must not read as an infinitely steep HOLDS
+    from analyze_prereg import scale_slope, verdict
+
+    rows = [
+        {"task": t, "arm": "direct", "model": "m", "cost_usd": 0.1 * n,
+         "correct": t != "loop5"}
+        for t, n in (("loop5", 5), ("loop20", 20), ("loop", 30), ("loop100", 100))
+        for _ in range(4)
+    ]
+    point, lo, hi = scale_slope(rows, "m", ("direct",))
+    assert verdict(lo, hi, ">0") == "UNRESOLVED"
+
+
+def test_prereg_wall_time_counts_slow_failures() -> None:
+    # dropping failed runs would hide a slow arm behind its fast passes
+    from analyze_prereg import verdict, wall_diff
+
+    def row(arm, wall, ok):
+        return {"task": "loop_lat100", "arm": arm, "model": "m", "wall_s": wall, "correct": ok}
+
+    rows = [row("toolplane", 1, True)] * 2 + [row("toolplane", 100, False)] * 2 + [
+        row("direct", 10, True)
+    ] * 4
+    point, lo, hi = wall_diff(rows, "m", "loop_lat100")
+    assert verdict(lo, hi, "<0") != "HOLDS"
+
+
+def test_prereg_report_survives_a_timeout_row() -> None:
+    # model=None on a timeout must not crash the registered report
+    from analyze_prereg import report
+
+    base = {"task": "single", "m_servers": 1, "record_bytes": 0, "granularity": "fetch-one",
+            "builtins": "default", "requested_model": "m", "wall_s": 9.0, "tool_calls": 3,
+            "tool_call_names": [], "model_requests": 3, "input_tokens": 10,
+            "uncached_input_tokens": 5, "output_tokens": 2, "peak_context_tokens": 10}
+    rows = [
+        {**base, "arm": "direct", "model": "m", "cost_usd": 0.01, "correct": True},
+        {**base, "arm": "toolplane", "model": "m", "cost_usd": 0.02, "correct": True},
+        {**base, "arm": "toolplane", "model": None, "cost_usd": None, "correct": False},
+    ]
+    assert "| H1a |" in report(rows, [], "m", "s")
+
+
+def test_prereg_lists_every_imputed_timeout() -> None:
+    # the registration promises every imputation is listed, per cell
+    from analyze_prereg import report
+
+    base = {"task": "single", "m_servers": 1, "record_bytes": 0, "granularity": "fetch-one",
+            "builtins": "default", "requested_model": "m", "wall_s": 9.0, "tool_calls": 3,
+            "tool_call_names": [], "model_requests": 3, "input_tokens": 10,
+            "uncached_input_tokens": 5, "output_tokens": 2, "peak_context_tokens": 10}
+    timeout = {**base, "arm": "toolplane", "model": None, "cost_usd": None, "correct": False}
+    rows = [
+        {**base, "arm": "direct", "model": "m", "cost_usd": 0.01, "correct": True},
+        {**base, "arm": "toolplane", "model": "m", "cost_usd": 0.02, "correct": True},
+        timeout, timeout,
+    ]
+    assert '"m/single/M1/B0/fetch-one/default/toolplane": 2' in report(rows, [], "m", "s")

@@ -510,6 +510,12 @@ _NAMED_ARM = "toolplane_named"
 # the agent chooses; this arm measures what the binding path costs.
 _NO_SHELL_ARM = "toolplane_cli"
 
+# the SAME facade with monty sessions off ([session] enabled = false):
+# isolates what persistence itself buys in the longitudinal study (the
+# prereg's O2). Variables vanish between runs; the agent must refetch or
+# use the result store.
+_NO_SESSION_ARM = "toolplane_nosession"
+
 
 def mcp_config(
     arm: str,
@@ -549,7 +555,9 @@ def mcp_config(
     # facade. "hybrid" adds --hybrid (re-export the WHOLE registry, #114's
     # held baseline); "curated" adds a [hybrid] config section that
     # re-exports ONLY the orders tools (#125 — the selective form).
-    if arm in ("toolplane", _NAMED_ARM, _NO_SHELL_ARM, "hybrid") or arm in _CURATED_ARMS:
+    if arm in (
+        "toolplane", _NAMED_ARM, _NO_SHELL_ARM, _NO_SESSION_ARM, "hybrid"
+    ) or arm in _CURATED_ARMS:
         # generated with absolute paths: every process here runs from a
         # scratch cwd, so nothing may be cwd-relative
         toml_path = (
@@ -560,6 +568,8 @@ def mcp_config(
             )
         )
         sections = []
+        if arm == _NO_SESSION_ARM:
+            sections.append("[session]\nenabled = false\n")
         if TASKS[task].get("cli"):
             # the CLI half of a mixed task: the facade binds exactly the
             # binaries the task needs, nothing ambient
@@ -960,12 +970,21 @@ def _bootstrap_cost_of_pass_diff(
     """
     rng = random.Random(seed)
     point = _cost_of_pass(arm) - _cost_of_pass(direct)
+    # a draw where neither arm passes is inf - inf: undefined, discarded;
+    # sorting NaNs would return an inverted, meaningless interval
     diffs = sorted(
-        _cost_of_pass(rng.choices(arm, k=len(arm)))
-        - _cost_of_pass(rng.choices(direct, k=len(direct)))
-        for _ in range(resamples)
+        d
+        for d in (
+            _cost_of_pass(rng.choices(arm, k=len(arm)))
+            - _cost_of_pass(rng.choices(direct, k=len(direct)))
+            for _ in range(resamples)
+        )
+        if d == d
     )
-    return point, diffs[int(0.025 * resamples)], diffs[int(0.975 * resamples) - 1]
+    if not diffs:
+        return point, float("nan"), float("nan")
+    n = len(diffs)
+    return point, diffs[int(0.025 * n)], diffs[int(0.975 * n) - 1]
 
 
 def _bootstrap_section(rows, arms, m_values, b_values, g_values) -> list[str]:
@@ -1601,6 +1620,10 @@ def main() -> int:
                                     )
                                     row["client"] = "claude"
                                 row["client_version"] = client_version
+                                # what was asked for: a timeout row has
+                                # model=None (no init event), and analysis
+                                # must still find it in its cell
+                                row["requested_model"] = args.model
                                 row["arm_order"] = "->".join(ordered_arms)
                                 row.update(prov)
                                 rows.append(row)
