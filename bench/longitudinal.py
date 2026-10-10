@@ -247,8 +247,9 @@ def _is_dedicated_reset_code(code: str) -> bool:
     if not tree.body:
         return False
     first = tree.body[0]
+    # `await reset_session()` or `return await reset_session()`
     resets_first = (
-        isinstance(first, ast.Expr)
+        isinstance(first, (ast.Expr, ast.Return))
         and isinstance(first.value, ast.Await)
         and isinstance(first.value.value, ast.Call)
         and isinstance(first.value.value.func, ast.Name)

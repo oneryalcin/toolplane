@@ -146,6 +146,11 @@ def test_reset_detector_rejects_search_and_same_execution() -> None:
     )
 
 
+def test_reset_detector_accepts_returned_reset() -> None:
+    # Sonnet 5.5 wrote this form in 2 of 8 sessions (#175); both reset
+    assert longitudinal._is_dedicated_reset_code("return await reset_session()")
+
+
 def test_reset_detector_rejects_fixture_work_before_reset() -> None:
     def execute(code: str, tool_id: str) -> dict:
         return {
