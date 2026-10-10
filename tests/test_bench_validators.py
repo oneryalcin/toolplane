@@ -811,7 +811,7 @@ def _session(arm, cost, ok=True, error=None):
         for t in range(1, 7)
     ]
     return {"arm": arm, "turns": turns, "reuse_turns_correct": ok and not error,
-            "error": error, "reset_verified": True}
+            "error": error, "reset_verified": True, "exit_code": 0}
 
 
 def test_persistence_gate_blocks_a_verdict_read_off_survivors() -> None:
@@ -883,3 +883,50 @@ def test_longitudinal_keeps_other_sessions_when_one_dies(tmp_path: Path, monkeyp
     (result,) = (tmp_path / "results").glob("longitudinal-*.json")
     rows = json.loads(result.read_text())["rows"]
     assert [(r["arm"], bool(r.get("error"))) for r in rows] == [("direct", False), ("toolplane", True)]
+
+
+def _verdict_of(sessions, prefix):
+    from analyze_persistence import session_hypotheses
+
+    hyps, _, _ = session_hypotheses(sessions)
+    return next(h for h in hyps if h[0].startswith(prefix))[4]
+
+
+def test_persistence_short_arm_gets_no_verdict() -> None:
+    # 7 of 7 passing sessions must not stand in for the registered 8
+    sessions = [_session("direct", 0.05) for _ in range(8)] + [
+        _session("toolplane", 0.01) for _ in range(7)
+    ]
+    assert _verdict_of(sessions, "P2").startswith("UNRESOLVED (incomplete")
+
+
+def test_persistence_a_death_cannot_decide_a_verdict(monkeypatch) -> None:
+    # direct's costs straddle toolplane's: where its one died session lands
+    # decides the median, so the verdict must not stand. The bootstrap is
+    # stubbed to a zero-width CI at the point so only the imputation rule
+    # is under test.
+    import analyze_persistence
+
+    def point_ci(groups, stat):
+        x = stat(groups)
+        return x, x, x
+
+    monkeypatch.setattr(analyze_persistence, "bootstrap", point_ci)
+    sessions = [_session("toolplane", 0.05 / 5) for _ in range(8)] + [
+        _session("direct", c / 5) for c in (0.02, 0.02, 0.02, 0.02, 0.10, 0.10, 0.10)
+    ] + [_session("direct", 0, error="TimeoutError")]
+    assert _verdict_of(sessions, "P2").startswith("UNRESOLVED (depends")
+
+
+def test_persistence_nonzero_exit_fails_the_gate() -> None:
+    from analyze_persistence import passed
+
+    assert not passed({**_session("toolplane", 0.01), "exit_code": 1})
+
+
+def test_persistence_voids_rows_from_different_code() -> None:
+    from analyze_persistence import void_reasons
+
+    sessions = [{**_session("direct", 0.05), "git_sha": sha, "requested_model": "claude-sonnet-5-5",
+                 "filler": "varied"} for sha in ("aaa", "bbb")]
+    assert any("git_sha" in r for r in void_reasons([], sessions))

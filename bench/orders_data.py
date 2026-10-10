@@ -24,7 +24,6 @@ _WORDS = (
     "reissued", "follow", "up", "call", "scheduled", "email", "sent",
     "ticket", "escalated", "resolved", "pending", "review", "audit", "trail",
     "entry", "duplicate", "merged", "vendor", "contact", "reference",
-    ").split(",
 )
 
 

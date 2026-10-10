@@ -29,10 +29,15 @@ from analyze_prereg import EQUIVALENCE_MARGIN, _fmt, _tally, bootstrap, cost_dif
 MODEL = "claude-sonnet-5-5"
 FILLER = "varied"
 ARMS = ("direct", "toolplane", "toolplane_nosession")
+# every verdict reads exactly this many sessions (or slice runs) per arm
+REPS = 8
 # an arm's cost and context statistics are read only when at least this
 # share of its sessions passed turns 1-5 with no error
 PASS_GATE = 7 / 8
+TURNS = 6
 TURNS_1_5, REUSE = range(1, 6), range(2, 6)
+# provenance that must be one value across every input row
+UNIFORM = ("git_sha", "wheel_sha256", "fixtures_sha256", "harness_sha256")
 
 
 def verdict(lo: float, hi: float, predicted: str, margin: float | None = None) -> str:
@@ -50,8 +55,16 @@ def verdict(lo: float, hi: float, predicted: str, margin: float | None = None) -
     return "UNRESOLVED"
 
 
+def died(session) -> bool:
+    return bool(session.get("error")) or len(session["turns"]) != TURNS
+
+
 def passed(session) -> bool:
-    return not session.get("error") and bool(session["reuse_turns_correct"])
+    return (
+        not died(session)
+        and session.get("exit_code") == 0
+        and bool(session["reuse_turns_correct"])
+    )
 
 
 def _stat(session, field, turns):
@@ -72,20 +85,39 @@ def session_hypotheses(sessions):
             if not n:
                 out.append((label, None, None, None, f"NOT RUN ({arm})"))
                 return
+            if n != REPS:
+                out.append((label, None, None, None, f"UNRESOLVED (incomplete: {arm} has {n}/{REPS})"))
+                return
             if ok < PASS_GATE * n:
                 out.append((label, None, None, None, f"UNRESOLVED (gate: {arm} passed {ok}/{n})"))
                 return
-        # sessions that died have no turns: they count against the gate,
-        # never in the statistic
-        groups = {
-            arm: [_stat(s, field, turns) for s in by_arm[arm] if not s.get("error")]
+        # a died session has no value. It is imputed at both extremes of
+        # its arm's observed values -- once pushing the difference down
+        # (a at min, b at max), once up -- and a verdict stands only if
+        # both agree; so a death can never decide a verdict
+        known = {
+            arm: [_stat(s, field, turns) for s in by_arm[arm] if not died(s)]
             for arm in (a, b)
         }
-        point, lo, hi = bootstrap(
-            groups, lambda g: statistics.median(g[a]) - statistics.median(g[b])
-        )
-        margin = EQUIVALENCE_MARGIN * statistics.median(groups[b])
-        out.append((label, point, lo, hi, verdict(lo, hi, predicted, margin)))
+        deaths = {arm: sum(died(s) for s in by_arm[arm]) for arm in (a, b)}
+
+        def run(fill_a, fill_b):
+            groups = {a: known[a] + [fill_a(known[a])] * deaths[a],
+                      b: known[b] + [fill_b(known[b])] * deaths[b]}
+            point, lo, hi = bootstrap(
+                groups, lambda g: statistics.median(g[a]) - statistics.median(g[b])
+            )
+            margin = EQUIVALENCE_MARGIN * statistics.median(groups[b])
+            return point, lo, hi, verdict(lo, hi, predicted, margin)
+
+        low = run(min, max)
+        if not any(deaths.values()):
+            out.append((label, *low))
+            return
+        high = run(max, min)
+        v = low[3] if low[3] == high[3] else f"UNRESOLVED (depends on {sum(deaths.values())} died session(s))"
+        point = statistics.median(known[a]) - statistics.median(known[b])
+        out.append((label, point, min(low[1], high[1]), max(low[2], high[2]), v))
 
     med_diff("P1 peak context, tp - direct (turns 1-5)", "toolplane", "direct",
              "peak_request_context_tokens", TURNS_1_5, "<0")
@@ -108,7 +140,9 @@ def slice_hypotheses(rows):
         if r is None:
             out.append((label, None, None, None, "NOT RUN"))
             continue
-        point, lo, hi, v, *_ = r
+        point, lo, hi, v, n_tp, n_direct = r
+        if (n_tp, n_direct) != (REPS, REPS):
+            v = f"UNRESOLVED (incomplete: {n_tp}/{n_direct} runs, needs {REPS}/{REPS})"
         out.append((label, point, lo, hi, v))
     return out
 
@@ -123,6 +157,13 @@ def void_reasons(rows, sessions) -> list[str]:
     models = {x.get("requested_model", x.get("model")) for x in [*rows, *sessions]}
     if models - {MODEL}:
         reasons.append(f"rows for other models {sorted(models - {MODEL})}")
+    for key in UNIFORM:
+        values = {x.get(key) for x in [*rows, *sessions]}
+        if len(values) > 1:
+            reasons.append(f"rows mix {key} values {sorted(map(str, values))}")
+    harnesses = {s.get("longitudinal_harness_sha256") for s in sessions}
+    if len(harnesses) > 1:
+        reasons.append("sessions mix longitudinal harness versions")
     fillers = {s.get("filler", "repeat") for s in sessions}
     if fillers - {FILLER}:
         reasons.append(f"sessions with filler {sorted(fillers - {FILLER})}")
@@ -146,7 +187,7 @@ def report(rows, sessions) -> str:
             "|---|---|---|---|---|---|---|---|"]
     for arm in ARMS:
         ss = by_arm[arm]
-        done = [s for s in ss if not s.get("error")]
+        done = [s for s in ss if not died(s)]
         med = (lambda xs: f"{statistics.median(xs):.4f}" if xs else "—")
         out.append(
             f"| {arm} | {gate[arm][0]}/{gate[arm][1]} | {len(ss) - len(done)} "

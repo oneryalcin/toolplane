@@ -579,12 +579,13 @@ async def snapshot_cell(size: int, repeats: int = 7) -> dict[str, Any]:
     }
 
 
-def _failed_session(arm: str, exc: Exception) -> dict[str, Any]:
+def _failed_session(arm: str, exc: Exception, transcript: Path) -> dict[str, Any]:
     """A session that died (turn timeout, client exit): its turns and cost
     are unknown (the partial transcript is kept), and it counts as failed."""
     return {
         "arm": arm,
         "error": f"{type(exc).__name__}: {exc}",
+        "transcript": str(transcript),
         "client_version": None,
         "turns": [],
         "all_correct": False,
@@ -632,19 +633,16 @@ def main() -> int:
         for rep in range(args.reps):
             for arm in base.arm_order(arms, rep):
                 print(f"[{rep + 1}/{args.reps}] longitudinal/{arm}", flush=True)
+                transcript = transcript_dir / f"{arm}-rep{rep + 1}.jsonl"
                 try:
                     row = run_session(
-                        arm,
-                        args.model,
-                        workdir,
-                        code,
-                        transcript_dir / f"{arm}-rep{rep + 1}.jsonl",
-                        args.filler,
+                        arm, args.model, workdir, code, transcript, args.filler
                     )
                 except Exception as exc:  # noqa: BLE001
                     # one failed session must not discard the others: the
-                    # result file is written once, at the end
-                    row = _failed_session(arm, exc)
+                    # result file is written once, at the end (exit 1 still
+                    # leaves a complete, analyzable file)
+                    row = _failed_session(arm, exc, transcript)
                 row.update(
                     {
                         "rep": rep + 1,
