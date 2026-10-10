@@ -260,7 +260,7 @@ def _tally(values) -> dict[str, int]:
 def _fmt(x: float) -> str:
     if math.isnan(x):
         return "undefined"
-    return "inf" if math.isinf(x) else f"{x:+.4f}"
+    return f"{x:+}" if math.isinf(x) else f"{x:+.4f}"
 
 
 def report(rows, sessions, haiku: str, sonnet: str) -> str:
