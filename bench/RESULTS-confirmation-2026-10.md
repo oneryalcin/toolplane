@@ -66,8 +66,8 @@ This doc reads those verdicts. It doesn't change any of them.
 | H7a | `toolplane_cli` beats direct on refunds | UNRESOLVED, **point against** | +$0.0008 (+12%); CI [−0.00003, +0.0016] |
 | H7b | with a shell, toolplane is costlier | HOLDS, **by a correctness collapse** | toolplane 2/8 (see below) |
 | H8 | no schema tax (direct M=15 vs M=1) | REVERSED, **inside the margin** | +3% (see below) |
-| S1 | Sonnet 5.5 single favors direct | HOLDS | n=2 |
-| S2 | Sonnet 5.5 chain_prose favors direct | HOLDS | n=2 |
+| S1 | Sonnet 5.5 single favors direct | HOLDS, **descriptive only** | n=2 (see below) |
+| S2 | Sonnet 5.5 chain_prose favors direct | HOLDS, **descriptive only** | n=2 (see below) |
 | O3, H9a/b, O2a/b | — | DROPPED (A1) | — |
 
 Summary: of 22 tested rows (H5-walk counted once), 19 HOLD, 2 are UNRESOLVED and 1 is
@@ -156,6 +156,18 @@ reported as a reversal.
 Toolplane's own M=15 effect is visible in the cells table ($0.0054 →
 $0.0062, +14%). H8 doesn't test it.
 
+### S1/S2: two runs per arm prove little
+
+A1 cut the Sonnet 5.5 slice to 2 runs per arm. With 2 runs, the
+bootstrap can only resample the two observed values, so its "95% CI"
+spans the observed runs and is not a real interval. "HOLDS" then means
+only that both toolplane runs cost more than both direct runs, which is
+easy to get by chance. Read S1/S2 as a quick look in the same direction
+as Haiku, not as evidence that the findings hold across models. Topping
+the slice up now would be an unregistered change made after seeing the
+data, so it waits for the Sonnet 5.5 follow-up, with at least 8 runs per
+arm.
+
 ### H2: "flat" was too strong
 
 Toolplane's slope is 4.8e-6 $/record, with CI [4e-7, 9.6e-6]. That is
@@ -168,11 +180,14 @@ flatter" is what the data shows.
 
 These claims now rest on registered, clean, n=8 cells:
 
-- **The small-task loss** (H1, S1).
+- **The small-task loss** (H1).
 - **The large-N win** (H2a): it is real by N=100.
 - **Payload under fetch-one** (H3 at 0 B and 20 KB), and **the bulk
   reversal** (H4).
-- **The stepwise-chain loss** (H5, S2).
+- **The stepwise-chain loss** (H5).
+
+All of these are on Haiku 5.5. Sonnet 5.5 (S1/S2) points the same way,
+but at 2 runs per arm it is not evidence across models.
 
 Treat the following as open or reframed:
 
