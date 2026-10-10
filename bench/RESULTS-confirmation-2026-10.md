@@ -22,12 +22,27 @@ This doc reads those verdicts. It doesn't change any of them.
 - **Client.** Claude Code 2.1.296 on every row, with auto-update off. The
   3 rows with no version are timeouts, which carry no version by A1
   design. The analysis did not VOID the run.
-- **Spend.** $4.81 against the $8 cap and the $4.6 projection. B1 came in
-  over its projection ($1.49 against $0.95) because the 2 KB direct cell
-  collapsed (see H3).
+- **Spend.** The matrix rows record $4.81, against the $4.6 projection.
+  That excludes the 3 timeout runs, whose cost the client never reported.
+  The 5 runs in that cell that finished cost $0.09–$0.66 each. Per block:
+  A $0.38, B1 $1.49, B2 $1.70, C $0.21, D $0.10, E $0.17, F $0.10,
+  S $0.66. B1 ran over because the 2 KB direct cell collapsed (see H3).
+  Calibration added $0.73 that was recorded ($0.42 in runs, $0.30 in the
+  longitudinal session), plus two calibration timeouts of unknown cost.
+  Total recorded spend is $5.53. If each timeout cost as much as the
+  costliest finished run in its cell ($0.66), the total would be about
+  $7.52, still under the $8 cap.
 - **Models.** Haiku 5.5 for A–F; Sonnet 5.5 (`claude-sonnet-5-5`) for S.
-- **Analysis change.** One change after registration, display only:
-  `_fmt` used to print `inf` with no sign. It now prints `-inf` or
+- **Analysis changes after registration.** The registering commit was
+  `629d7ec`. Four review commits followed before the merge (`a8538a9`,
+  `5541a25`, `b98731a`, `d864390`) and were never logged as amendments.
+  They tightened the rules: a timeout is priced at the cell maximum
+  instead of free; more than 5% undefined draws means UNRESOLVED; a scale
+  cell with no passing run leaves the slope undefined; wall time counts
+  every run. All four landed before any data (calibration ran at the
+  merge, `c0b98b6`). The independent recompute checked each against this
+  dataset, and none flips a verdict. After the data, one display-only
+  change: `_fmt` printed infinities with no sign and now prints `-inf` or
   `+inf`. No verdict changes.
 
 ## Verdicts
@@ -44,63 +59,80 @@ This doc reads those verdicts. It doesn't change any of them.
 | H3 20 KB | fetch-one favors toolplane | HOLDS | $0.0079 vs $0.3998, 50x cheaper; n=4 |
 | H3 growth | advantage grows with payload | HOLDS | 20 KB vs 0 B only; 2 KB doesn't fit a monotonic story |
 | H4 0/2 KB/20 KB | bulk favors direct | HOLDS ×3 | the 20 KB lower bound rounds to +0.0000 (n=4) |
-| H5 | adaptive chains favor direct | HOLDS ×2 | +11–12% on both fixtures |
+| H5 | adaptive chains favor direct | HOLDS ×2 | +12% on both fixtures |
 | H5-walk | no shortcut | HOLDS 8/8 ×4 | every arm walked hop by hop |
 | H6a | fan-out beats native on wall time | UNRESOLVED | −1.45 s median, CI [−3.6, +1.35] |
 | H6b | …without costing more | HOLDS | toolplane is in fact cheaper, −$0.0006 |
-| H7a | `toolplane_cli` beats direct on refunds | UNRESOLVED, **point against** | +$0.0008 (+12%); CI [−0.0000, +0.0016] |
+| H7a | `toolplane_cli` beats direct on refunds | UNRESOLVED, **point against** | +$0.0008 (+12%); CI [−0.00003, +0.0016] |
 | H7b | with a shell, toolplane is costlier | HOLDS, **by a correctness collapse** | toolplane 2/8 (see below) |
 | H8 | no schema tax (direct M=15 vs M=1) | REVERSED, **inside the margin** | +3% (see below) |
 | S1 | Sonnet 5.5 single favors direct | HOLDS | n=2 |
 | S2 | Sonnet 5.5 chain_prose favors direct | HOLDS | n=2 |
 | O3, H9a/b, O2a/b | — | DROPPED (A1) | — |
 
-Summary: of 22 tested rows, 19 HOLD, 2 are UNRESOLVED and 1 is
+Summary: of 22 tested rows (H5-walk counted once), 19 HOLD, 2 are UNRESOLVED and 1 is
 REVERSED. Three of the HOLDs and the one REVERSED need the readings below
 before anyone cites them.
 
 ## Readings the table can't carry
 
-### H3 at 2 KB: Haiku degeneration, not a payload cost
+### H3 at 2 KB: Haiku degeneration, cause not isolated
 
 All 8 direct runs:
 
 - fetched all 30 orders;
 - then broke into gibberish at the step where they had to combine the
-  results (about 130K output tokens per run);
-- ended in one of three ways: 3 timeouts at 900 s, 4 with no answer, and
-  1 (rep 3) ending in a Haiku 5.5 usage-policy refusal (`[bio]`,
-  `req_011CftWazCmZ4cgcxRMaRztA`).
+  results. The 5 runs that finished produced 60K–259K output tokens
+  (median 131K); the timeouts report none;
+- ended in one of four ways: 3 timeouts at 900 s, 3 with no answer, 1
+  (rep 4) with a gibberish answer, and 1 (rep 3) with a Haiku 5.5
+  usage-policy refusal (`[bio]`, `req_011CftWazCmZ4cgcxRMaRztA`).
 
 The 20 KB direct runs saw the same filler, ten times larger, made the
-same 30 fetches, and passed 4/4. So what tripped Haiku is not the payload
-size. The likely trigger is the fixture: the filler is one token repeated
-(`ord0002-ord0002-…`). The cause is not isolated. This is the same
-failure seen in the Haiku longitudinal calibration that led A1 to drop G.
+same 30 fetches, and passed 4/4. That rules out a simple "more payload,
+more failure" story. Beyond that, the cause is not isolated. One
+hypothesis is the filler itself, one token repeated (`ord0002-ord0002-…`),
+but the 20 KB runs survived that same filler, so the hypothesis doesn't
+explain why 2 KB fails and 20 KB doesn't. The degeneration looks like the
+one in the Haiku longitudinal calibration that led A1 to drop G.
 
 The verdict HOLDS under the registered rule, because failures are priced
 into cost-of-pass. But it says nothing about token economics at 2 KB.
-**Fixture weakness for the follow-up:** real payloads aren't one repeated
-token. The filler should be varied text.
+**For the follow-up:** use varied filler text, since real payloads aren't
+one repeated token. That removes one candidate cause, though it may not
+be the right one.
 
-### H7b: the shell hid the MCP tools
+### H7b: with a shell, toolplane runs mostly never searched
 
-In all 6 failed toolplane runs, the agent went straight to
-`git log` through Bash. It never called ToolSearch, and concluded that
-"no refund amounts exist anywhere". The 2 passing runs took the path
-ToolSearch → `execute_code`. Direct passed 8/8, because its `get_order`
-tool is visible without a search.
+Both arms opened shell-first: every run, direct and toolplane, started
+with 1–5 `git log` calls through Bash. They differ in what came next:
 
-So H7b's mechanism is a skipped discovery, not a higher token cost. A
-failed toolplane run costs about the same as a direct one ($0.0065). This
-fits the client-side ranking finding from #125/#127.
+- **Direct:** all 8 runs then called ToolSearch, found `get_order`, and
+  passed.
+- **Toolplane, 2 passing runs:** called ToolSearch, then `execute_code`.
+- **Toolplane, 6 failing runs:** never called ToolSearch. They concluded
+  the amounts had to come from some source they couldn't reach, and
+  answered with no number.
+
+So H7b's mechanism is a skipped search (direct searched 8/8, toolplane
+2/8), not a higher token cost. A failed toolplane run costs about what a
+direct run does ($0.0068 against $0.0064 mean). The client-side ranking
+finding from #125/#127 doesn't apply, because ranking only acts once a
+search happens. Why the toolplane runs stopped short of searching is not
+established.
 
 ### H7a: the Sonnet result didn't replicate on Haiku
 
 With no shell, `toolplane_cli` passed 8/8. But it cost 12% more than
 direct. The Sonnet 5.5 #113 ratio was 0.94, which favored toolplane; on
-Haiku it is 1.12. The CI touches 0, so the verdict is UNRESOLVED. Don't
-read it as neutral: the point estimate leans against the prediction.
+Haiku it is 1.12. The CI crosses 0 (lower bound −$0.00003), so the
+verdict is UNRESOLVED. Don't read it as neutral: the point estimate leans
+against the prediction.
+
+One cost isn't from the join itself. Each of the 8 runs tried Bash once,
+and the client denied it ("No such tool available"). The restriction
+held, but those attempts are in the measured cost, and they weren't
+separated out.
 
 ### H8: REVERSED by a rule that overlaps itself
 
@@ -116,13 +148,13 @@ The text never said which clause wins. The plain reading: there is a
 detectable schema tax at M=15, and it is small (+3%), well inside the
 band the registration called negligible.
 
-The registration didn't fix the ±10% equivalence band any tighter. Future
-registrations should check the margin first, as standard equivalence
-testing (TOST) does. That way a precise, small effect isn't reported as a
-reversal.
+This doc doesn't reinterpret the verdict: it stays REVERSED. **As a rule
+for future registrations only:** check the margin first, as standard
+equivalence testing (TOST) does, so that a precise, small effect isn't
+reported as a reversal.
 
 Toolplane's own M=15 effect is visible in the cells table ($0.0054 →
-$0.0062, +15%). H8 doesn't test it.
+$0.0062, +14%). H8 doesn't test it.
 
 ### H2: "flat" was too strong
 
@@ -148,7 +180,8 @@ Treat the following as open or reframed:
 - **The CLI + MCP join** does not show a cost win on Haiku (H7a).
 - **"No schema tax"** should become "a small (+3%) schema tax at M=15"
   (H8).
-- **The 2 KB point** is a fixture artifact (H3).
+- **The 2 KB point** is a Haiku collapse with an unisolated cause, not a
+  cost measurement (H3).
 
 Persistence (H9) is still untested. It waits on the Sonnet 5.5 follow-up
 registration.
