@@ -1,0 +1,441 @@
+{
+  "experiment": "#119 longitudinal sessions",
+  "created_at": "20261010-010230",
+  "rows": [
+    {
+      "arm": "direct",
+      "session_id": "605b60ae-a396-4cfe-b1e1-d677ed773231",
+      "exit_code": 0,
+      "stderr": "",
+      "turns": [
+        {
+          "turn": 1,
+          "task": "load_and_total",
+          "answer": "",
+          "correct": false,
+          "cost_usd": 0.21105078000000002,
+          "input_tokens": 12,
+          "cache_creation_input_tokens": 184739,
+          "cache_read_input_tokens": 144328,
+          "output_tokens": 131049,
+          "peak_request_context_tokens": 193172,
+          "model_requests": 5,
+          "tool_names": [
+            "ToolSearch",
+            "mcp__orders__list_order_ids",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order",
+            "mcp__orders__get_order"
+          ],
+          "fixture_calls": [
+            {
+              "tool": "list_order_ids",
+              "params": {}
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-001"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-002"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-003"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-004"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-005"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-006"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-007"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-008"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-009"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-010"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-011"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-012"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-013"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-014"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-015"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-016"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-017"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-018"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-019"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-020"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-021"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-022"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-023"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-024"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-025"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-026"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-027"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-028"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-029"
+              }
+            },
+            {
+              "tool": "get_order",
+              "params": {
+                "order_id": "ORD-030"
+              }
+            }
+          ],
+          "fixture_call_count": 31,
+          "used_reset_session": false,
+          "reuse_mechanism": "refetch",
+          "compaction_events": 0
+        },
+        {
+          "turn": 2,
+          "task": "filter_reuse",
+          "answer": "",
+          "correct": false,
+          "cost_usd": 0.011521900000000002,
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 1195,
+          "cache_read_input_tokens": 193168,
+          "output_tokens": 267,
+          "peak_request_context_tokens": 194365,
+          "model_requests": 1,
+          "tool_names": [],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "reuse_mechanism": "retained",
+          "compaction_events": 0
+        },
+        {
+          "turn": 3,
+          "task": "maximum_reuse",
+          "answer": "none",
+          "correct": false,
+          "cost_usd": 0.01026415,
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 355,
+          "cache_read_input_tokens": 194363,
+          "output_tokens": 76,
+          "peak_request_context_tokens": 194720,
+          "model_requests": 1,
+          "tool_names": [],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "reuse_mechanism": "retained",
+          "compaction_events": 0
+        },
+        {
+          "turn": 4,
+          "task": "averages_reuse",
+          "answer": "",
+          "correct": false,
+          "cost_usd": 0.01059489999999999,
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 168,
+          "cache_read_input_tokens": 194718,
+          "output_tokens": 276,
+          "peak_request_context_tokens": 194888,
+          "model_requests": 1,
+          "tool_names": [],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "reuse_mechanism": "retained",
+          "compaction_events": 0
+        },
+        {
+          "turn": 5,
+          "task": "status_reuse",
+          "answer": "",
+          "correct": false,
+          "cost_usd": 0.011865300000000023,
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 350,
+          "cache_read_input_tokens": 194886,
+          "output_tokens": 708,
+          "peak_request_context_tokens": 195238,
+          "model_requests": 1,
+          "tool_names": [],
+          "fixture_calls": [],
+          "fixture_call_count": 0,
+          "used_reset_session": false,
+          "reuse_mechanism": "retained",
+          "compaction_events": 0
+        },
+        {
+          "turn": 6,
+          "task": "reset_and_refetch",
+          "answer": "",
+          "correct": false,
+          "cost_usd": 0.04908019999999991,
+          "input_tokens": 8,
+          "cache_creation_input_tokens": 3850,
+          "cache_read_input_tokens": 782724,
+          "output_tokens": 2436,
+          "peak_request_context_tokens": 197192,
+          "model_requests": 3,
+          "tool_names": [
+            "mcp__orders__list_order_ids"
+          ],
+          "fixture_calls": [
+            {
+              "tool": "list_order_ids",
+              "params": {}
+            }
+          ],
+          "fixture_call_count": 1,
+          "used_reset_session": false,
+          "reuse_mechanism": "refetch",
+          "compaction_events": 0
+        }
+      ],
+      "all_correct": false,
+      "reuse_turns_correct": false,
+      "reset_turn_correct": false,
+      "reset_verified": true,
+      "total_cost_usd": 0.30437722999999994,
+      "peak_context_tokens": 197192,
+      "total_fixture_calls": 32,
+      "transcript": "/Users/oner/dev/personal-projects/toolplane/bench/results/transcripts/longitudinal-20261010-010230/direct-rep1.jsonl",
+      "rep": 1,
+      "model": "claude-haiku-5-5",
+      "record_bytes": 2000,
+      "orders_n": 30,
+      "git_sha": "c0b98b6586b657853b11a0ee62876637b2eb8fc5",
+      "git_dirty": true,
+      "wheel_sha256": "c62640e59c9f8531d09b2e4c8e51c4619187daa624342aea39a60dc9805e7c30",
+      "harness_sha256": "82849d0ff153e0928ca82e1be9af4fce3606a5f099da93254c945d7763f624d4",
+      "fixtures_sha256": {
+        "order_server.py": "fb0862877e9235d62596130e72b8b2b82c3e8485ede2bfdab3d711e9d14af1de",
+        "distractor_server.py": "434aa008f65d64769dd30e90bd8eddf98c0328007674ab9bcee215744ae10bad",
+        "orders_data.py": "4a7f57821bac0f678dd64162109f2d5a85d1598ea96ecb3d2600b013e1a72254",
+        "shipment_server.py": "6acf5584833b6c062a4daba5d54e8d72f684b3779fb5427455c6c7e4d26968a0",
+        "shipment_data.py": "4784a786f9f2b8fb2db98d8a3faf46999ed6894b8b22a8084629bcc2e7469413"
+      },
+      "longitudinal_harness_sha256": "ec3ee70e7480da7c62e6e39adeeb80dd8effb6a42473789b07b304fbbde0b0aa"
+    }
+  ],
+  "snapshot_scaling": [
+    {
+      "namespace_payload_bytes": 1000,
+      "snapshot_bytes": 2000,
+      "dump_ms_median": 0.09841698920354247,
+      "dump_ms_range": [
+        0.07833301788195968,
+        0.1500000071246177
+      ],
+      "dump_python_peak_bytes_median": 6937,
+      "noop_execute_ms_median": 0.36750000435858965,
+      "noop_execute_ms_range": [
+        0.2905830042436719,
+        0.5230410024523735
+      ],
+      "repeats": 7
+    },
+    {
+      "namespace_payload_bytes": 100000,
+      "snapshot_bytes": 101000,
+      "dump_ms_median": 0.16779202269390225,
+      "dump_ms_range": [
+        0.14733299030922353,
+        0.2918749814853072
+      ],
+      "dump_python_peak_bytes_median": 105809,
+      "noop_execute_ms_median": 0.5513330106623471,
+      "noop_execute_ms_range": [
+        0.37841699668206275,
+        0.6280000088736415
+      ],
+      "repeats": 7
+    },
+    {
+      "namespace_payload_bytes": 10000000,
+      "snapshot_bytes": 10001006,
+      "dump_ms_median": 5.096792010590434,
+      "dump_ms_range": [
+        4.385667009046301,
+        9.9777499854099
+      ],
+      "dump_python_peak_bytes_median": 10005815,
+      "noop_execute_ms_median": 4.808375000720844,
+      "noop_execute_ms_range": [
+        4.328792012529448,
+        5.411959020420909
+      ],
+      "repeats": 7
+    }
+  ],
+  "snapshot_provenance": {
+    "git_sha": "c0b98b6586b657853b11a0ee62876637b2eb8fc5",
+    "git_dirty": true,
+    "wheel_sha256": "c62640e59c9f8531d09b2e4c8e51c4619187daa624342aea39a60dc9805e7c30",
+    "harness_sha256": "82849d0ff153e0928ca82e1be9af4fce3606a5f099da93254c945d7763f624d4",
+    "fixtures_sha256": {
+      "order_server.py": "fb0862877e9235d62596130e72b8b2b82c3e8485ede2bfdab3d711e9d14af1de",
+      "distractor_server.py": "434aa008f65d64769dd30e90bd8eddf98c0328007674ab9bcee215744ae10bad",
+      "orders_data.py": "4a7f57821bac0f678dd64162109f2d5a85d1598ea96ecb3d2600b013e1a72254",
+      "shipment_server.py": "6acf5584833b6c062a4daba5d54e8d72f684b3779fb5427455c6c7e4d26968a0",
+      "shipment_data.py": "4784a786f9f2b8fb2db98d8a3faf46999ed6894b8b22a8084629bcc2e7469413"
+    },
+    "longitudinal_harness_sha256": "ec3ee70e7480da7c62e6e39adeeb80dd8effb6a42473789b07b304fbbde0b0aa"
+  }
+}
