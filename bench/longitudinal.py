@@ -678,7 +678,8 @@ def main() -> int:
     print(result_path)
     # turn 6 (reset) is unscored for the sessions-off arm: no session exists
     return 0 if all(
-        row["reuse_turns_correct"]
+        row.get("exit_code") == 0
+        and row["reuse_turns_correct"]
         and (row["arm"] == base._NO_SESSION_ARM or row["all_correct"])
         and row["reset_verified"] is not False
         for row in rows

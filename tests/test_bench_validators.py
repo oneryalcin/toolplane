@@ -930,3 +930,20 @@ def test_persistence_voids_rows_from_different_code() -> None:
     sessions = [{**_session("direct", 0.05), "git_sha": sha, "requested_model": "claude-sonnet-5-5",
                  "filler": "varied"} for sha in ("aaa", "bbb")]
     assert any("git_sha" in r for r in void_reasons([], sessions))
+
+
+def test_persistence_provenance_check_reads_real_rows() -> None:
+    # real rows carry fixtures_sha256 as a dict; synthetic rows hid a crash
+    from analyze_persistence import void_reasons
+
+    path = Path(__file__).resolve().parent.parent / "bench/results/run-20261010-005346.json"
+    rows = [{**r, "requested_model": "claude-sonnet-5-5"} for r in json.loads(path.read_text())]
+    assert isinstance(rows[0]["fixtures_sha256"], dict)
+    assert void_reasons(rows, []) == []
+
+
+def test_persistence_voids_rows_missing_provenance() -> None:
+    from analyze_persistence import void_reasons
+
+    session = {**_session("direct", 0.05), "requested_model": "claude-sonnet-5-5", "filler": "varied"}
+    assert any("missing git_sha" in r for r in void_reasons([], [session]))

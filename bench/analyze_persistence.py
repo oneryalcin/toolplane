@@ -82,9 +82,6 @@ def session_hypotheses(sessions):
     def med_diff(label, a, b, field, turns, predicted):
         for arm in (a, b):
             ok, n = gate[arm]
-            if not n:
-                out.append((label, None, None, None, f"NOT RUN ({arm})"))
-                return
             if n != REPS:
                 out.append((label, None, None, None, f"UNRESOLVED (incomplete: {arm} has {n}/{REPS})"))
                 return
@@ -138,7 +135,7 @@ def slice_hypotheses(rows):
                         ("S2 chain_prose, tp - direct $/pass", "chain_prose")):
         r = cost_diff(rows, "toolplane", MODEL, ">0", task=task)
         if r is None:
-            out.append((label, None, None, None, "NOT RUN"))
+            out.append((label, None, None, None, f"UNRESOLVED (incomplete: a cell has 0/{REPS} runs)"))
             continue
         point, lo, hi, v, n_tp, n_direct = r
         if (n_tp, n_direct) != (REPS, REPS):
@@ -157,13 +154,14 @@ def void_reasons(rows, sessions) -> list[str]:
     models = {x.get("requested_model", x.get("model")) for x in [*rows, *sessions]}
     if models - {MODEL}:
         reasons.append(f"rows for other models {sorted(models - {MODEL})}")
-    for key in UNIFORM:
-        values = {x.get(key) for x in [*rows, *sessions]}
-        if len(values) > 1:
-            reasons.append(f"rows mix {key} values {sorted(map(str, values))}")
-    harnesses = {s.get("longitudinal_harness_sha256") for s in sessions}
-    if len(harnesses) > 1:
-        reasons.append("sessions mix longitudinal harness versions")
+    # fixtures_sha256 is a dict: compare canonical JSON. A missing field is
+    # its own failure, not a match
+    for key, group in [*((k, [*rows, *sessions]) for k in UNIFORM),
+                       ("longitudinal_harness_sha256", sessions)]:
+        if any(x.get(key) is None for x in group):
+            reasons.append(f"rows missing {key}")
+        elif len({json.dumps(x[key], sort_keys=True) for x in group}) > 1:
+            reasons.append(f"rows mix {key} values")
     fillers = {s.get("filler", "repeat") for s in sessions}
     if fillers - {FILLER}:
         reasons.append(f"sessions with filler {sorted(fillers - {FILLER})}")
