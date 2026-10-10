@@ -26,7 +26,7 @@ class EffectivePolicy:
         config: ToolplaneConfig,
         *,
         allow_unsafe: bool = False,
-    ) -> "EffectivePolicy":
+    ) -> EffectivePolicy:
         unsafe_reasons: list[str] = []
         if config.toolplane.default_backend == "local_unsafe":
             unsafe_reasons.append("local_unsafe")

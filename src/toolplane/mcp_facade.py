@@ -43,7 +43,7 @@ def build_mcp_facade(
     cli_escalation: bool = True,
     hybrid: bool = False,
     hybrid_include: Sequence[str] = (),
-) -> "FastMCP":
+) -> FastMCP:
     """Build the small MCP meta-tool surface for a Toolplane runtime.
 
     Multi-client caution: monty sessions, the result/artifact stores, and
@@ -549,7 +549,7 @@ def _make_hybrid_dispatch(runtime: Toolplane, canonical_name: str) -> Any:
 
 
 def _register_hybrid_tools(
-    mcp: "FastMCP", runtime: Toolplane, capabilities: Sequence[Capability]
+    mcp: FastMCP, runtime: Toolplane, capabilities: Sequence[Capability]
 ) -> None:
     from fastmcp.tools.function_tool import FunctionTool
 
@@ -820,7 +820,7 @@ async def build_mcp_facade_from_config(
     transport: Transport = "stdio",
     allow_unsafe: bool = False,
     hybrid: bool = False,
-) -> "FastMCP":
+) -> FastMCP:
     """Build the facade from config, applying transport-dependent policy.
 
     The transport decision lives here, not only in serve_mcp_facade, so an

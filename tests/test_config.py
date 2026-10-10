@@ -10,12 +10,12 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from toolplane import CapabilityRegistry, Toolplane
+from toolplane import Toolplane
 from toolplane.adapters import mcp as mcp_adapter
 from toolplane.config import ToolplaneConfig, load_toolplane_config
 
 pytest.importorskip("fastmcp")
-from fastmcp.mcp_config import MCPConfig  # noqa: E402
+from fastmcp.mcp_config import MCPConfig
 
 
 def run(coro):

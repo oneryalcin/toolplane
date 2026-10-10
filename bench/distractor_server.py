@@ -24,8 +24,8 @@ PROFILES: dict[str, list[tuple[str, str, list[tuple[str, type, str]]]]] = {
     "crm": [
         (
             "search_contacts",
-            "Search CRM contacts by free text across name, email, company and "
-            "notes. Returns contact summaries ordered by relevance.",
+            ("Search CRM contacts by free text across name, email, company and "
+            "notes. Returns contact summaries ordered by relevance."),
             [
                 ("query", str, "Free-text search over name, email, company."),
                 ("limit", int, "Maximum number of results to return."),
@@ -33,14 +33,14 @@ PROFILES: dict[str, list[tuple[str, str, list[tuple[str, type, str]]]]] = {
         ),
         (
             "get_contact",
-            "Fetch the full CRM record for one contact, including deal "
-            "history, owner, lifecycle stage and custom fields.",
+            ("Fetch the full CRM record for one contact, including deal "
+            "history, owner, lifecycle stage and custom fields."),
             [("contact_id", str, "The CRM contact identifier, e.g. CT-1042.")],
         ),
         (
             "list_deals",
-            "List deals in the pipeline, optionally filtered by stage and "
-            "owner. Returns deal id, amount, stage and close date.",
+            ("List deals in the pipeline, optionally filtered by stage and "
+            "owner. Returns deal id, amount, stage and close date."),
             [
                 ("stage", str, "Pipeline stage name, e.g. 'negotiation'."),
                 ("owner", str, "Email of the deal owner to filter by."),
@@ -56,8 +56,8 @@ PROFILES: dict[str, list[tuple[str, str, list[tuple[str, type, str]]]]] = {
         ),
         (
             "list_companies",
-            "List company accounts with industry, employee count and open "
-            "deal totals.",
+            ("List company accounts with industry, employee count and open "
+            "deal totals."),
             [("industry", str, "Industry to filter companies by.")],
         ),
         (
@@ -81,8 +81,8 @@ PROFILES: dict[str, list[tuple[str, str, list[tuple[str, type, str]]]]] = {
     "calendar": [
         (
             "list_events",
-            "List calendar events between two datetimes for the current "
-            "user, including attendees and conferencing links.",
+            ("List calendar events between two datetimes for the current "
+            "user, including attendees and conferencing links."),
             [
                 ("start", str, "ISO datetime lower bound."),
                 ("end", str, "ISO datetime upper bound."),
@@ -105,8 +105,8 @@ PROFILES: dict[str, list[tuple[str, str, list[tuple[str, type, str]]]]] = {
         ),
         (
             "find_free_slot",
-            "Find the earliest slot where all attendees are free within a "
-            "search window.",
+            ("Find the earliest slot where all attendees are free within a "
+            "search window."),
             [
                 ("attendees", str, "Comma-separated attendee emails."),
                 ("duration_minutes", int, "Required slot length in minutes."),
@@ -179,8 +179,8 @@ PROFILES: dict[str, list[tuple[str, str, list[tuple[str, type, str]]]]] = {
     "wiki": [
         (
             "search_pages",
-            "Full-text search over wiki pages, returning title, space and a "
-            "highlighted snippet per hit.",
+            ("Full-text search over wiki pages, returning title, space and a "
+            "highlighted snippet per hit."),
             [
                 ("query", str, "Full-text search string."),
                 ("space", str, "Wiki space key to restrict the search to."),
@@ -210,16 +210,16 @@ PROFILES: dict[str, list[tuple[str, str, list[tuple[str, type, str]]]]] = {
         ),
         (
             "list_recent_changes",
-            "List recently changed pages across the wiki with author and "
-            "change summary.",
+            ("List recently changed pages across the wiki with author and "
+            "change summary."),
             [("limit", int, "Maximum number of changes to return.")],
         ),
     ],
     "payments": [
         (
             "list_charges",
-            "List payment charges with amount, currency, status and "
-            "customer, newest first.",
+            ("List payment charges with amount, currency, status and "
+            "customer, newest first."),
             [
                 ("status", str, "Filter: succeeded, pending, failed or any."),
                 ("limit", int, "Maximum number of charges to return."),
@@ -227,8 +227,8 @@ PROFILES: dict[str, list[tuple[str, str, list[tuple[str, type, str]]]]] = {
         ),
         (
             "get_charge",
-            "Fetch one charge with card details, receipt URL and dispute "
-            "status.",
+            ("Fetch one charge with card details, receipt URL and dispute "
+            "status."),
             [("charge_id", str, "Charge identifier, e.g. ch_3Nx...")],
         ),
         (
@@ -262,8 +262,8 @@ PROFILES: dict[str, list[tuple[str, str, list[tuple[str, type, str]]]]] = {
     "analytics": [
         (
             "run_query",
-            "Run a saved analytics query by name with parameter overrides "
-            "and return rows as JSON.",
+            ("Run a saved analytics query by name with parameter overrides "
+            "and return rows as JSON."),
             [
                 ("query_name", str, "Name of the saved query to run."),
                 ("params_json", str, "JSON object of parameter overrides."),
@@ -286,8 +286,8 @@ PROFILES: dict[str, list[tuple[str, str, list[tuple[str, type, str]]]]] = {
         ),
         (
             "list_events_schema",
-            "Describe the tracked product-event schema: event names and "
-            "their property types.",
+            ("Describe the tracked product-event schema: event names and "
+            "their property types."),
             [("prefix", str, "Only events whose name starts with this.")],
         ),
         (

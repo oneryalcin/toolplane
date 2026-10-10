@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import random
 import re
@@ -39,7 +40,7 @@ BENCH_DIR = Path(__file__).resolve().parent
 REPO_DIR = BENCH_DIR.parent
 sys.path.insert(0, str(BENCH_DIR))
 
-from orders_data import (  # noqa: E402
+from orders_data import (
     MIXED_N,
     PROSE_N,
     chain_answer,
@@ -50,7 +51,7 @@ from orders_data import (  # noqa: E402
     prose_chain_answer,
     totals_by_region,
 )
-from shipment_data import shipments  # noqa: E402
+from shipment_data import shipments
 
 ANSWER_RE = re.compile(r"<answer>\s*(.*?)\s*</answer>", re.DOTALL)
 
@@ -414,6 +415,7 @@ def build_code_under_test(workdir: Path) -> dict:
         ["git", "-C", str(REPO_DIR), "rev-parse", "HEAD"],
         capture_output=True,
         text=True,
+        check=False,
     ).stdout.strip()
     # the harness's own NEW output files are excluded: an earlier matrix's
     # result files (or a smoke's) in the same tree marked every following
@@ -423,6 +425,7 @@ def build_code_under_test(workdir: Path) -> dict:
         ["git", "-C", str(REPO_DIR), "status", "--porcelain"],
         capture_output=True,
         text=True,
+        check=False,
     ).stdout.splitlines()
     # only NEW output files are ignored: an edit to a tracked (published)
     # result file still marks the run dirty
@@ -846,7 +849,7 @@ def run_case(
     try:
         proc = subprocess.run(
             cmd, cwd=cwd, capture_output=True, text=True, timeout=900,
-            env=CLIENT_ENV,
+            env=CLIENT_ENV, check=False,
         )
     except subprocess.TimeoutExpired as exc:
         # a hung run must not lose the rows already collected in memory
@@ -992,7 +995,7 @@ def _bootstrap_cost_of_pass_diff(
             - _cost_of_pass(rng.choices(direct, k=len(direct)))
             for _ in range(resamples)
         )
-        if d == d
+        if not math.isnan(d)
     )
     if not diffs:
         return point, float("nan"), float("nan")
@@ -1325,8 +1328,8 @@ def summarize(rows: list[dict]) -> str:
     (timeout) makes the cell "n/a" rather than silently pricing as free.
     """
     lines = [
-        "| task | M | B | granularity | arm | ok | tool calls | reqs | turns "
-        "| out tokens | uncached in | cost $ | cost/pass | wall s |",
+        ("| task | M | B | granularity | arm | ok | tool calls | reqs | turns "
+        "| out tokens | uncached in | cost $ | cost/pass | wall s |"),
         "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     m_values = sorted({r.get("m_servers", 1) for r in rows})
@@ -1393,7 +1396,7 @@ def summarize(rows: list[dict]) -> str:
                             value = _cell_stats(group, key)[0]
                             return round(value, 2) if value is not None else "-"
 
-                        def flagged(key, arm=arm):
+                        def flagged(key, arm=arm, overlaps=overlaps):
                             mark = "†" if overlaps[arm].get(key) else ""
                             return f"{med(key)}{mark}"
 
@@ -1436,8 +1439,8 @@ def discovery_summary(rows: list[dict]) -> str:
     lines = [
         "\n## First-search discovery (#127 primary outcome)",
         "",
-        "| task | M | B | granularity | arm | reps | first-hit rate "
-        "| searches→tool | artifacts |",
+        ("| task | M | B | granularity | arm | reps | first-hit rate "
+        "| searches→tool | artifacts |"),
         "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     arm_order_display = [
@@ -1563,7 +1566,7 @@ def main() -> int:
         parser.error(str(exc))
     client_version = subprocess.run(
         [args.client, "--version"], capture_output=True, text=True,
-        env=CLIENT_ENV,
+        env=CLIENT_ENV, check=False,
     ).stdout.strip()
     stamp = time.strftime("%Y%m%d-%H%M%S")
     transcripts_dir = BENCH_DIR / "results" / "transcripts" / f"run-{stamp}"

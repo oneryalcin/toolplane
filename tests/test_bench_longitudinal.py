@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "bench"))
 
-import longitudinal  # noqa: E402
+import longitudinal
 
 
 def test_longitudinal_validators_cover_every_turn() -> None:

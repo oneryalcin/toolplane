@@ -88,7 +88,7 @@ class Toolplane:
         *,
         registry: CapabilityRegistry | None = None,
         backends: Sequence[CodeBackend] | None = None,
-    ) -> "Toolplane":
+    ) -> Toolplane:
         """Build a Toolplane runtime from a validated config or TOML path."""
         from .config import ToolplaneConfig, load_toolplane_config
 
@@ -284,12 +284,12 @@ class Toolplane:
         sufficient for straightforward tasks.
         """
         lines = [
-            "Rules for execute_code snippets: every binding is async — "
+            ("Rules for execute_code snippets: every binding is async — "
             "always `await`; call capability functions with keywords "
             "exactly as shown (positional calls fail on the default "
             "backend); awaiting a capability returns the tool's plain "
             "value, already unwrapped — never index into a ['result'] or "
-            "['value'] envelope; `return` a JSON-shaped value."
+            "['value'] envelope; `return` a JSON-shaped value.")
         ]
         if self._default_backend_capability("parallel_calls"):
             lines.append(
@@ -399,19 +399,19 @@ class Toolplane:
                 [
                     "",
                     "## Concurrency",
-                    "Calls dispatch when invoked, not when awaited — fire a "
+                    ("Calls dispatch when invoked, not when awaited — fire a "
                     "batch, then await the batch, and slow tools overlap "
-                    "instead of serializing:",
+                    "instead of serializing:"),
                     "",
                     "```python",
                     "futures = [orders_get_order(order_id=oid) for oid in ids]",
                     "orders = [await f for f in futures]",
                     "```",
                     "",
-                    "- Awaiting each call inside a loop body costs N x the "
-                    "tool's latency; fire-then-await costs it once.",
-                    "- Await everything you fire in the same run — a future "
-                    "left un-awaited cannot be awaited by a later run.",
+                    ("- Awaiting each call inside a loop body costs N x the "
+                    "tool's latency; fire-then-await costs it once."),
+                    ("- Await everything you fire in the same run — a future "
+                    "left un-awaited cannot be awaited by a later run."),
                 ]
             )
         lines.extend(["", "## Capability functions"])
@@ -448,10 +448,10 @@ class Toolplane:
         lines.extend(
             [
                 "",
-                "Every capability, including ones without a binding above, is "
+                ("Every capability, including ones without a binding above, is "
                 'callable as `await call_tool("canonical:name", {...params})`. '
                 "Use `search_capabilities` / `get_capability_schemas` for "
-                "parameter schemas.",
+                "parameter schemas."),
                 "",
                 "## CLI",
             ]
@@ -467,22 +467,22 @@ class Toolplane:
             lines.extend(
                 [
                     "",
-                    "- Each allowed binary is bound as a flat async function: "
+                    ("- Each allowed binary is bound as a flat async function: "
                     "subcommand as the first positional argument, flags as "
                     "keyword arguments — e.g. "
-                    "`await git('log', oneline=True, max_count=3)`.",
-                    "- Flags that must precede the subcommand (`git -C`, "
+                    "`await git('log', oneline=True, max_count=3)`."),
+                    ("- Flags that must precede the subcommand (`git -C`, "
                     "`kubectl --context`) go in `_global`: "
-                    "`await git('log', _global={'C': '/path/to/repo'})`.",
+                    "`await git('log', _global={'C': '/path/to/repo'})`."),
                     "- Awaiting returns `{'stdout', 'stderr', 'exit_code', 'ok'}`.",
-                    "- For a binary whose name is not a valid Python "
+                    ("- For a binary whose name is not a valid Python "
                     "identifier, use `await cli_run(binary, subcommand, "
                     "flag=value, ...)` (monty backend; a positional options "
                     "dict also works) or the `cli` namespace object "
-                    "(local/pyodide backends).",
-                    "- Binaries outside the allowlist have no binding — "
+                    "(local/pyodide backends)."),
+                    ("- Binaries outside the allowlist have no binding — "
                     "calling one raises NameError — and `cli_run` rejects "
-                    "them by policy.",
+                    "them by policy."),
                 ]
             )
             if self.cli_policy.escalation_available and self.cli_policy.restricted:
@@ -502,25 +502,25 @@ class Toolplane:
                 [
                     "",
                     "## Session",
-                    "Variables persist across execute_code runs on the "
+                    ("Variables persist across execute_code runs on the "
                     "default backend: assignments and function definitions "
                     "from one run are simply available in the next — no "
-                    "save/load step needed.",
+                    "save/load step needed."),
                     "",
-                    "- A failed run keeps the session: prior variables (and "
-                    "statements completed before the error) persist.",
-                    "- A timed-out run is rolled back: the namespace returns "
+                    ("- A failed run keeps the session: prior variables (and "
+                    "statements completed before the error) persist."),
+                    ("- A timed-out run is rolled back: the namespace returns "
                     "to its pre-run state, but capability calls, CLI "
-                    "commands, and saves the run already made stand.",
-                    "- `await reset_session()` clears all session variables "
+                    "commands, and saves the run already made stand."),
+                    ("- `await reset_session()` clears all session variables "
                     "after the current run (saved results and artifacts are "
-                    "unaffected).",
-                    "- The session has a memory cap; if a run fails with "
+                    "unaffected)."),
+                    ("- The session has a memory cap; if a run fails with "
                     "MemoryError, reassign large variables (`big = None` — "
-                    "monty has no `del`) or reset.",
-                    "- Assigning a variable named after a Toolplane binding "
+                    "monty has no `del`) or reset."),
+                    ("- Assigning a variable named after a Toolplane binding "
                     "(e.g. `save_result = ...`) is rejected: in a session "
-                    "the assignment would mask the binding until reset.",
+                    "the assignment would mask the binding until reset."),
                 ]
             )
         lines.extend(["", "## Result store"])
@@ -534,15 +534,15 @@ class Toolplane:
                 )
             lines.extend(
                 [
-                    "- `handle = await save_result(value)` — JSON-shaped "
-                    "values only",
+                    ("- `handle = await save_result(value)` — JSON-shaped "
+                    "values only"),
                     "- `value = await load_result(handle)`",
-                    "- A saved value is also readable directly as the MCP "
+                    ("- A saved value is also readable directly as the MCP "
                     "resource `toolplane://results/<handle>` (canonical "
-                    "JSON, no execute_code run needed).",
+                    "JSON, no execute_code run needed)."),
                     "",
-                    "Handles persist across execute_code calls within this "
-                    "server session; nothing persists to disk.",
+                    ("Handles persist across execute_code calls within this "
+                    "server session; nothing persists to disk."),
                 ]
             )
         else:
@@ -551,18 +551,18 @@ class Toolplane:
         if self.artifact_store.enabled:
             lines.extend(
                 [
-                    "- `handle = await save_artifact(data, "
+                    ("- `handle = await save_artifact(data, "
                     'filename="report.parquet")` — bytes only (files, '
                     "images, parquet); JSON-shaped values belong in the "
-                    "result store",
+                    "result store"),
                     "- `data = await load_artifact(handle)`",
-                    "- A saved artifact is also readable directly as the "
+                    ("- A saved artifact is also readable directly as the "
                     "binary MCP resource `toolplane://artifacts/<handle>`; "
                     "the execute_code response lists each artifact saved "
-                    "during the run with its URI.",
+                    "during the run with its URI."),
                     "",
-                    "Artifacts live on host disk for this server session "
-                    "only and are deleted when the session ends.",
+                    ("Artifacts live on host disk for this server session "
+                    "only and are deleted when the session ends."),
                 ]
             )
         else:
@@ -635,10 +635,10 @@ class Toolplane:
         if session is None:
             session = self._session_default()
         lines = [
-            "Execute Python against a curated tool namespace. The snippet "
+            ("Execute Python against a curated tool namespace. The snippet "
             "body runs inside an async function: await every namespace "
             "call, `return` a JSON-shaped value. Returns "
-            "{value, stdout, stderr, error, artifacts}.",
+            "{value, stdout, stderr, error, artifacts}."),
         ]
         namespace_map = self.registry.callable_namespace()
         flat = sorted(namespace_map)
@@ -777,7 +777,7 @@ class Toolplane:
         raised: BaseException | None = None
         try:
             result = await runner.run(code, **run_kwargs)
-        except BaseException as exc:
+        except BaseException as exc:  # noqa: BLE001
             raised = exc
         # escalations must not outlive the run that asked: a backend
         # timeout leaves the dispatch coroutine (and its open human

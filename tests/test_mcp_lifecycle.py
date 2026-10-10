@@ -14,7 +14,7 @@ from toolplane.cli import main
 from toolplane.config import ToolplaneConfig, load_toolplane_config
 
 pytest.importorskip("fastmcp")
-from fastmcp.mcp_config import MCPConfig  # noqa: E402
+from fastmcp.mcp_config import MCPConfig
 
 
 def test_mcp_add_url_writes_config_and_preserves_existing_comments(
@@ -1306,7 +1306,7 @@ def test_status_probe_shim_neutralizes_platform_openers() -> None:
         path = os.path.join(shim_dir, name)
         assert os.path.isfile(path) and os.access(path, os.X_OK)
         # exit 0, no output: the child believes its page opened
-        result = subprocess.run([path], capture_output=True, text=True)
+        result = subprocess.run([path], capture_output=True, text=True, check=False)
         assert result.returncode == 0
         assert result.stdout == "" and result.stderr == ""
 

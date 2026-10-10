@@ -29,8 +29,8 @@ BENCH_DIR = Path(__file__).resolve().parent
 REPO_DIR = BENCH_DIR.parent
 sys.path.insert(0, str(BENCH_DIR))
 
-import run as base  # noqa: E402
-from orders_data import orders  # noqa: E402
+import run as base
+from orders_data import orders
 
 N = 30
 RECORD_BYTES = 2_000

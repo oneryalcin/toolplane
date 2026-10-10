@@ -73,9 +73,12 @@ def find_reserved_rebindings(code: str, reserved: Iterable[str]) -> list[str]:
                 if child.name in names:
                     found.setdefault(child.name)
                 continue  # inner bindings are function-local
-            if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Store):
-                if child.id in names:
-                    found.setdefault(child.id)
+            if (
+                isinstance(child, ast.Name)
+                and isinstance(child.ctx, ast.Store)
+                and child.id in names
+            ):
+                found.setdefault(child.id)
             if isinstance(child, (ast.Import, ast.ImportFrom)):
                 # imports bind names too: `import math as reset_session` /
                 # `from math import sqrt as save_result` (Codex finding

@@ -4,6 +4,7 @@ import asyncio
 import json
 
 import pytest
+from pydantic import ValidationError
 
 from toolplane import (
     BackendCapabilities,
@@ -846,7 +847,7 @@ def test_hybrid_config_rejects_blank_and_bare_wildcard_include() -> None:
     from toolplane.config import load_toolplane_config
 
     for bad in ([""], ["   "], ["*"], ["**"]):
-        with _pytest.raises(Exception):
+        with _pytest.raises(ValidationError):
             load_toolplane_config({"hybrid": {"enabled": True, "include": bad}})
 
     # a real curated pattern is fine

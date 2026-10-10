@@ -117,7 +117,7 @@ def _peek_storage_key() -> str | None:
         import keyring
 
         return keyring.get_password(KEYRING_SERVICE, OAUTH_KEY_NAME)
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None
 
 
@@ -169,7 +169,7 @@ async def has_stored_oauth_tokens(url: str) -> bool:
     try:
         adapter = TokenStorageAdapter(async_key_value=storage, server_url=url)
         return await adapter.get_tokens() is not None
-    except Exception:
+    except Exception:  # noqa: BLE001
         # unreadable/corrupt records mean "not primed"; the next login
         # overwrites them
         return False
