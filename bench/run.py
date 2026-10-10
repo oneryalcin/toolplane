@@ -611,6 +611,11 @@ def mcp_config(
     raise ValueError(arm)
 
 
+# every Claude Code subprocess runs with auto-update off, so a matrix
+# cannot change client versions partway (rows also record their own version)
+CLIENT_ENV = {**os.environ, "DISABLE_AUTOUPDATER": "1"}
+
+
 # init-event fields that describe the local client environment, not the
 # measurement; stripped before a transcript is persisted (#104)
 _INIT_ENV_FIELDS = ("slash_commands", "agents", "skills", "plugins", "memory_paths")
@@ -840,7 +845,8 @@ def run_case(
     started = time.monotonic()
     try:
         proc = subprocess.run(
-            cmd, cwd=cwd, capture_output=True, text=True, timeout=900
+            cmd, cwd=cwd, capture_output=True, text=True, timeout=900,
+            env=CLIENT_ENV,
         )
     except subprocess.TimeoutExpired as exc:
         # a hung run must not lose the rows already collected in memory
@@ -891,6 +897,7 @@ def run_case(
     tool_calls: list[str] = []
     result_event: dict = {}
     model_used = None
+    run_client_version = None
     for line in proc.stdout.splitlines():
         try:
             event = json.loads(line)
@@ -898,6 +905,7 @@ def run_case(
             continue
         if event.get("type") == "system" and event.get("subtype") == "init":
             model_used = event.get("model")
+            run_client_version = event.get("claude_code_version")
         if event.get("type") == "assistant":
             for block in event.get("message", {}).get("content", []):
                 if block.get("type") == "tool_use":
@@ -918,6 +926,11 @@ def run_case(
         "granularity": granularity,
         "builtins": builtins,
         "model": model_used,
+        # this run's own client, from its init event: Claude Code updates
+        # itself, and a version read once at matrix start mislabels every
+        # row after a mid-matrix update (it moved 2.1.295 -> 2.1.296 between
+        # two prereg sessions)
+        "client_version": run_client_version,
         "correct": TASKS[task]["check"](answer or "", orders_n),
         "answer": answer,
         "tool_calls": len(tool_calls),
@@ -1549,7 +1562,8 @@ def main() -> int:
     except ValueError as exc:
         parser.error(str(exc))
     client_version = subprocess.run(
-        [args.client, "--version"], capture_output=True, text=True
+        [args.client, "--version"], capture_output=True, text=True,
+        env=CLIENT_ENV,
     ).stdout.strip()
     stamp = time.strftime("%Y%m%d-%H%M%S")
     transcripts_dir = BENCH_DIR / "results" / "transcripts" / f"run-{stamp}"
@@ -1619,7 +1633,12 @@ def main() -> int:
                                         restrict_builtins=args.restrict_builtins,
                                     )
                                     row["client"] = "claude"
-                                row["client_version"] = client_version
+                                # Claude rows carry their own init-event
+                                # version (None on a timeout: unknown, never
+                                # guessed); Codex rows have no init event
+                                row["client_version_at_start"] = client_version
+                                if args.client == "codex":
+                                    row["client_version"] = client_version
                                 # what was asked for: a timeout row has
                                 # model=None (no init event), and analysis
                                 # must still find it in its cell

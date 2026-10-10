@@ -163,6 +163,9 @@ TASKS: tuple[dict[str, Any], ...] = (
 )
 
 
+TURN_TIMEOUT_S = 180
+
+
 def _user_message(prompt: str) -> str:
     return json.dumps(
         {
@@ -374,6 +377,7 @@ def run_session(
     process = subprocess.Popen(
         cmd,
         cwd=cwd,
+        env=base.CLIENT_ENV,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -399,7 +403,7 @@ def run_session(
             process.stdin.flush()
             events: list[dict[str, Any]] = []
             result: dict[str, Any] | None = None
-            deadline = time.monotonic() + 180
+            deadline = time.monotonic() + TURN_TIMEOUT_S
             while result is None:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
@@ -472,6 +476,12 @@ def run_session(
     except Exception:
         process.kill()
         process.wait(timeout=10)
+        # keep the evidence: a timed-out session's partial transcript is
+        # the only record of what happened (and of what was spent)
+        transcript_path.parent.mkdir(parents=True, exist_ok=True)
+        transcript_path.write_text(
+            base._redacted_transcript("".join(all_lines)), encoding="utf-8"
+        )
         raise
     finally:
         selector.close()
@@ -483,6 +493,11 @@ def run_session(
     return {
         "arm": arm,
         "session_id": session_id,
+        "client_version": next(
+            (json.loads(line).get("claude_code_version") for line in all_lines
+             if '"subtype": "init"' in line or '"subtype":"init"' in line),
+            None,
+        ),
         "exit_code": process.returncode,
         "stderr": "".join(stderr_lines),
         "turns": turns,
