@@ -947,3 +947,43 @@ def test_persistence_voids_rows_missing_provenance() -> None:
 
     session = {**_session("direct", 0.05), "requested_model": "claude-sonnet-5-5", "filler": "varied"}
     assert any("missing git_sha" in r for r in void_reasons([], [session]))
+
+
+def _store_session(share_turns, error=None):
+    s = _session("toolplane_nosession", 0.01, error=error)
+    for t in s["turns"]:
+        if 2 <= t["turn"] <= 5:
+            t["reuse_mechanism"] = "result_store" if t["turn"] - 1 <= share_turns else "refetch"
+    return s
+
+
+def test_store_teaching_voids_sessions_run_on_the_original_prompt() -> None:
+    # the original turn-1 prompt steers toward a session variable; rows
+    # from it must not answer whether the description alone teaches the store
+    from analyze_store import store_void_reasons
+
+    row = {**_store_session(4), "filler": "varied", "requested_model": "claude-sonnet-5-5",
+           "turn1": "sessions"}
+    assert any("turn1" in r for r in store_void_reasons([row], row.get("git_sha")))
+
+
+def test_store_teaching_voids_rows_from_another_commit() -> None:
+    # uniform rows from an old or reverted description must not get a verdict
+    from analyze_store import store_void_reasons
+
+    row = {**_store_session(4), "filler": "varied", "requested_model": "claude-sonnet-5-5",
+           "turn1": "neutral", "git_sha": "old"}
+    assert any("registered" in r for r in store_void_reasons([row], "merge"))
+
+
+def test_store_teaching_a_death_cannot_decide_t1(monkeypatch) -> None:
+    # 4 of 7 survivors used the store: share 0.5 or 0.625 depending on the
+    # died session, which straddles the majority line
+    import analyze_store
+
+    monkeypatch.setattr(analyze_store, "bootstrap", lambda g, stat: (stat(g),) * 3)
+    sessions = [_session("toolplane", 0.01) for _ in range(8)] + [
+        _store_session(4 if i < 4 else 0) for i in range(7)
+    ] + [_store_session(0, error="TimeoutError")]
+    hyps, _ = analyze_store.hypotheses(sessions)
+    assert hyps[0][4].startswith("UNRESOLVED (depends")

@@ -21,8 +21,9 @@ import tempfile
 import threading
 import time
 import tracemalloc
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 BENCH_DIR = Path(__file__).resolve().parent
 REPO_DIR = BENCH_DIR.parent
@@ -92,6 +93,18 @@ _AVERAGES = {
     for region in {row["region"] for row in _DATA}
 }
 _PENDING = sum(row["status"] == "pending" for row in _DATA)
+
+# turn 1 "sessions" (the original) asks to retain the orders in a session
+# variable; "neutral" is the same prompt with that sentence removed and
+# nothing added, so neither a session nor the store is suggested (#175:
+# 0/32 reuse turns used the store under the original wording)
+TURN1_NEUTRAL = (
+    "This is the first of several related questions about the same order "
+    "store. Do not use Bash, files, web, or helper agents. Use only the "
+    "available MCP tools. Compute total order amount per region across all "
+    "orders, rounded to 2 decimals. Reply only with alphabetically sorted "
+    "region,total lines inside <answer></answer>."
+)
 
 TASKS: tuple[dict[str, Any], ...] = (
     {
@@ -228,15 +241,54 @@ def _tool_names(events: list[dict[str, Any]]) -> list[str]:
     return names
 
 
-def _execute_codes(events: list[dict[str, Any]]) -> list[str]:
-    return [
-        str(block.get("input", {}).get("code", ""))
+def _calls_load_result(code: str) -> bool:
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return False
+    return any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "load_result"
+        for node in ast.walk(tree)
+    )
+
+
+def _execute_succeeded(block: dict[str, Any]) -> bool:
+    """A tool_result for execute_code that is neither a client error nor a
+    structured Toolplane error ({"error": ...} in the returned JSON)."""
+    if block.get("is_error") is True:
+        return False
+    content = block.get("content", "")
+    if isinstance(content, list):
+        content = "".join(str(item.get("text", "")) for item in content)
+    try:
+        return json.loads(content).get("error") is None
+    except (ValueError, AttributeError):
+        return False
+
+
+def _store_load_succeeded(events: list[dict[str, Any]]) -> bool:
+    """True when an execute_code that really calls load_result (a call in
+    the AST, not the text in a comment or string) came back without error.
+    A handle can only load if a prior turn saved it."""
+    load_ids = {
+        str(block.get("id", ""))
         for event in events
         if event.get("type") == "assistant"
         for block in event.get("message", {}).get("content", [])
         if block.get("type") == "tool_use"
         and block.get("name", "").endswith("execute_code")
-    ]
+        and _calls_load_result(str(block.get("input", {}).get("code", "")))
+    }
+    return any(
+        block.get("type") == "tool_result"
+        and block.get("tool_use_id") in load_ids
+        and _execute_succeeded(block)
+        for event in events
+        for block in (event.get("message", {}).get("content") or [])
+        if isinstance(block, dict)
+    )
 
 
 def _is_dedicated_reset_code(code: str) -> bool:
@@ -352,6 +404,7 @@ def run_session(
     code: dict[str, Any],
     transcript_path: Path,
     filler: str = "repeat",
+    turn1: str = "sessions",
 ) -> dict[str, Any]:
     call_log = workdir / f"calls-{arm}-{time.time_ns()}.jsonl"
     config_path = workdir / f"mcp-longitudinal-{arm}.json"
@@ -404,7 +457,11 @@ def run_session(
     session_id: str | None = None
     try:
         for index, task in enumerate(TASKS, 1):
-            process.stdin.write(_user_message(task["prompt"]) + "\n")
+            prompt = (
+                TURN1_NEUTRAL if index == 1 and turn1 == "neutral"
+                else task["prompt"]
+            )
+            process.stdin.write(_user_message(prompt) + "\n")
             process.stdin.flush()
             events: list[dict[str, Any]] = []
             result: dict[str, Any] | None = None
@@ -444,7 +501,6 @@ def run_session(
             prior_calls = len(calls)
             answer = _answer(result)
             used_reset_contract = _uses_reset_contract(events)
-            codes = _execute_codes(events)
             turns.append(
                 {
                     "turn": index,
@@ -462,11 +518,12 @@ def run_session(
                     "fixture_call_count": len(turn_calls),
                     "used_reset_session": used_reset_contract,
                     # how a turn got its data (prereg O2): fixture calls =
-                    # refetch; load_result = result store; neither = data
-                    # already in conversation or the live session
+                    # refetch; a load_result call that succeeded = result
+                    # store; neither = data already in conversation or the
+                    # live session
                     "reuse_mechanism": (
                         "refetch" if turn_calls
-                        else "result_store" if any("load_result" in c for c in codes)
+                        else "result_store" if _store_load_succeeded(events)
                         else "retained"
                     ),
                     "compaction_events": sum(
@@ -606,6 +663,7 @@ def main() -> int:
     parser.add_argument("--arms", default="direct,toolplane")
     parser.add_argument("--snapshot-only", action="store_true")
     parser.add_argument("--filler", choices=("repeat", "varied"), default="repeat")
+    parser.add_argument("--turn1", choices=("sessions", "neutral"), default="sessions")
     args = parser.parse_args()
     stamp = time.strftime("%Y%m%d-%H%M%S")
     if args.snapshot_only:
@@ -637,7 +695,8 @@ def main() -> int:
                 transcript = transcript_dir / f"{arm}-rep{rep + 1}.jsonl"
                 try:
                     row = run_session(
-                        arm, args.model, workdir, code, transcript, args.filler
+                        arm, args.model, workdir, code, transcript, args.filler,
+                        args.turn1,
                     )
                 except Exception as exc:  # noqa: BLE001
                     # one failed session must not discard the others: the
@@ -651,6 +710,7 @@ def main() -> int:
                         "requested_model": args.model,
                         "record_bytes": RECORD_BYTES,
                         "filler": args.filler,
+                        "turn1": args.turn1,
                         "orders_n": N,
                         **provenance,
                     }
