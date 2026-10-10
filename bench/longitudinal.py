@@ -241,15 +241,54 @@ def _tool_names(events: list[dict[str, Any]]) -> list[str]:
     return names
 
 
-def _execute_codes(events: list[dict[str, Any]]) -> list[str]:
-    return [
-        str(block.get("input", {}).get("code", ""))
+def _calls_load_result(code: str) -> bool:
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return False
+    return any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "load_result"
+        for node in ast.walk(tree)
+    )
+
+
+def _execute_succeeded(block: dict[str, Any]) -> bool:
+    """A tool_result for execute_code that is neither a client error nor a
+    structured Toolplane error ({"error": ...} in the returned JSON)."""
+    if block.get("is_error") is True:
+        return False
+    content = block.get("content", "")
+    if isinstance(content, list):
+        content = "".join(str(item.get("text", "")) for item in content)
+    try:
+        return json.loads(content).get("error") is None
+    except (ValueError, AttributeError):
+        return False
+
+
+def _store_load_succeeded(events: list[dict[str, Any]]) -> bool:
+    """True when an execute_code that really calls load_result (a call in
+    the AST, not the text in a comment or string) came back without error.
+    A handle can only load if a prior turn saved it."""
+    load_ids = {
+        str(block.get("id", ""))
         for event in events
         if event.get("type") == "assistant"
         for block in event.get("message", {}).get("content", [])
         if block.get("type") == "tool_use"
         and block.get("name", "").endswith("execute_code")
-    ]
+        and _calls_load_result(str(block.get("input", {}).get("code", "")))
+    }
+    return any(
+        block.get("type") == "tool_result"
+        and block.get("tool_use_id") in load_ids
+        and _execute_succeeded(block)
+        for event in events
+        for block in (event.get("message", {}).get("content") or [])
+        if isinstance(block, dict)
+    )
 
 
 def _is_dedicated_reset_code(code: str) -> bool:
@@ -462,7 +501,6 @@ def run_session(
             prior_calls = len(calls)
             answer = _answer(result)
             used_reset_contract = _uses_reset_contract(events)
-            codes = _execute_codes(events)
             turns.append(
                 {
                     "turn": index,
@@ -480,11 +518,12 @@ def run_session(
                     "fixture_call_count": len(turn_calls),
                     "used_reset_session": used_reset_contract,
                     # how a turn got its data (prereg O2): fixture calls =
-                    # refetch; load_result = result store; neither = data
-                    # already in conversation or the live session
+                    # refetch; a load_result call that succeeded = result
+                    # store; neither = data already in conversation or the
+                    # live session
                     "reuse_mechanism": (
                         "refetch" if turn_calls
-                        else "result_store" if any("load_result" in c for c in codes)
+                        else "result_store" if _store_load_succeeded(events)
                         else "retained"
                     ),
                     "compaction_events": sum(

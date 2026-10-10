@@ -259,3 +259,28 @@ def test_snapshot_cell_measures_serialized_state() -> None:
     assert row["dump_python_peak_bytes_median"] >= 1_000
     assert row["dump_ms_median"] >= 0
     assert row["noop_execute_ms_median"] >= 0
+
+
+def test_store_reuse_needs_a_load_result_call_that_succeeded() -> None:
+    # T1 of the store-teaching registration counts these turns: the word in
+    # a comment, or a load that raised, must not read as store reuse
+    def turn(code: str, error: object = None) -> list[dict]:
+        return [
+            {"type": "assistant", "message": {"content": [{
+                "type": "tool_use", "id": "t1",
+                "name": "mcp__toolplane__execute_code", "input": {"code": code},
+            }]}},
+            {"type": "user", "message": {"content": [{
+                "type": "tool_result", "tool_use_id": "t1",
+                "content": json.dumps({"value": 1, "error": error}),
+            }]}},
+        ]
+
+    assert [
+        longitudinal._store_load_succeeded(turn(code, error))
+        for code, error in (
+            ("rows = await load_result(h)\nreturn len(rows)", None),
+            ("# rows = await load_result(h)\nreturn 1", None),
+            ("rows = await load_result(h)", {"type": "ValueError"}),
+        )
+    ] == [True, False, False]
