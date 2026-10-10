@@ -964,7 +964,16 @@ def test_store_teaching_voids_sessions_run_on_the_original_prompt() -> None:
 
     row = {**_store_session(4), "filler": "varied", "requested_model": "claude-sonnet-5-5",
            "turn1": "sessions"}
-    assert any("turn1" in r for r in store_void_reasons([row]))
+    assert any("turn1" in r for r in store_void_reasons([row], row.get("git_sha")))
+
+
+def test_store_teaching_voids_rows_from_another_commit() -> None:
+    # uniform rows from an old or reverted description must not get a verdict
+    from analyze_store import store_void_reasons
+
+    row = {**_store_session(4), "filler": "varied", "requested_model": "claude-sonnet-5-5",
+           "turn1": "neutral", "git_sha": "old"}
+    assert any("registered" in r for r in store_void_reasons([row], "merge"))
 
 
 def test_store_teaching_a_death_cannot_decide_t1(monkeypatch) -> None:

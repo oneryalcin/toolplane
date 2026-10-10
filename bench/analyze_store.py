@@ -1,6 +1,7 @@
 """Deterministic analysis for the store-teaching registration.
 
-    python bench/analyze_store.py --sessions bench/results/longitudinal-X.json
+    python bench/analyze_store.py --git-sha <registration merge sha> \
+        --sessions bench/results/longitudinal-X.json
 
 Reads committed rows and prints every verdict the plan
 (bench/PREREG-store-teaching-2026-10.md) fixes. The bootstrap, pass gate,
@@ -94,13 +95,18 @@ def hypotheses(sessions):
         known = {arm: [_stat(s, "cost_usd", REUSE) for s in by_arm[arm] if not died(s)]
                  for arm in ARMS}
         a, b = ARMS
-        out.append((label, *_impute(
+        point, lo, hi, v = _impute(
             known, deaths,
             lambda g: statistics.median(g[a]) - statistics.median(g[b]),
             lambda g, lo, hi: verdict(
                 lo, hi, "~0", EQUIVALENCE_MARGIN * statistics.median(g[b])
             ),
-        )))
+        )
+        # T2 compares a session against the store only if the store served
+        # the reuse turns; otherwise it is session against refetch again
+        if out[0][4] != "HOLDS":
+            v += " (T1 did not hold: not a store comparison)"
+        out.append((label, point, lo, hi, v))
     return out, by_arm
 
 
@@ -118,8 +124,13 @@ def _died_share(known, n_died):
     return point, min(lo1, lo2), max(hi1, hi2), v
 
 
-def store_void_reasons(sessions) -> list[str]:
+def store_void_reasons(sessions, git_sha: str) -> list[str]:
     reasons = void_reasons([], sessions)
+    # uniform rows from the wrong commit (an old or reverted description)
+    # would otherwise pass: pin the registration's merge commit
+    shas = {s.get("git_sha") for s in sessions}
+    if shas != {git_sha}:
+        reasons.append(f"rows at {sorted(map(str, shas))}, not the registered {git_sha}")
     turn1 = {s.get("turn1", "sessions") for s in sessions}
     if turn1 - {TURN1}:
         reasons.append(f"sessions with turn1 {sorted(turn1 - {TURN1})}")
@@ -152,9 +163,10 @@ def report(sessions) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--sessions", nargs="+", type=Path, required=True)
+    parser.add_argument("--git-sha", required=True)
     args = parser.parse_args()
     sessions = [s for p in args.sessions for s in json.loads(p.read_text())["rows"]]
-    reasons = store_void_reasons(sessions)
+    reasons = store_void_reasons(sessions, args.git_sha)
     if reasons:
         print("VOID: " + "; ".join(reasons), file=sys.stderr)
         return 2
