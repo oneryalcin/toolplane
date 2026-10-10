@@ -1271,3 +1271,40 @@ def test_a_binary_named_cli_run_cannot_shadow_the_helper() -> None:
     )
 
     assert result.value is True, result.error
+
+
+def _execute_description(**kwargs) -> str:
+    from fastmcp import Client
+
+    from toolplane.mcp_facade import build_mcp_facade
+    from toolplane.results import ResultStore
+
+    async def exercise() -> str:
+        runtime = Toolplane(
+            ambient_cli=False,
+            default_backend="monty",
+            result_store=ResultStore(enabled=kwargs.pop("store", True)),
+            **kwargs,
+        )
+        async with Client(build_mcp_facade(runtime)) as client:
+            tools = await client.list_tools()
+        return next(t.description or "" for t in tools if t.name == "execute_code")
+
+    return asyncio.run(exercise())
+
+
+def test_execute_description_says_variables_persist_with_a_session() -> None:
+    assert "Variables persist across execute_code calls" in _execute_description()
+
+
+def test_execute_description_teaches_the_store_with_sessions_off() -> None:
+    # with one description for both modes a sessions-off model assumed
+    # persistence and refetched every turn, never touching the store (#175)
+    description = _execute_description(sessions=False)
+    assert "do NOT persist" in description and "save_result(value)" in description
+
+
+def test_execute_description_never_advertises_a_disabled_store() -> None:
+    # multi-client transports disable the store; naming it there sends the
+    # model to bindings that raise
+    assert "save_result" not in _execute_description(sessions=False, store=False)
