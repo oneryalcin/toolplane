@@ -233,15 +233,48 @@ def build_mcp_facade(
             runtime, "schemas", await runtime.get_schema(names, detail=detail)
         )
 
-    _EXECUTE_DOC = """Execute Python against the configured Toolplane namespace.
+    # name only what this configuration binds: the store is off on
+    # multi-client transports and the CLI can be off by config
+    extras = [
+        name
+        for name, on in (
+            ("flat CLI functions for allowed binaries", runtime.ambient_cli),
+            ("save_result/load_result", runtime.result_store.enabled),
+        )
+        if on
+    ]
+    beyond = (
+        f" Beyond capability functions the namespace binds {' and '.join(extras)}."
+        if extras
+        else ""
+    )
+    _EXECUTE_DOC = f"""Execute Python against the configured Toolplane namespace.
 
     Use the call shapes exactly as search_capabilities returned them —
     guessed binding names or positional arguments fail. Every binding
     is async — always `await` it — and the snippet should `return` a
-    JSON-shaped value. Beyond capability functions the namespace binds
-    flat CLI functions for allowed binaries and
-    save_result/load_result; the toolplane://namespace resource is the
-    full manifest when a shape is unclear.
+    JSON-shaped value.{beyond} The toolplane://namespace resource is
+    the full manifest when a shape is unclear.
+    """
+    # whether state survives between calls belongs here, not only in the
+    # manifest: with the same description in both modes a sessions-off
+    # model assumed persistence and never used the store (#175)
+    if runtime._session_default():
+        _EXECUTE_DOC += """
+    Variables persist across execute_code calls (a session): reuse
+    data fetched earlier instead of refetching; `await
+    reset_session()` clears them. A `backend=` override to another
+    backend does not see them.
+    """
+    elif runtime.result_store.enabled:
+        _EXECUTE_DOC += """
+    Variables do NOT persist between execute_code calls. To reuse
+    data later, `handle = await save_result(value)` and return the
+    handle; a later call gets it back with `await load_result(handle)`.
+    """
+    else:
+        _EXECUTE_DOC += """
+    Variables do NOT persist between execute_code calls.
     """
     if runtime._default_backend_capability("parallel_calls"):
         # the one teaching surface always read before a snippet: footer /
