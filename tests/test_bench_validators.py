@@ -785,3 +785,101 @@ def test_prereg_timeout_beside_a_completed_run_is_not_void(tmp_path: Path, monke
     monkeypatch.setattr(sys, "argv", ["analyze", str(runs)])
     monkeypatch.setattr(analyze_prereg, "report", lambda *a: "ok")
     assert analyze_prereg.main() == 0
+
+
+# ---- persistence follow-up (PREREG-persistence-2026-10) --------------------
+
+
+def test_persistence_equivalence_checks_the_margin_first() -> None:
+    # the confirmation matrix's H8: a precise +3% effect inside the 10%
+    # margin was reported REVERSED because "excludes 0" was checked first
+    from analyze_persistence import verdict
+
+    assert verdict(0.00002, 0.00034, "~0", margin=0.00066) == "HOLDS"
+
+
+def test_persistence_equivalence_noisy_cell_does_not_pass() -> None:
+    from analyze_persistence import verdict
+
+    assert verdict(-0.0086, 0.0208, "~0", margin=0.01) == "UNRESOLVED"
+
+
+def _session(arm, cost, ok=True, error=None):
+    turns = [] if error else [
+        {"turn": t, "cost_usd": cost, "peak_request_context_tokens": 1000, "correct": ok,
+         "reuse_mechanism": "retained", "compaction_events": 0}
+        for t in range(1, 7)
+    ]
+    return {"arm": arm, "turns": turns, "reuse_turns_correct": ok and not error,
+            "error": error, "reset_verified": True}
+
+
+def test_persistence_gate_blocks_a_verdict_read_off_survivors() -> None:
+    # an arm that failed 2 of 8 sessions would otherwise be priced on its
+    # 6 survivors and could "win" by failing
+    from analyze_persistence import session_hypotheses
+
+    sessions = [_session("direct", 0.05) for _ in range(8)] + [
+        _session("toolplane", 0.01, ok=i >= 2) for i in range(8)
+    ]
+    hyps, _, _ = session_hypotheses(sessions)
+    p2 = next(h for h in hyps if h[0].startswith("P2"))
+    assert p2[4].startswith("UNRESOLVED (gate")
+
+
+def test_persistence_died_session_counts_against_gate_without_crashing() -> None:
+    from analyze_persistence import report
+
+    sessions = [_session("direct", 0.05) for _ in range(8)] + [
+        _session("toolplane", 0.01, error="TimeoutError: turn 1 timed out")
+    ] + [_session("toolplane", 0.01) for _ in range(7)]
+    assert "| toolplane | 7/8 | 1 |" in report([], sessions)
+
+
+def test_persistence_voids_sessions_on_the_old_filler(tmp_path: Path, monkeypatch) -> None:
+    import analyze_persistence
+
+    path = tmp_path / "longitudinal.json"
+    path.write_text(json.dumps({"rows": [
+        {**_session("direct", 0.05), "requested_model": "claude-sonnet-5-5", "filler": "repeat"}
+    ]}))
+    monkeypatch.setattr(sys, "argv", ["analyze", "--sessions", str(path)])
+    assert analyze_persistence.main() == 2
+
+
+def test_order_server_serves_the_varied_filler(monkeypatch) -> None:
+    from orders_data import orders
+
+    monkeypatch.setenv("BENCH_FILLER", "varied")
+    server = _load_order_server(monkeypatch, "fetch-one", record_bytes=2000)
+    expected = orders(30, record_bytes=2000, filler="varied")[0]["detail"]
+    assert server._BY_ID["ORD-001"]["detail"] == expected
+
+
+def test_longitudinal_keeps_other_sessions_when_one_dies(tmp_path: Path, monkeypatch) -> None:
+    # the results file is written once at the end: an uncaught turn
+    # timeout used to discard every session already run
+    import longitudinal
+
+    (tmp_path / "results").mkdir()
+    monkeypatch.setattr(longitudinal, "BENCH_DIR", tmp_path)
+    monkeypatch.setattr(longitudinal.base, "build_code_under_test", lambda wd: {"python": sys.executable})
+    monkeypatch.setattr(longitudinal.base, "provenance_row", lambda code: {"git_dirty": False})
+    monkeypatch.setattr(longitudinal.base, "_sha256", lambda p: "x")
+    monkeypatch.setattr(
+        longitudinal.subprocess, "run",
+        lambda *a, **k: type("P", (), {"stdout": "[]"})(),
+    )
+
+    def fake_session(arm, *args):
+        if arm == "toolplane":
+            raise TimeoutError("turn 1 timed out")
+        return {**_session(arm, 0.05), "all_correct": True, "total_cost_usd": 0.3,
+                "peak_context_tokens": 1, "total_fixture_calls": 0}
+
+    monkeypatch.setattr(longitudinal, "run_session", fake_session)
+    monkeypatch.setattr(sys, "argv", ["longitudinal", "--arms", "direct,toolplane", "--filler", "varied"])
+    assert longitudinal.main() == 1
+    (result,) = (tmp_path / "results").glob("longitudinal-*.json")
+    rows = json.loads(result.read_text())["rows"]
+    assert [(r["arm"], bool(r.get("error"))) for r in rows] == [("direct", False), ("toolplane", True)]

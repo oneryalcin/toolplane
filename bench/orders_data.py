@@ -1,30 +1,62 @@
 """Deterministic order dataset shared by the bench MCP server and validator.
 
-Formula-based (no RNG, no seed file) so the server process and the
-harness process always agree byte-for-byte.
+Formula-based or seeded per order (no seed file) so the server process
+and the harness process always agree byte-for-byte.
 """
 
 from __future__ import annotations
+
+import random
 
 REGIONS = ("amer", "apac", "emea")
 DEFAULT_N = 30
 
 
-def _filler(seed: int, nbytes: int) -> str:
-    """Deterministic per-order padding of ~nbytes (formula-based, no RNG).
+_WORDS = (
+    "customer", "requested", "delivery", "window", "updated", "invoice",
+    "attached", "warehouse", "pallet", "scanned", "carrier", "label",
+    "printed", "address", "verified", "signature", "on", "file", "backorder",
+    "partial", "shipment", "notes", "priority", "standard", "express",
+    "return", "policy", "applied", "discount", "code", "region", "manager",
+    "approved", "credit", "hold", "released", "inventory", "recount", "dock",
+    "door", "seal", "intact", "temperature", "logged", "fragile", "contents",
+    "insured", "value", "declared", "customs", "form", "tracking", "number",
+    "reissued", "follow", "up", "call", "scheduled", "email", "sent",
+    "ticket", "escalated", "resolved", "pending", "review", "audit", "trail",
+    "entry", "duplicate", "merged", "vendor", "contact", "reference",
+    ").split(",
+)
+
+
+def _filler(seed: int, nbytes: int, style: str = "repeat") -> str:
+    """Deterministic per-order padding of ~nbytes.
 
     Its CONTENT is irrelevant to every task's answer — only its SIZE
     matters. This is the payload axis (#117): a fat record inflates what a
     direct fetch drops into model context, while the toolplane arm keeps it
     in the sandbox and only the aggregate escapes.
+
+    "repeat" is one token repeated (every result before the persistence
+    follow-up); Haiku 5.5 degenerated on it (prereg A1, H3 at 2 KB).
+    "varied" is seeded word text, closer to a real notes field.
     """
     if nbytes <= 0:
         return ""
+    if style == "varied":
+        rng = random.Random(seed)
+        words: list[str] = []
+        size = 0
+        while size < nbytes:
+            words.append(rng.choice(_WORDS))
+            size += len(words[-1]) + 1
+        return " ".join(words)[:nbytes]
+    if style != "repeat":
+        raise ValueError(f"unknown filler style {style!r}")
     token = f"ord{seed:04d}-"
     return (token * (nbytes // len(token) + 1))[:nbytes]
 
 
-def orders(n: int = DEFAULT_N, record_bytes: int = 0) -> list[dict]:
+def orders(n: int = DEFAULT_N, record_bytes: int = 0, filler: str = "repeat") -> list[dict]:
     out = []
     for i in range(1, n + 1):
         record = {
@@ -35,7 +67,7 @@ def orders(n: int = DEFAULT_N, record_bytes: int = 0) -> list[dict]:
         }
         if record_bytes:
             # a "detail" blob the tasks never read; sizes the fetch payload
-            record["detail"] = _filler(i, record_bytes)
+            record["detail"] = _filler(i, record_bytes, filler)
         out.append(record)
     return out
 
