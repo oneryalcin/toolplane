@@ -757,3 +757,17 @@ def test_prereg_lists_every_imputed_timeout() -> None:
         timeout, timeout,
     ]
     assert '"m/single/M1/B0/fetch-one/default/toolplane": 2' in report(rows, [], "m", "s")
+
+
+def test_prereg_voids_a_matrix_spanning_client_versions(tmp_path: Path, monkeypatch) -> None:
+    # Claude Code self-updates; a matrix straddling an update is not frozen
+    import analyze_prereg
+
+    runs = tmp_path / "run.json"
+    runs.write_text(json.dumps([
+        {"client_version": "2.1.295", "git_dirty": False},
+        {"client_version": "2.1.296", "git_dirty": False},
+        {"client_version": None, "git_dirty": False},
+    ]))
+    monkeypatch.setattr(sys, "argv", ["analyze", str(runs)])
+    assert analyze_prereg.main() == 2

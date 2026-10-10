@@ -170,4 +170,67 @@ The target is ≤ $5 in total, with a hard cap of $8.
 
 ## Amendments
 
-*(none yet)*
+### A1 — 2026-10-10, after the cost calibration, before any matrix run
+
+**Calibration (in no cell, committed).** All of it ran at `c0b98b6`
+on Claude Code 2.1.296.
+
+- `run-20261010-005346`: the four 20 KB cells, 1 run each.
+- `run-20261010-005448`: `loop100` direct, 1 run.
+- Longitudinal direct sessions, three attempts:
+  - two timed out on turn 1 at the 180 s limit; only the second left a
+    partial transcript (`longitudinal-20261010-005859`), the first
+    left nothing;
+  - `longitudinal-20261010-010230` ran with a 600 s turn limit.
+
+**What calibration found.**
+
+- **20 KB fetch-one, direct: $0.39 per run.** Toolplane costs $0.006
+  on the same cell. Every other cell costs $0.006–0.013.
+- **Haiku 5.5 collapses on the longitudinal direct arm.**
+  - Turn 1 generated 131,049 output tokens of degenerate text and
+    returned no answer.
+  - Every turn was wrong.
+  - Context peaked at 197K tokens after 30 records of repetitive 2 KB
+    padding (`ord0028-ord0028-…`).
+  - The session took 533 s and cost $0.30.
+  - This is reported as a finding about Haiku on this synthetic
+    filler, not as an economic result.
+- **The projection exceeded the target.** With all three registered
+  reductions it was about $7.8: over the $5 target and close to the $8
+  cap.
+
+**Changes (owner's decision).**
+
+- **O3 and G are dropped**, and O2 with G. H9, O2a and O2b are not
+  tested in this matrix. Persistence moves to a separate, small
+  follow-up registration on **Sonnet 5.5** (`claude-sonnet-5-5`, not
+  Sonnet 5).
+- **Registered reductions 1 and 2 apply.**
+  - B2 runs at 4 per arm. The 20 KB cells need no extra power: one
+    calibration run already shows a 64× gap, and July's ranges were
+    disjoint.
+  - S runs at 2 per arm.
+- **New projection: about $4.6.** The cumulative spend is checked
+  after every block, and the run stops before any block that would
+  cross $8.
+
+**Harness fixes found during calibration.** No hypothesis, cell
+definition or decision rule changes.
+
+- `longitudinal.py` keeps a timed-out session's partial transcript. It
+  used to discard the only evidence.
+- Every row records its own `client_version` from its run's init event.
+  The client had silently auto-updated from 2.1.295 to 2.1.296 between
+  sessions, and a version read once at matrix start would mislabel
+  every later row.
+- Every `claude` subprocess runs with `DISABLE_AUTOUPDATER=1`.
+- `analyze_prereg.py` voids a matrix whose rows span more than one
+  client version. A missing version (a timeout) is not counted as a
+  second one.
+
+**Blocks to run (from the commit containing this amendment).**
+
+- A, B1, C, D, E, F and S as registered.
+- B2 with `--reps 4`.
+- S with `--reps 2`.

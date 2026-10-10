@@ -396,6 +396,15 @@ def main() -> int:
     if dirty:
         print(f"VOID: git_dirty=true rows in {dirty} — the plan excludes them", file=sys.stderr)
         return 2
+    # one frozen client: rows spanning versions mean it updated mid-matrix
+    # (a timeout has no init event: an unknown version is not a second one)
+    versions = sorted(
+        ({r.get("client_version") for r in rows} | {x.get("client_version") for x in sessions})
+        - {None}
+    )
+    if len(versions) > 1:
+        print(f"VOID: rows span client versions {versions} — the plan freezes one", file=sys.stderr)
+        return 2
     print(report(rows, sessions, args.haiku, args.sonnet))
     return 0
 
