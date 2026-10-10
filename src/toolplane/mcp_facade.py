@@ -263,7 +263,8 @@ def build_mcp_facade(
         _EXECUTE_DOC += """
     Variables persist across execute_code calls (a session): reuse
     data fetched earlier instead of refetching; `await
-    reset_session()` clears them.
+    reset_session()` clears them. A `backend=` override to another
+    backend does not see them.
     """
     elif runtime.result_store.enabled:
         _EXECUTE_DOC += """
