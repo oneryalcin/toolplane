@@ -75,7 +75,7 @@ class ResultStore:
         self._total_bytes = 0
 
     @classmethod
-    def from_settings(cls, settings: "ResultsSettings") -> "ResultStore":
+    def from_settings(cls, settings: ResultsSettings) -> ResultStore:
         return cls(
             enabled=settings.enabled,
             max_entries=settings.max_entries,
@@ -175,7 +175,7 @@ class ResultStore:
 
 
 def register_result_capabilities(
-    registry: "CapabilityRegistry",
+    registry: CapabilityRegistry,
 ) -> tuple[Capability, Capability]:
     """Register the hidden save/load capabilities for schema discovery.
 
@@ -242,7 +242,7 @@ def _bridge_dispatch_only(**_params: Any) -> Any:
 
 
 def build_result_bindings(
-    bridge: "HostBridge",
+    bridge: HostBridge,
     *,
     reserved: set[str] | frozenset[str],
 ) -> dict[str, Any]:

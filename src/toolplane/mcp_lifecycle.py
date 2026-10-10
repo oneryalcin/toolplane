@@ -220,7 +220,7 @@ def _relocate_trailing_comments(servers: Any, name: str) -> None:
         else:
             for item in reversed(trailing):
                 parent.insert(index + 1, (None, item))
-    except Exception:
+    except Exception:  # noqa: BLE001
         # trivia relocation is best-effort over tomlkit internals; the
         # removal itself must never fail because of it
         return
@@ -237,7 +237,7 @@ def _is_last_content_item(servers: Any, name: str) -> bool:
             if key.key == name:
                 seen = True
         return seen
-    except Exception:
+    except Exception:  # noqa: BLE001
         return False
 
 
@@ -255,7 +255,7 @@ def _trim_trailing_blank_lines(servers: Any) -> None:
         body = _deepest_last_table_body(servers.value.body)
         while body and body[-1][0] is None and isinstance(body[-1][1], Whitespace):
             body.pop()
-    except Exception:
+    except Exception:  # noqa: BLE001
         return
 
 
@@ -485,7 +485,7 @@ async def _probe_mcp_server(
             detail=f"timed out after {timeout_seconds:g}s",
             warning=warning,
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         detail = _one_line_error(exc)
         state: McpStatusState = (
             "auth_required" if _looks_auth_required(detail) else "error"

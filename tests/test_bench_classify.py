@@ -15,7 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "bench"))
 
-from classify import classify_run  # noqa: E402
+from classify import classify_run
 
 
 def _assistant(tool_id: str, name: str, **input_kwargs) -> str:

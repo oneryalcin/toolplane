@@ -79,7 +79,7 @@ class ArtifactStore:
         self._root: Path | None = None
 
     @classmethod
-    def from_settings(cls, settings: "ArtifactsSettings") -> "ArtifactStore":
+    def from_settings(cls, settings: ArtifactsSettings) -> ArtifactStore:
         return cls(
             enabled=settings.enabled,
             max_entries=settings.max_entries,
@@ -236,7 +236,7 @@ def decode_artifact_b64(data_b64: Any) -> bytes:
 
 
 def register_artifact_capabilities(
-    registry: "CapabilityRegistry",
+    registry: CapabilityRegistry,
 ) -> tuple[Capability, Capability]:
     """Register the hidden save/load capabilities for schema discovery.
 
@@ -311,7 +311,7 @@ def _bridge_dispatch_only(**_params: Any) -> Any:
 
 
 def build_artifact_bindings(
-    bridge: "HostBridge",
+    bridge: HostBridge,
     *,
     reserved: set[str] | frozenset[str],
 ) -> dict[str, Any]:

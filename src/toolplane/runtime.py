@@ -88,7 +88,7 @@ class Toolplane:
         *,
         registry: CapabilityRegistry | None = None,
         backends: Sequence[CodeBackend] | None = None,
-    ) -> "Toolplane":
+    ) -> Toolplane:
         """Build a Toolplane runtime from a validated config or TOML path."""
         from .config import ToolplaneConfig, load_toolplane_config
 
@@ -777,7 +777,7 @@ class Toolplane:
         raised: BaseException | None = None
         try:
             result = await runner.run(code, **run_kwargs)
-        except BaseException as exc:
+        except BaseException as exc:  # noqa: BLE001
             raised = exc
         # escalations must not outlive the run that asked: a backend
         # timeout leaves the dispatch coroutine (and its open human

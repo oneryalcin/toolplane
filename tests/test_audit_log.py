@@ -16,6 +16,7 @@ from toolplane import Toolplane
 from toolplane.adapters.ambient_cli import AMBIENT_CLI_CAPABILITY
 from toolplane.audit import AuditLog
 from toolplane.capabilities import Capability
+from toolplane.errors import CliPolicyError
 from toolplane.registry import CapabilityRegistry
 
 
@@ -150,16 +151,16 @@ def test_escalation_outcomes_are_logged(tmp_path: Path) -> None:
     async def exercise():
         policy.escalation_handler = handler
         await policy.ensure_allowed("curl")  # granted
-        with pytest.raises(Exception):
+        with pytest.raises(CliPolicyError):
             await policy.ensure_allowed("wget")  # declined
         policy.escalation_handler = broken
-        with pytest.raises(Exception):
+        with pytest.raises(CliPolicyError):
             await policy.ensure_allowed("jq")  # error -> fail closed
         policy.escalation_handler = never
         pending = asyncio.ensure_future(policy.ensure_allowed("ping"))
         await asyncio.sleep(0)
         policy.cancel_pending_escalations()  # abandoned
-        with pytest.raises(Exception):
+        with pytest.raises(CliPolicyError):
             await pending
 
     run(exercise())

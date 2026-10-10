@@ -11,7 +11,7 @@ import pytest
 from toolplane import CapabilityRegistry, DuplicateCapabilityError, Toolplane
 
 pytest.importorskip("fastmcp")
-from fastmcp import FastMCP  # noqa: E402
+from fastmcp import FastMCP
 
 
 class FakeCliResult:
@@ -232,6 +232,7 @@ def test_mcp_config_accepts_remote_url_shape_without_connecting(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from fastmcp.mcp_config import MCPConfig
+
     from toolplane.adapters import mcp as mcp_adapter
 
     captured: dict[str, object] = {}
@@ -277,6 +278,7 @@ def test_mcp_config_accepts_fastmcp_root_server_shape_without_connecting(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from fastmcp.mcp_config import MCPConfig
+
     from toolplane.adapters import mcp as mcp_adapter
 
     captured: dict[str, object] = {}

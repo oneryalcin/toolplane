@@ -23,11 +23,11 @@ from ..adapters.ambient_cli import (
     is_safe_cli_name,
     render_pyodide_cli_namespace,
 )
+from ..artifacts import render_pyodide_artifact_bindings
 from ..bridges.base import HostBridge
 from ..bridges.rpc import HttpCallbackBridge
 from ..errors import NamespaceCollisionError
 from ..execution import BackendCapabilities, ExecutionError, ExecutionResult
-from ..artifacts import render_pyodide_artifact_bindings
 from ..results import _NON_JSON_GUIDANCE, render_pyodide_result_bindings
 from ._python import (
     UNAWAITED_CALL_ERROR_TYPE,
@@ -164,7 +164,7 @@ class PyodideDenoBackend:
                     started=started,
                     binding_names=binding_names,
                 )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 return ExecutionResult(
                     duration_ms=_elapsed_ms(started),
                     backend=self.name,
@@ -464,7 +464,7 @@ async def _wait_for_server(
         try:
             await asyncio.to_thread(_get, url, 1.0)
             return
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             last_error = exc
             await asyncio.sleep(0.2)
     raise TimeoutError(f"Deno Pyodide server did not start: {last_error}")
@@ -511,7 +511,7 @@ async def _terminate_process(process: asyncio.subprocess.Process) -> None:
     process.terminate()
     try:
         await asyncio.wait_for(process.wait(), timeout=3)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         process.kill()
         await process.wait()
 

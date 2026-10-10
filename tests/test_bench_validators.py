@@ -18,7 +18,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "bench"))
 
-from run import _check_filter, _check_region_totals, _check_single  # noqa: E402
+from run import _check_filter, _check_region_totals, _check_single
 
 
 def _load_order_server(
@@ -158,7 +158,6 @@ def test_distractors_rejects_zero_and_negative_m() -> None:
     # a silently-empty distractor list would record rows labelled M=0
     # against a config that actually ran one server
     import pytest
-
     from run import distractors
 
     for bad in (0, -3):
@@ -651,6 +650,7 @@ def test_nosession_arm_turns_sessions_off(tmp_path: Path) -> None:
     import tomllib
 
     from run import mcp_config
+
     from toolplane.config import load_toolplane_config
 
     code = {"fixtures_dir": str(tmp_path), "python": "py", "toolplane_bin": "tp"}
@@ -681,7 +681,7 @@ def test_prereg_all_failure_resamples_read_unresolved() -> None:
     from analyze_prereg import _cost_of_pass, bootstrap, verdict
 
     groups = {"arm": [(0.1, True), (0.1, False)], "direct": [(0.1, True), (0.1, False)]}
-    point, lo, hi = bootstrap(
+    _, lo, hi = bootstrap(
         groups, lambda g: _cost_of_pass(g["arm"]) - _cost_of_pass(g["direct"])
     )
     assert verdict(lo, hi, "<0") == "UNRESOLVED"
@@ -708,7 +708,7 @@ def test_prereg_slope_with_an_all_failure_cell_is_unresolved() -> None:
         for t, n in (("loop5", 5), ("loop20", 20), ("loop", 30), ("loop100", 100))
         for _ in range(4)
     ]
-    point, lo, hi = scale_slope(rows, "m", ("direct",))
+    _, lo, hi = scale_slope(rows, "m", ("direct",))
     assert verdict(lo, hi, ">0") == "UNRESOLVED"
 
 
@@ -722,7 +722,7 @@ def test_prereg_wall_time_counts_slow_failures() -> None:
     rows = [row("toolplane", 1, True)] * 2 + [row("toolplane", 100, False)] * 2 + [
         row("direct", 10, True)
     ] * 4
-    point, lo, hi = wall_diff(rows, "m", "loop_lat100")
+    _, lo, hi = wall_diff(rows, "m", "loop_lat100")
     assert verdict(lo, hi, "<0") != "HOLDS"
 
 

@@ -14,7 +14,7 @@ import secrets
 import sys
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -43,7 +43,7 @@ class AuditLog:
         self._lock = threading.Lock()
 
     @classmethod
-    def from_settings(cls, settings: "AuditSettings") -> "AuditLog":
+    def from_settings(cls, settings: AuditSettings) -> AuditLog:
         return cls(
             settings.path or DEFAULT_AUDIT_PATH,
             enabled=settings.enabled,
@@ -67,7 +67,7 @@ class AuditLog:
         if not self.enabled:
             return
         record: dict[str, Any] = {
-            "ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+            "ts": datetime.now(UTC).isoformat(timespec="milliseconds"),
             "event": event,
         }
         if run_id is not None:
@@ -82,7 +82,7 @@ class AuditLog:
                     self._file = self._path.open("a", encoding="utf-8")
                 self._file.write(line + "\n")
                 self._file.flush()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             # serialization failures count too (default=str can surface
             # arbitrary exceptions from __str__): auditing never breaks a run
             self.enabled = False

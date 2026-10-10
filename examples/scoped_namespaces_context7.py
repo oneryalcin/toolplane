@@ -27,7 +27,6 @@ from pathlib import Path
 
 from toolplane import Capability, Toolplane
 
-
 AGENT_CODE = """
 # The code author only sees normal Python names. They do not know or care
 # whether a callable came from a local host helper or a remote MCP server.
