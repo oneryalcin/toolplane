@@ -94,6 +94,18 @@ _AVERAGES = {
 }
 _PENDING = sum(row["status"] == "pending" for row in _DATA)
 
+# turn 1 "sessions" (the original) asks to retain the orders in a session
+# variable; "neutral" is the same prompt with that sentence removed and
+# nothing added, so neither a session nor the store is suggested (#175:
+# 0/32 reuse turns used the store under the original wording)
+TURN1_NEUTRAL = (
+    "This is the first of several related questions about the same order "
+    "store. Do not use Bash, files, web, or helper agents. Use only the "
+    "available MCP tools. Compute total order amount per region across all "
+    "orders, rounded to 2 decimals. Reply only with alphabetically sorted "
+    "region,total lines inside <answer></answer>."
+)
+
 TASKS: tuple[dict[str, Any], ...] = (
     {
         "name": "load_and_total",
@@ -353,6 +365,7 @@ def run_session(
     code: dict[str, Any],
     transcript_path: Path,
     filler: str = "repeat",
+    turn1: str = "sessions",
 ) -> dict[str, Any]:
     call_log = workdir / f"calls-{arm}-{time.time_ns()}.jsonl"
     config_path = workdir / f"mcp-longitudinal-{arm}.json"
@@ -405,7 +418,11 @@ def run_session(
     session_id: str | None = None
     try:
         for index, task in enumerate(TASKS, 1):
-            process.stdin.write(_user_message(task["prompt"]) + "\n")
+            prompt = (
+                TURN1_NEUTRAL if index == 1 and turn1 == "neutral"
+                else task["prompt"]
+            )
+            process.stdin.write(_user_message(prompt) + "\n")
             process.stdin.flush()
             events: list[dict[str, Any]] = []
             result: dict[str, Any] | None = None
@@ -607,6 +624,7 @@ def main() -> int:
     parser.add_argument("--arms", default="direct,toolplane")
     parser.add_argument("--snapshot-only", action="store_true")
     parser.add_argument("--filler", choices=("repeat", "varied"), default="repeat")
+    parser.add_argument("--turn1", choices=("sessions", "neutral"), default="sessions")
     args = parser.parse_args()
     stamp = time.strftime("%Y%m%d-%H%M%S")
     if args.snapshot_only:
@@ -638,7 +656,8 @@ def main() -> int:
                 transcript = transcript_dir / f"{arm}-rep{rep + 1}.jsonl"
                 try:
                     row = run_session(
-                        arm, args.model, workdir, code, transcript, args.filler
+                        arm, args.model, workdir, code, transcript, args.filler,
+                        args.turn1,
                     )
                 except Exception as exc:  # noqa: BLE001
                     # one failed session must not discard the others: the
@@ -652,6 +671,7 @@ def main() -> int:
                         "requested_model": args.model,
                         "record_bytes": RECORD_BYTES,
                         "filler": args.filler,
+                        "turn1": args.turn1,
                         "orders_n": N,
                         **provenance,
                     }
