@@ -27,7 +27,14 @@ This doc reads those verdicts. It doesn't change any of them.
   projection. Calibration K $0.61, L $4.64, S $2.74. Nothing is
   unpriced: there were no timeouts.
 - **Budget rule.** After K the fixed formula projected
-  K + L + S = 0.61 + 8 × 0.613 + 32 × 0.0825 = $8.15, so S ran.
+  K + L + S = 0.61 + 8 × 0.613 + 32 × 0.0825 = $8.15, so L ran. L and S
+  were chained in one script that, after L finished, summed L's recorded
+  cost ($0.61 + $4.64 = $5.25), added S's projection ($2.64) and launched
+  S only because $7.89 ≤ $10. That check and S's launch fell in the same
+  second as L's results file was written.
+- **Environment.** Every block ran with `ANTHROPIC_API_KEY` unset and
+  `UV_NO_CONFIG=1`, as registered. The rows don't record the environment,
+  so this rests on the launch script, not on the data.
 - **Deviations.** None to the registered rules or code. Two notes:
   - `longitudinal.py` exited 1 on block L. Every session passed; the exit
     came from the reset detector (next item). The registration says the
@@ -36,10 +43,14 @@ This doc reads those verdicts. It doesn't change any of them.
     6/8 sessions. In the other two (`toolplane-rep6`, `toolplane-rep8`)
     the transcripts show `return await reset_session()` in its own
     `execute_code` call, then a full refetch, and turn 6 was answered
-    correctly. The harness's `_is_dedicated_reset_code` only accepts the
-    bare statement `await reset_session()`, so the `return` form reads as
+    correctly. The harness's `_is_dedicated_reset_code` requires
+    `await reset_session()` as a bare first statement (optionally followed
+    by `return <constant>`), so `return await reset_session()` reads as
     no reset. By hand it is 8/8. This figure is reported, not tested, and
-    no verdict reads it.
+    no verdict reads it. Separately, 3 sessions-off rows record
+    `used_reset_session=True`: the model called `reset_session()` there,
+    which doesn't exist with sessions off and raised. No figure uses this
+    field for that arm.
 
 ## Verdicts
 
@@ -62,7 +73,7 @@ is in the analysis output.
 
 Toolplane's session is 40% cheaper over turns 1–5, but the whole gap is
 the load turn: turn 1 median $0.085 against direct's $0.170. Direct's
-turn 1 brings all 30 orders (60 KB of filler) into context; toolplane
+turn 1 brings all 30 orders (about 60 KB of records) into context; toolplane
 keeps them in the sandbox and returns totals. On turns 2–5 direct is the
 cheaper arm (P3). The claim "a session is cheaper overall" holds for this
 shape, five turns over one load; it is front-loaded, as the registration
@@ -70,54 +81,62 @@ said.
 
 ### P3 is reversed: a reuse turn costs one extra request
 
-On a reuse turn direct answers from the orders already in its context:
-one model request, no tool call, about $0.0056. Toolplane answers from
-the live session: an `execute_code` call and then the answer, two
-requests, about $0.0080. Toolplane's context is smaller (27K against
-44K), but the second request re-reads it, and that costs more than the
-extra 17K tokens direct carries once. Over turns 2–5 that is $0.033
-against $0.0245, +35%, far outside the ±10% margin. All 32 reuse turns
-in each arm were correct.
+On every reuse turn direct answers from the orders already in its
+context: one model request, no tool call. Toolplane answers from the
+live session: an `execute_code` call and then the answer, two requests,
+on all 32 turns. Toolplane's context is smaller (27K against 44K), but
+the extra request costs more than that saves. Per reuse turn, medians:
+cache reads 53.1K against 43.8K tokens (the largest term), output 163
+against 54 tokens, cache writes 357 against 174. Over turns 2–5 that is
+$0.033 against $0.0245, +35%, far outside the ±10% margin (about $0.008
+against $0.006 a turn). All 32 reuse turns in each arm were correct.
 
 July's Sonnet 5 sessions had the two arms level ($0.092 against $0.094).
 Direct's reuse turns are about 4× cheaper here than in July; this run
 can't say why (model, client version and filler all changed).
 
-What this does not show: the break-even. Direct's per-turn reuse cost
-grows with what sits in its context, and toolplane's doesn't. At 60 KB
-of loaded data and four reuse turns, the live session's one-time saving
-on the load ($0.085) dwarfs its per-turn surcharge ($0.0024); it would
-take about 35 reuse turns to give it back, and this fixture can't test
-that.
+What this does not show: a break-even. As a scenario only: if the
+per-turn surcharge stayed at the observed $0.0021–0.0024, the load-turn
+saving ($0.085) would last 35–40 reuse turns. Nothing here measures
+beyond four reuse turns. Within them direct's per-turn cost does not
+grow; it falls from $0.0079 on turn 2 to $0.0054 on turn 5, as the cache
+warms.
 
-### P4 and P5 hold, narrowly; the result store was never used
+### P4 and P5 hold; the result store was never tried
 
 The sessions-off arm advertises `save_result`/`load_result`, and Sonnet
-5.5 never used them: 32 of 32 reuse turns refetched all 30 orders inside
-`execute_code` (31 fixture calls each). The refetch stays in the sandbox,
+5.5 never called them. On all 32 reuse turns it wrote
+`try: orders_cache` / `except NameError:` and refetched all 30 orders
+inside `execute_code` (31 fixture calls each). It assumed a live session
+and fell through to a refetch every time; it never considered the store. The refetch stays in the sandbox,
 so it costs little: $0.0013 a turn more than the live session. So P4/P5
 compare a live session against in-sandbox refetching, not against the
-result store. The live session saves $0.008 per five-turn session (7%).
+result store. P4 is clear (−13% on reuse turns, CI well off 0); P5 is
+narrow: the live session saves $0.008 per five-turn session (7%).
 It would save more where the refetch is slow or costly, which this
 fixture's local server isn't.
 
-The session also pays off inside turn 1. Both toolplane arms typically
-fetch all 30 orders in one `execute_code` call to inspect their shape,
-then compute in a second. With the session on, the second call reuses
-the fetched list; with sessions off it is gone, and the arm fetches all
-30 again (62 fixture calls median, against 31.5).
+Turn 1 shows the same effect, faintly. Both toolplane arms usually make
+two `execute_code` calls: a first look at the data, then the
+computation. When the first call fetched all 30 orders, the session arm
+reused them in 4 of 8 sessions (rep 6 fetched again anyway); sessions-off
+fetched again in 7 of 8. Median fixture calls are 31.5 against 62. In
+dollars it barely shows: $0.0846 against $0.0865.
 
 ### S1 is unresolved on one cold-cache run
 
-The registered statistic is mean cost per pass. Seven of direct's eight
-`single` runs cost $0.0711 and all eight of toolplane's cost $0.0732 or
-$0.0768, so in every comparable pair toolplane is about 3% dearer. The
-eighth direct run, the first run of block S, cost $0.1123: it paid
-cache creation that every later run read. That one run pulls direct's
-mean above toolplane's, and the interval crosses 0. The registered
-verdict is UNRESOLVED and stays so. Read with the confirmation matrix's
-Haiku H1a (+11%, HOLDS), the small-task loss looks real but small on
-Sonnet 5.5; this run alone doesn't establish it.
+The registered statistic is mean cost per pass. The runs are nearly
+deterministic: seven of direct's eight `single` runs cost exactly
+$0.0711, seven of toolplane's exactly $0.0732 and one $0.0768. The
+first run of block S (a direct run) cost $0.1123: its first request
+wrote the cache (26,010 tokens created, 0 read) that every later run of
+both arms read. That one run pulls direct's mean above toolplane's, and
+the interval crosses 0. With values this repetitive, the interval mostly
+reflects whether that one run is resampled, not sampling variation.
+
+The verdict is UNRESOLVED and stays so. The registration allows no
+exclusions, so this doc draws no conclusion from the other seven runs.
+Sonnet 5.5's `single` result is open.
 
 ### S2 holds at about 3%
 
@@ -137,7 +156,7 @@ smaller than Haiku 5.5's +12% (the confirmation matrix's H5).
   in-sandbox refetching, because the model never reached for the result
   store.
 - The small-task and chain losses: chain holds at about 3%; single is
-  unresolved by one cold-cache run.
+  unresolved, its interval decided by one cold-cache run.
 
 ## Files
 
