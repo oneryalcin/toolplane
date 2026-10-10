@@ -371,20 +371,20 @@ def render_pyodide_artifact_bindings(
             "        raise ValueError(",
             '            "save_artifact takes bytes, got "',
             "            + repr(type(data).__name__)",
-            '            + "; JSON-shaped values belong in the result store'
-            ' (save_result)"',
+            ('            + "; JSON-shaped values belong in the result store'
+            ' (save_result)"'),
             "        )",
-            f"    return await call_tool({ARTIFACTS_SAVE_CAPABILITY!r}, "
+            (f"    return await call_tool({ARTIFACTS_SAVE_CAPABILITY!r}, "
             '{"data_b64": _tp_b64.b64encode(data).decode("ascii"), '
-            '"filename": filename, "label": label})',
+            '"filename": filename, "label": label})'),
             "",
         ]
     if "load_artifact" not in reserved:
         lines += [
             "async def load_artifact(handle):",
             "    import base64 as _tp_b64",
-            f"    payload = await call_tool({ARTIFACTS_LOAD_CAPABILITY!r}, "
-            '{"handle": handle})',
+            (f"    payload = await call_tool({ARTIFACTS_LOAD_CAPABILITY!r}, "
+            '{"handle": handle})'),
             '    return _tp_b64.b64decode(payload["data_b64"])',
             "",
         ]

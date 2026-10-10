@@ -1325,8 +1325,8 @@ def summarize(rows: list[dict]) -> str:
     (timeout) makes the cell "n/a" rather than silently pricing as free.
     """
     lines = [
-        "| task | M | B | granularity | arm | ok | tool calls | reqs | turns "
-        "| out tokens | uncached in | cost $ | cost/pass | wall s |",
+        ("| task | M | B | granularity | arm | ok | tool calls | reqs | turns "
+        "| out tokens | uncached in | cost $ | cost/pass | wall s |"),
         "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     m_values = sorted({r.get("m_servers", 1) for r in rows})
@@ -1436,8 +1436,8 @@ def discovery_summary(rows: list[dict]) -> str:
     lines = [
         "\n## First-search discovery (#127 primary outcome)",
         "",
-        "| task | M | B | granularity | arm | reps | first-hit rate "
-        "| searches→tool | artifacts |",
+        ("| task | M | B | granularity | arm | reps | first-hit rate "
+        "| searches→tool | artifacts |"),
         "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     arm_order_display = [
