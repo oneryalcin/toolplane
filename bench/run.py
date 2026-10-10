@@ -1562,7 +1562,8 @@ def main() -> int:
     except ValueError as exc:
         parser.error(str(exc))
     client_version = subprocess.run(
-        [args.client, "--version"], capture_output=True, text=True
+        [args.client, "--version"], capture_output=True, text=True,
+        env=CLIENT_ENV,
     ).stdout.strip()
     stamp = time.strftime("%Y%m%d-%H%M%S")
     transcripts_dir = BENCH_DIR / "results" / "transcripts" / f"run-{stamp}"
@@ -1632,9 +1633,12 @@ def main() -> int:
                                         restrict_builtins=args.restrict_builtins,
                                     )
                                     row["client"] = "claude"
-                                row["client_version"] = (
-                                    row.get("client_version") or client_version
-                                )
+                                # Claude rows carry their own init-event
+                                # version (None on a timeout: unknown, never
+                                # guessed); Codex rows have no init event
+                                row["client_version_at_start"] = client_version
+                                if args.client == "codex":
+                                    row["client_version"] = client_version
                                 # what was asked for: a timeout row has
                                 # model=None (no init event), and analysis
                                 # must still find it in its cell

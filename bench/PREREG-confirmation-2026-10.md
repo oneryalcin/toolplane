@@ -231,6 +231,13 @@ definition or decision rule changes.
 
 **Blocks to run (from the commit containing this amendment).**
 
-- A, B1, C, D, E, F and S as registered.
+- A, B1, C, D, E and F as registered.
 - B2 with `--reps 4`.
 - S with `--reps 2`.
+
+**Amended analysis command** (O3 and G are not run, so there are no
+`--longitudinal` inputs):
+
+```
+.venv/bin/python bench/analyze_prereg.py <the run-*.json of A, B1, B2, C, D, E, F, S>
+```

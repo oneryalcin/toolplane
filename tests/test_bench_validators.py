@@ -771,3 +771,17 @@ def test_prereg_voids_a_matrix_spanning_client_versions(tmp_path: Path, monkeypa
     ]))
     monkeypatch.setattr(sys, "argv", ["analyze", str(runs)])
     assert analyze_prereg.main() == 2
+
+
+def test_prereg_timeout_beside_a_completed_run_is_not_void(tmp_path: Path, monkeypatch) -> None:
+    # a timeout's unknown version must not read as a second client version
+    import analyze_prereg
+
+    runs = tmp_path / "run.json"
+    runs.write_text(json.dumps([
+        {"client_version": "2.1.296", "git_dirty": False},
+        {"client_version": None, "git_dirty": False},
+    ]))
+    monkeypatch.setattr(sys, "argv", ["analyze", str(runs)])
+    monkeypatch.setattr(analyze_prereg, "report", lambda *a: "ok")
+    assert analyze_prereg.main() == 0
