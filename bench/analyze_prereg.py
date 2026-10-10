@@ -37,6 +37,8 @@ from run import _cost_of_pass
 RESAMPLES = 4000
 SEED = 0
 EQUIVALENCE_MARGIN = 0.10
+# hypotheses removed by a logged amendment (PREREG "Amendments")
+DROPPED = {"O3": "A1", "H9a": "A1", "H9b": "A1", "O2a": "A1", "O2b": "A1"}
 
 
 # ---- cells -----------------------------------------------------------------
@@ -267,7 +269,8 @@ def report(rows, sessions, haiku: str, sonnet: str) -> str:
 
     def add(hid, label, res, n=""):
         if res is None:
-            lines.append(f"| {hid} | {label} | — | — | — | NOT RUN |")
+            status = f"DROPPED (amendment {DROPPED[hid]})" if hid in DROPPED else "NOT RUN"
+            lines.append(f"| {hid} | {label} | — | — | — | {status} |")
             return
         point, lo, hi, *rest = res
         v = rest[0] if rest and isinstance(rest[0], str) else ""
