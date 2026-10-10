@@ -28,6 +28,7 @@ _LATENCY_S = float(os.environ.get("BENCH_TOOL_LATENCY_MS", "0")) / 1000.0
 # payload axis (#117): pad each record so a direct fetch drops a fat blob
 # into model context while the toolplane arm keeps it in the sandbox
 _RECORD_BYTES = int(os.environ.get("BENCH_RECORD_BYTES", "0"))
+_FILLER = os.environ.get("BENCH_FILLER", "repeat")
 _CALL_LOG = os.environ.get("BENCH_CALL_LOG")
 _GRANULARITY = os.environ.get("BENCH_API_GRANULARITY", "fetch-one")
 if _GRANULARITY not in {"fetch-one", "bulk"}:
@@ -36,7 +37,7 @@ if _GRANULARITY not in {"fetch-one", "bulk"}:
         f"got {_GRANULARITY!r}"
     )
 _BY_ID = {
-    order["order_id"]: order for order in orders(_N, record_bytes=_RECORD_BYTES)
+    order["order_id"]: order for order in orders(_N, record_bytes=_RECORD_BYTES, filler=_FILLER)
 }
 _NOTES = {"chain": chain_notes, "chain_prose": prose_chain_notes}
 if os.environ.get("BENCH_NOTES") in _NOTES:

@@ -320,10 +320,13 @@ def _call_log_rows(path: Path) -> list[dict[str, Any]]:
 
 
 def _config_with_call_log(
-    arm: str, workdir: Path, code: dict[str, Any], call_log: Path
+    arm: str, workdir: Path, code: dict[str, Any], call_log: Path,
+    filler: str = "repeat",
 ) -> dict[str, Any]:
     prior = base.TASKS["loop"].get("server_env")
-    base.TASKS["loop"]["server_env"] = {"BENCH_CALL_LOG": str(call_log)}
+    base.TASKS["loop"]["server_env"] = {
+        "BENCH_CALL_LOG": str(call_log), "BENCH_FILLER": filler,
+    }
     try:
         return base.mcp_config(
             arm,
@@ -347,11 +350,12 @@ def run_session(
     workdir: Path,
     code: dict[str, Any],
     transcript_path: Path,
+    filler: str = "repeat",
 ) -> dict[str, Any]:
     call_log = workdir / f"calls-{arm}-{time.time_ns()}.jsonl"
     config_path = workdir / f"mcp-longitudinal-{arm}.json"
     config_path.write_text(
-        json.dumps(_config_with_call_log(arm, workdir, code, call_log)),
+        json.dumps(_config_with_call_log(arm, workdir, code, call_log, filler)),
         encoding="utf-8",
     )
     cwd = workdir / f"cwd-longitudinal-{arm}-{time.time_ns()}"
@@ -575,12 +579,32 @@ async def snapshot_cell(size: int, repeats: int = 7) -> dict[str, Any]:
     }
 
 
+def _failed_session(arm: str, exc: Exception, transcript: Path) -> dict[str, Any]:
+    """A session that died (turn timeout, client exit): its turns and cost
+    are unknown (the partial transcript is kept), and it counts as failed."""
+    return {
+        "arm": arm,
+        "error": f"{type(exc).__name__}: {exc}",
+        "transcript": str(transcript),
+        "client_version": None,
+        "turns": [],
+        "all_correct": False,
+        "reuse_turns_correct": False,
+        "reset_turn_correct": False,
+        "reset_verified": None if arm == base._NO_SESSION_ARM else False,
+        "total_cost_usd": None,
+        "peak_context_tokens": None,
+        "total_fixture_calls": None,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--reps", type=int, default=1)
     parser.add_argument("--model", default="sonnet")
     parser.add_argument("--arms", default="direct,toolplane")
     parser.add_argument("--snapshot-only", action="store_true")
+    parser.add_argument("--filler", choices=("repeat", "varied"), default="repeat")
     args = parser.parse_args()
     stamp = time.strftime("%Y%m%d-%H%M%S")
     if args.snapshot_only:
@@ -609,18 +633,23 @@ def main() -> int:
         for rep in range(args.reps):
             for arm in base.arm_order(arms, rep):
                 print(f"[{rep + 1}/{args.reps}] longitudinal/{arm}", flush=True)
-                row = run_session(
-                    arm,
-                    args.model,
-                    workdir,
-                    code,
-                    transcript_dir / f"{arm}-rep{rep + 1}.jsonl",
-                )
+                transcript = transcript_dir / f"{arm}-rep{rep + 1}.jsonl"
+                try:
+                    row = run_session(
+                        arm, args.model, workdir, code, transcript, args.filler
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    # one failed session must not discard the others: the
+                    # result file is written once, at the end (exit 1 still
+                    # leaves a complete, analyzable file)
+                    row = _failed_session(arm, exc, transcript)
                 row.update(
                     {
                         "rep": rep + 1,
                         "model": args.model,
+                        "requested_model": args.model,
                         "record_bytes": RECORD_BYTES,
+                        "filler": args.filler,
                         "orders_n": N,
                         **provenance,
                     }
@@ -628,7 +657,7 @@ def main() -> int:
                 rows.append(row)
                 print(
                     f"  correct={row['all_correct']} "
-                    f"cost=${row['total_cost_usd']:.2f} "
+                    f"cost=${row['total_cost_usd'] or 0:.2f} "
                     f"peak_ctx={row['peak_context_tokens']} "
                     f"fixture_calls={row['total_fixture_calls']}",
                     flush=True,
@@ -649,7 +678,8 @@ def main() -> int:
     print(result_path)
     # turn 6 (reset) is unscored for the sessions-off arm: no session exists
     return 0 if all(
-        row["reuse_turns_correct"]
+        row.get("exit_code") == 0
+        and row["reuse_turns_correct"]
         and (row["arm"] == base._NO_SESSION_ARM or row["all_correct"])
         and row["reset_verified"] is not False
         for row in rows
