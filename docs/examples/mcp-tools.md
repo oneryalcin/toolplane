@@ -57,6 +57,53 @@ await runtime.register_mcp_config({
     still available through `call_tool(...)` and remain stable when aliases
     would collide.
 
+## Serve Your Own Python Functions
+
+`toolplane serve mcp` serves what the config file names: MCP servers and
+allowed CLI binaries. Python functions are registered in code, so serving them
+to an agent takes a short launcher. Build the runtime from the same config,
+register the functions, then serve the facade:
+
+```python
+from toolplane import Toolplane, build_mcp_facade, load_toolplane_config
+from toolplane.policy import EffectivePolicy, ensure_safe_facade_policy
+
+
+def sla_breach(severity: str, days_open: int) -> bool:
+    """True when a high-severity ticket has been open more than 5 days."""
+    return severity == "high" and days_open > 5
+
+
+async def serve() -> None:
+    config = load_toolplane_config("toolplane.toml")
+    runtime = await Toolplane.from_config(config)
+    runtime.register_python_namespace("policy", {"sla_breach": sla_breach})
+    policy = EffectivePolicy.from_config(config)
+    ensure_safe_facade_policy(policy)
+    app = build_mcp_facade(runtime, policy=policy)
+    await app.run_async(transport="stdio", show_banner=False)
+```
+
+Then point the client at the script instead of `toolplane serve mcp`:
+
+```bash
+claude mcp add my-tools -- python /abs/path/to/launcher.py
+```
+
+The agent sees the function as `await policy_sla_breach(severity=..., days_open=...)`,
+callable in the same program as the configured MCP tools and CLI binaries.
+
+!!! note "Pass the policy"
+
+    `policy` pins `execute_code` to the configured backend, as `serve mcp`
+    does. A facade built without one still refuses a client's
+    `backend="local_unsafe"` override, unless that is the runtime's own
+    default.
+
+Register functions before calling `build_mcp_facade`: the tool descriptions
+are a snapshot of the registry at build time. The runnable version is
+`examples/python_functions_mcp.py`.
+
 ## Deterministic Smokes
 
 ```bash

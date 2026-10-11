@@ -485,6 +485,24 @@ def test_mcp_facade_from_config_blocks_local_unsafe_backend_override() -> None:
     assert "pyodide-deno" in result["error"]["message"]
 
 
+def test_mcp_facade_without_policy_blocks_local_unsafe_override() -> None:
+    # an embedder who builds the facade directly (no config, no policy) must
+    # not hand clients a way out of the sandbox
+    async def exercise() -> dict[str, object]:
+        app = build_mcp_facade(Toolplane(default_backend="monty"))
+        async with Client(app) as client:
+            result = await client.call_tool(
+                "execute_code",
+                {"code": "import os\nreturn os.getcwd()", "backend": "local_unsafe"},
+            )
+        return result.data
+
+    result = run(exercise())
+
+    assert result["value"] is None
+    assert result["error"]["type"] == "BackendPolicyError"
+
+
 def test_mcp_facade_from_config_blocks_unknown_backend_override() -> None:
     async def exercise() -> dict[str, object]:
         app = await build_mcp_facade_from_config(
