@@ -7,6 +7,7 @@ import textwrap
 from pathlib import Path
 
 import pytest
+from mcp.shared.exceptions import MCPError
 
 from toolplane import (
     Toolplane,
@@ -28,8 +29,8 @@ def _uri_template(template: object) -> str:
     return str(value)
 
 pytest.importorskip("fastmcp")
-from fastmcp import Client  # noqa: E402
-from fastmcp.client.transports import StdioTransport  # noqa: E402
+from fastmcp import Client
+from fastmcp.client.transports import StdioTransport
 
 
 def run(coro):
@@ -126,7 +127,7 @@ def test_results_resource_serves_saved_values_and_signposts_misses() -> None:
             try:
                 await client.read_resource("toolplane://results/res_nope")
                 missing_error = ""
-            except Exception as exc:
+            except MCPError as exc:
                 missing_error = str(exc)
         return templates, content[0].text, missing_error
 

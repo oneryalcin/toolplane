@@ -18,6 +18,7 @@ import pytest
 from toolplane import Toolplane
 from toolplane.backends import MontyBackend
 from toolplane.config import load_toolplane_config
+from toolplane.errors import BackendCapabilityError
 from toolplane.mcp_facade import resolve_serve_config
 
 
@@ -304,7 +305,7 @@ def test_inputs_are_rejected_loudly_in_session_mode() -> None:
 
         try:
             await runtime.execute("return token", inputs={"token": "SECRET"})
-        except Exception as exc:
+        except BackendCapabilityError as exc:
             assert "session" in str(exc)
             assert "inputs" in str(exc)
         else:

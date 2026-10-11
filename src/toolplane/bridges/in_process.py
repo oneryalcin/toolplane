@@ -12,14 +12,14 @@ from ..adapters.ambient_cli import (
     CLI_SHAPE_GUIDANCE,
     AmbientCliPolicy,
 )
-from ..audit import AuditLog
-from ..errors import CapabilityNotFoundError
 from ..artifacts import (
     ARTIFACTS_LOAD_CAPABILITY,
     ARTIFACTS_SAVE_CAPABILITY,
     ArtifactStore,
     decode_artifact_b64,
 )
+from ..audit import AuditLog
+from ..errors import CapabilityNotFoundError
 from ..registry import CapabilityRegistry
 from ..results import (
     RESULTS_LOAD_CAPABILITY,
@@ -110,7 +110,7 @@ class InProcessBridge:
             return ToolCallResponse.success(
                 await self.call_tool(request.name, request.params)
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             return ToolCallResponse.failure(
                 ToolCallError(
                     type=type(exc).__name__,
@@ -182,7 +182,7 @@ class AuditedRunBridge:
             return ToolCallResponse.success(
                 await self.call_tool(request.name, request.params)
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             return ToolCallResponse.failure(
                 ToolCallError(
                     type=type(exc).__name__,

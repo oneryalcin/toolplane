@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import sys
 from collections.abc import Sequence
@@ -272,7 +273,8 @@ def _cmd_mcp_remove(args: argparse.Namespace) -> int:
     print(f"Removed MCP server {args.name!r} from {path}")
     url = removed.get("url")
     if url:
-        try:
+        # the token note is best-effort; removal already succeeded
+        with contextlib.suppress(Exception):
             from .credentials import has_stored_oauth_tokens
 
             if asyncio.run(has_stored_oauth_tokens(str(url))):
@@ -282,9 +284,6 @@ def _cmd_mcp_remove(args: argparse.Namespace) -> int:
                     "the login; deleting that directory revokes ALL locally "
                     "stored logins, not just this one"
                 )
-        except Exception:
-            # the token note is best-effort; removal already succeeded
-            pass
     return 0
 
 

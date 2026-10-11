@@ -8,7 +8,7 @@ import pytest
 from toolplane import PyodideDenoBackend, Toolplane
 
 pytest.importorskip("fastmcp")
-from fastmcp import FastMCP  # noqa: E402
+from fastmcp import FastMCP
 
 
 def run(coro):

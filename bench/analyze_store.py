@@ -19,7 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from analyze_persistence import (  # noqa: E402
+from analyze_persistence import (
     PASS_GATE,
     REPS,
     REUSE,
@@ -31,7 +31,7 @@ from analyze_persistence import (  # noqa: E402
     verdict,
     void_reasons,
 )
-from analyze_prereg import EQUIVALENCE_MARGIN, _tally, bootstrap  # noqa: E402
+from analyze_prereg import EQUIVALENCE_MARGIN, _tally, bootstrap
 
 ARMS = ("toolplane", "toolplane_nosession")
 TURN1 = "neutral"

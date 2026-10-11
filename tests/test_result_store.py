@@ -6,9 +6,9 @@ import shutil
 import pytest
 
 from toolplane import CapabilityRegistry, Toolplane
+from toolplane.config import load_toolplane_config
 from toolplane.errors import ResultStoreError
 from toolplane.mcp_facade import resolve_serve_config
-from toolplane.config import load_toolplane_config
 from toolplane.results import ResultStore
 
 

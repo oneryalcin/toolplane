@@ -195,11 +195,11 @@ def normalize_cli_result(value: Any) -> dict[str, Any]:
             ).model_dump()
 
     if all(hasattr(value, attr) for attr in ("stdout", "stderr", "exit_code")):
-        exit_code = int(getattr(value, "exit_code"))
+        exit_code = int(value.exit_code)
         ok = value.ok() if callable(getattr(value, "ok", None)) else exit_code == 0
         return CliCommandResult(
-            stdout=str(getattr(value, "stdout")),
-            stderr=str(getattr(value, "stderr")),
+            stdout=str(value.stdout),
+            stderr=str(value.stderr),
             exit_code=exit_code,
             ok=bool(ok),
         ).model_dump()

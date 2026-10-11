@@ -12,10 +12,10 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from ..adapters.ambient_cli import build_local_cli_namespace
+from ..artifacts import build_artifact_bindings
 from ..bridges.base import HostBridge
 from ..errors import BackendCapabilityError, NamespaceCollisionError
 from ..execution import BackendCapabilities, ExecutionError, ExecutionResult
-from ..artifacts import build_artifact_bindings
 from ..results import build_result_bindings
 from ._python import (
     UNAWAITED_CALL_ERROR_TYPE,
@@ -135,7 +135,7 @@ class LocalUnsafeBackend:
                         message="; ".join(preflight),
                     ),
                 )
-            exec(wrap_async_main(code), scope, scope)
+            exec(wrap_async_main(code), scope, scope)  # noqa: S102 -- local_unsafe runs code in-process by design
             # capture warnings directly: pytest or any upstream warnings
             # filter can intercept them before they ever reach stderr
             with (
@@ -189,7 +189,7 @@ class LocalUnsafeBackend:
                 duration_ms=_elapsed_ms(started),
                 backend=self.name,
             )
-        except Exception as exc:  # local unsafe backend reports structured failures
+        except Exception as exc:  # noqa: BLE001 -- reported as a structured failure
             return ExecutionResult(
                 stdout=stdout.getvalue(),
                 stderr=stderr.getvalue(),
@@ -220,10 +220,10 @@ def _close_unawaited(value: Any) -> bool:
         return True
     if isinstance(value, Mapping):
         return any(
-            [_close_unawaited(item) for pair in value.items() for item in pair]
+            [_close_unawaited(item) for pair in value.items() for item in pair]  # noqa: C419
         )
     if isinstance(value, (list, tuple, set, frozenset)):
-        return any([_close_unawaited(item) for item in value])
+        return any([_close_unawaited(item) for item in value])  # noqa: C419
     return False
 
 

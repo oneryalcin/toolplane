@@ -37,12 +37,9 @@ from .runtime import Toolplane
 __version__ = "0.5.2"
 
 __all__ = [
-    "__version__",
     "BackendCapabilities",
     "BackendCapabilityError",
     "BackendNotFoundError",
-    "build_mcp_facade",
-    "build_mcp_facade_from_config",
     "Capability",
     "CapabilityNotFoundError",
     "CapabilityRegistry",
@@ -56,9 +53,9 @@ __all__ = [
     "McpSettings",
     "NamespaceCollisionError",
     "PyodideDenoBackend",
-    "ResultsSettings",
     "ResultStore",
     "ResultStoreError",
+    "ResultsSettings",
     "ToolCallError",
     "ToolCallRequest",
     "ToolCallResponse",
@@ -67,5 +64,8 @@ __all__ = [
     "ToolplaneError",
     "ToolplaneSettings",
     "UnsafeFacadeConfigError",
+    "__version__",
+    "build_mcp_facade",
+    "build_mcp_facade_from_config",
     "load_toolplane_config",
 ]

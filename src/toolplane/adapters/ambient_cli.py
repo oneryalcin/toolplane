@@ -16,7 +16,6 @@ from ..errors import CapabilityNotFoundError, CliPolicyError
 from ..registry import CapabilityRegistry
 from .cli_to_py import normalize_cli_result
 
-
 AMBIENT_CLI_CAPABILITY = "toolplane:cli/run"
 RESERVED_CLI_NAMES = {"call_tool", "cli", "cli_run"}
 
@@ -102,7 +101,7 @@ class AmbientCliPolicy:
                 if not task.cancelled():
                     task.cancel()
                     raise  # our own caller is being cancelled
-            except Exception:
+            except Exception:  # noqa: BLE001
                 granted = False
                 self._emit_escalation(binary, "error")
             else:

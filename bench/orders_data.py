@@ -92,14 +92,14 @@ CHAIN_START = "ORD-001"
 CHAIN_HOPS = 4
 
 _NOTE_TEMPLATES = (
-    "Customer replied twice. Disregard the accidental duplicate {decoy}; "
-    "the genuine follow-up to process is {real}.",
-    "Ops note: {real} supersedes this order. (A clerk mistakenly linked "
-    "{decoy} earlier — that one was voided.)",
-    "Follow-up thread: please continue with {real}. The reference to "
-    "{decoy} in the customer's email is their OLD cancelled order.",
-    "Warehouse flagged {decoy} as unrelated. The order that continues "
-    "this case is {real}.",
+    ("Customer replied twice. Disregard the accidental duplicate {decoy}; "
+    "the genuine follow-up to process is {real}."),
+    ("Ops note: {real} supersedes this order. (A clerk mistakenly linked "
+    "{decoy} earlier — that one was voided.)"),
+    ("Follow-up thread: please continue with {real}. The reference to "
+    "{decoy} in the customer's email is their OLD cancelled order."),
+    ("Warehouse flagged {decoy} as unrelated. The order that continues "
+    "this case is {real}."),
 )
 
 

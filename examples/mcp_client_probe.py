@@ -70,7 +70,7 @@ async def try_sampling(ctx: Context) -> str:
     try:
         result = await ctx.sample("Reply with exactly the word: PONG")
         return f"SAMPLING_OK: {result.text!r}"
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         return f"SAMPLING_FAIL: {type(exc).__name__}: {exc}"
 
 
@@ -82,7 +82,7 @@ async def try_elicitation(ctx: Context) -> str:
             "Probe question: reply with any short string.", response_type=str
         )
         return f"ELICIT_{result.action}: {getattr(result, 'data', None)!r}"
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         return f"ELICIT_FAIL: {type(exc).__name__}: {exc}"
 
 

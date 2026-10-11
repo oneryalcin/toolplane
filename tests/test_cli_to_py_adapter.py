@@ -9,8 +9,8 @@ import pytest
 from toolplane import PyodideDenoBackend, Toolplane
 
 pytest.importorskip("cli_to_py")
-from cli_to_py import convert  # noqa: E402
-from cli_to_py.schema import (  # noqa: E402
+from cli_to_py import convert
+from cli_to_py.schema import (
     CliSchema,
     CommandResult,
     ParsedCommand,

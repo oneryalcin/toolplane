@@ -44,7 +44,7 @@ class CliSettings(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def validate_policy(self) -> "CliSettings":
+    def validate_policy(self) -> CliSettings:
         if self.mode == "allowlist" and not self.allow:
             raise ValueError("cli.allow is required when cli.mode = 'allowlist'")
         if self.mode != "allowlist" and self.allow:
@@ -146,7 +146,7 @@ class HybridSettings(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def _require_include_when_enabled(self) -> "HybridSettings":
+    def _require_include_when_enabled(self) -> HybridSettings:
         if self.enabled and not self.include:
             raise ValueError(
                 "hybrid.include must list at least one capability pattern "

@@ -258,7 +258,7 @@ _STOPWORDS = frozenset(
     into onto over under what which who whom whose how when where why i you
     he she we they them me my your our their can could should would will
     shall may might must
-    """.split()
+    """.split()  # noqa: SIM905 -- a word block reads better than 70 quoted items
 )
 
 

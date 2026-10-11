@@ -81,7 +81,7 @@ class HttpCallbackBridge:
                         callback.bridge.dispatch(request), callback.loop
                     )
                     response = future.result(timeout=callback.call_timeout_seconds)
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001
                     response = ToolCallResponse.failure(
                         ToolCallError(
                             type=type(exc).__name__,
@@ -113,7 +113,7 @@ class HttpCallbackBridge:
 def _encode_response(response: ToolCallResponse) -> bytes:
     try:
         return response.model_dump_json().encode("utf-8")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         fallback = ToolCallResponse.failure(
             ToolCallError(
                 type="SerializationError",

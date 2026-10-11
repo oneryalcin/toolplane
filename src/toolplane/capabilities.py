@@ -8,7 +8,6 @@ from dataclasses import dataclass, field
 from types import NoneType, UnionType
 from typing import Annotated, Any, get_args, get_origin, get_type_hints
 
-
 JsonSchema = dict[str, Any]
 
 

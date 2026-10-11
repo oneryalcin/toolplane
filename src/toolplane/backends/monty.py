@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import re
 import signal
@@ -25,10 +26,10 @@ from ..adapters.ambient_cli import (
     CLI_SHAPE_GUIDANCE,
     is_safe_cli_name,
 )
+from ..artifacts import build_artifact_bindings
 from ..bridges.base import HostBridge
 from ..errors import BackendCapabilityError, NamespaceCollisionError
 from ..execution import BackendCapabilities, ExecutionError, ExecutionResult
-from ..artifacts import build_artifact_bindings
 from ..results import build_result_bindings
 from ._python import (
     UNAWAITED_CALL_ERROR_TYPE,
@@ -302,7 +303,7 @@ class MontyBackend:
             pending_reset_before = self._pending_reset
             try:
                 snapshot: bytes | None = await session.dump()
-            except Exception:
+            except Exception:  # noqa: BLE001
                 # rollback protection is best-effort; a run that cannot be
                 # checkpointed still executes, and a timeout then resets the
                 # session instead of restoring it
@@ -397,7 +398,7 @@ class MontyBackend:
                         message=str(exc),
                     ),
                 )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 # the pool driver can raise bare builtins — awaiting a future
                 # persisted un-awaited by an EARLIER run raises
                 # RuntimeError("No pending async tasks but ResolveFutures
@@ -541,10 +542,9 @@ class MontyBackend:
             except OSError:
                 pass  # the worker is already gone
         if ctx is not None:
-            try:
+            # cleanup is hygiene; it must never block the caller
+            with contextlib.suppress(Exception):
                 await asyncio.wait_for(ctx.__aexit__(None, None, None), timeout=5)
-            except Exception:
-                pass  # cleanup is hygiene; it must never block the caller
 
     @staticmethod
     async def _close_healthy(ctx: Any) -> None:
@@ -561,16 +561,12 @@ class MontyBackend:
         self._checkout_ctx = None
         self._worker_pid = None
         if ctx is not None:
-            try:
+            with contextlib.suppress(Exception):
                 await asyncio.wait_for(ctx.__aexit__(None, None, None), timeout=5)
-            except Exception:
-                pass
         if self._pool is not None:
             pool, self._pool = self._pool, None
-            try:
+            with contextlib.suppress(Exception):
                 await asyncio.wait_for(pool.__aexit__(None, None, None), timeout=5)
-            except Exception:
-                pass
 
     def _make_reset_session(self) -> Any:
         async def reset_session() -> str:
@@ -745,7 +741,7 @@ def _split_streams(streams: CollectStreams) -> tuple[str, str]:
 def _format_frames(exc: MontyRuntimeError, filename: str) -> str:
     try:
         frames = exc.traceback()
-    except Exception:
+    except Exception:  # noqa: BLE001
         return ""
     return "\n".join(
         f'  File "{_display_filename(frame.filename, filename)}", line {frame.line}, in {frame.function_name}'

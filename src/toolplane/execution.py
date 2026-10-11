@@ -6,7 +6,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 FilesystemMode = Literal["none", "read", "read_write", "mounted", "full"]
 NetworkMode = Literal["none", "restricted", "full"]
 PersistenceMode = Literal["none", "session", "artifact"]

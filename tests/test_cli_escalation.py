@@ -223,7 +223,7 @@ def test_pyodide_escalation_grant_and_decline() -> None:
         return next(decisions)
 
     runtime.cli_policy.escalation_handler = handler
-    code = "\n".join(
+    code = "\n".join(  # noqa: FLY002 -- one snippet line per item reads clearer
         [
             "granted = await cli.curl()",
             "try:",
