@@ -11,7 +11,7 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/oneryalcin/toolplane/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/oneryalcin/toolplane/actions/workflows/ci.yml)
 [![MIT license](https://img.shields.io/badge/license-MIT-555555?style=flat-square)](https://github.com/oneryalcin/toolplane/blob/main/LICENSE)
 
-**[Docs](https://oneryalcin.github.io/toolplane/) · [Paper](https://github.com/oneryalcin/toolplane/blob/main/paper/main.pdf) · [Talk (9 min)](https://github.com/oneryalcin/toolplane/releases/tag/talk-video-2026-10) · [Benchmark](https://oneryalcin.github.io/toolplane/code-mode-benchmark/)**
+**[Docs](https://oneryalcin.github.io/toolplane/) · [Paper](https://github.com/oneryalcin/toolplane/blob/main/paper/main.pdf) · [Talk (9 min)](https://www.youtube.com/watch?v=lmA9kVV6rK4) · [Benchmark](https://oneryalcin.github.io/toolplane/code-mode-benchmark/)**
 
 [The idea](#the-idea) · [When it pays](#when-it-pays-and-when-it-doesnt) · [Quickstart](#quickstart) · [What you get](#what-you-get) · [Library](#use-it-as-a-library) · [Learn more](#learn-more)
 
@@ -19,7 +19,7 @@
 
 <br><br>
 
-<a href="https://github.com/oneryalcin/toolplane/releases/tag/talk-video-2026-10"><img src="https://raw.githubusercontent.com/oneryalcin/toolplane/main/docs/assets/readme/demo.gif" alt="100 lookups as tool calls: every call is written by the model and every answer returns to it. The same 100 lookups as one program: the calls run in a sealed room and one answer returns. The model writes 8,178 tokens against 1,127, and the cost per answer is $0.0116 against $0.0058." width="900"></a>
+<a href="https://www.youtube.com/watch?v=lmA9kVV6rK4"><img src="https://raw.githubusercontent.com/oneryalcin/toolplane/main/docs/assets/readme/demo.gif" alt="100 lookups as tool calls: every call is written by the model and every answer returns to it. The same 100 lookups as one program: the calls run in a sealed room and one answer returns. The model writes 8,178 tokens against 1,127, and the cost per answer is $0.0116 against $0.0058." width="900"></a>
 
 <sub>Measured at 100 lookups: Claude Haiku 5.5 in Claude Code, 8 runs per arm. A single lookup or a step-by-step chain is cheaper as plain tool calls; the <a href="https://oneryalcin.github.io/toolplane/code-mode-benchmark/">benchmark</a> shows where each wins.</sub>
 
@@ -93,7 +93,7 @@ The saving does not come from fewer round trips, since clients already batch
 calls. It comes from the tokens the model no longer writes and the context it
 no longer carries. The full method, variance and limitations are in
 [the benchmark](https://oneryalcin.github.io/toolplane/code-mode-benchmark/), [the paper](paper/main.pdf) and
-[a 9-minute talk](https://github.com/oneryalcin/toolplane/releases/tag/talk-video-2026-10).
+[a 9-minute talk](https://www.youtube.com/watch?v=lmA9kVV6rK4).
 
 ## Quickstart
 
