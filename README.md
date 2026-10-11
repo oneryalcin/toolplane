@@ -73,7 +73,7 @@ What makes toolplane different from other code-mode runtimes:
   raw results in [`bench/`](bench/); numbers, variance, and limitations in
   [The Code-Mode Envelope, Measured](https://oneryalcin.github.io/toolplane/code-mode-benchmark/).
   The paper form, with the pre-registered confirmation study:
-  [When Should an Agent Write a Program?](paper/v2/main.pdf)
+  [When Should an Agent Write a Program?](paper/main.pdf)
 - **Safe by default, with zero infrastructure.** The default backend
   ([Monty](https://github.com/pydantic/monty)) is a sandboxed interpreter
   with no filesystem or network access — a pure `pip install`, no Docker, no
