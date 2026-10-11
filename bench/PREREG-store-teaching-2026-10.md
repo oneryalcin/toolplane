@@ -168,4 +168,12 @@ depend on the outcome.
 
 ## Amendments
 
-None yet.
+- **A1 (2026-10-10, logged with the results commit; decided after K,
+  before L).** K's wiring check could not be done from transcripts as
+  written: transcripts record only the client's output stream, never the
+  prompts sent to it. It was done instead by running `run_session` at
+  `d4482d1` against a fake client and capturing the harness's stdin:
+  `--turn1 neutral` sends exactly `TURN1_NEUTRAL`. No rule, statistic,
+  input or command changed. The probe is committed as
+  `test_turn1_prompt_reaches_the_client`. The transcripts' blind spot was
+  checkable against #175's transcripts at registration and was missed.

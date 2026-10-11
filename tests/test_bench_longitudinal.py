@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import sys
 from pathlib import Path
@@ -284,3 +285,58 @@ def test_store_reuse_needs_a_load_result_call_that_succeeded() -> None:
             ("rows = await load_result(h)", {"type": "ValueError"}),
         )
     ] == [True, False, False]
+
+
+def test_turn1_prompt_reaches_the_client(tmp_path: Path, monkeypatch) -> None:
+    # transcripts record only the client's output, so they cannot show which
+    # turn-1 prompt was sent; capture the harness's stdin to the client
+    import os
+
+    sent: list[str] = []
+
+    class Sent(Exception):
+        pass
+
+    class FakeStdin:
+        def write(self, text: str) -> None:
+            sent.append(text)
+            raise Sent
+
+        def flush(self) -> None:
+            pass
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs) -> None:
+            self.stdin = FakeStdin()
+            self.stdout = os.fdopen(os.pipe()[0], "rb")
+            self.stderr = os.fdopen(os.pipe()[0], "rb")
+            self.returncode = 0
+
+        def kill(self) -> None:
+            pass
+
+        def wait(self, *args, **kwargs) -> int:
+            return 0
+
+        def poll(self) -> int:
+            return 0
+
+    monkeypatch.setattr(longitudinal.subprocess, "Popen", FakeClient)
+    code = {
+        "fixtures_dir": str(Path(longitudinal.BENCH_DIR)),
+        "python": sys.executable,
+        "toolplane_bin": "toolplane",
+    }
+
+    def first_prompt(turn1: str) -> str:
+        sent.clear()
+        with contextlib.suppress(Exception):
+            longitudinal.run_session(
+                "toolplane_nosession", "m", tmp_path, code,
+                tmp_path / "t.jsonl", "varied", turn1,
+            )
+        return json.loads(sent[0])["message"]["content"][0]["text"]
+
+    assert (first_prompt("neutral"), "orders_cache" in first_prompt("sessions")) == (
+        longitudinal.TURN1_NEUTRAL, True,
+    )
