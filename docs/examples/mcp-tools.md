@@ -93,11 +93,12 @@ claude mcp add my-tools -- python /abs/path/to/launcher.py
 The agent sees the function as `await policy_sla_breach(severity=..., days_open=...)`,
 callable in the same program as the configured MCP tools and CLI binaries.
 
-!!! warning "Pass the policy"
+!!! note "Pass the policy"
 
-    `policy` is what pins `execute_code` to the configured backend. A facade
-    built without it accepts `backend="local_unsafe"` from the client, which
-    runs the snippet outside the sandbox.
+    `policy` pins `execute_code` to the configured backend, as `serve mcp`
+    does. A facade built without one still refuses a client's
+    `backend="local_unsafe"` override, unless that is the runtime's own
+    default.
 
 Register functions before calling `build_mcp_facade`: the tool descriptions
 are a snapshot of the registry at build time. The runnable version is

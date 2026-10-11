@@ -37,8 +37,8 @@ async def serve() -> None:
     # register before building: the facade's tool descriptions are a snapshot
     # of the registry at build time
     runtime.register_python_namespace("policy", {"sla_breach": sla_breach})
-    # the policy is what pins execute_code to the configured sandbox; without
-    # it a client could ask for backend="local_unsafe"
+    # the same policy `serve mcp` applies: execute_code stays pinned to the
+    # configured backend
     policy = EffectivePolicy.from_config(config)
     ensure_safe_facade_policy(policy)
     app = build_mcp_facade(runtime, policy=policy)

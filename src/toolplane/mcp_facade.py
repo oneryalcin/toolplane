@@ -72,6 +72,11 @@ def build_mcp_facade(
     every re-exported schema lands in context at once. Each re-exported
     tool is a stateless one-capability dispatch through the same audited
     ``call_tool`` path ``execute_code`` uses (no session, no stores).
+
+    Without ``policy``, ``execute_code`` refuses a ``backend="local_unsafe"``
+    override unless that is the runtime's own default, so a client cannot
+    leave the sandbox by naming it. A policy with
+    ``allowed_backend_overrides=None`` (``allow_unsafe=True``) lifts that.
     """
     try:
         from fastmcp import FastMCP
@@ -298,14 +303,25 @@ def build_mcp_facade(
         packages: list[str] | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
+        # no policy means no one opted into the unsandboxed backend: a
+        # client may move between the others, but may not leave the sandbox
+        # by asking for backend="local_unsafe" (same rule as as_tool)
+        allowed_overrides = (
+            policy.allowed_backend_overrides
+            if policy is not None
+            else tuple(
+                name
+                for name in runtime.backends
+                if name != "local_unsafe" or name == runtime.default_backend
+            )
+        )
         if (
-            policy is not None
-            and backend is not None
-            and policy.allowed_backend_overrides is not None
-            and backend not in policy.allowed_backend_overrides
+            backend is not None
+            and allowed_overrides is not None
+            and backend not in allowed_overrides
         ):
             if backend in runtime.backends:
-                allowed = ", ".join(sorted(policy.allowed_backend_overrides))
+                allowed = ", ".join(sorted(allowed_overrides))
                 error = ExecutionError(
                     type="BackendPolicyError",
                     message=(
