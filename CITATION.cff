@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If you use Toolplane or its benchmark results, please cite the paper below."
+title: "Toolplane"
+type: software
+authors:
+  - family-names: "Yalçın"
+    given-names: "Mehmet Öner"
+    affiliation: "Fugu AI"
+repository-code: "https://github.com/oneryalcin/toolplane"
+url: "https://oneryalcin.github.io/toolplane/"
+license: MIT
+preferred-citation:
+  type: report
+  title: "When Should an Agent Write a Program? Cost and Context of Code-Mode Tool Calling"
+  authors:
+    - family-names: "Yalçın"
+      given-names: "Mehmet Öner"
+      affiliation: "Fugu AI"
+  year: 2026
+  month: 10
+  institution:
+    name: "Fugu AI"
+  url: "https://github.com/oneryalcin/toolplane/blob/main/paper/v2/main.pdf"
+  notes: "Working paper"

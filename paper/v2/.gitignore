@@ -1,0 +1,8 @@
+# LaTeX build files; main.pdf is committed on purpose
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
+build.out
+backups/
