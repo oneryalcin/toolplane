@@ -13,7 +13,7 @@
 
 **[Docs](https://oneryalcin.github.io/toolplane/) · [Paper](https://github.com/oneryalcin/toolplane/blob/main/paper/main.pdf) · [Talk (9 min)](https://github.com/oneryalcin/toolplane/releases/tag/talk-video-2026-10) · [Benchmark](https://oneryalcin.github.io/toolplane/code-mode-benchmark/)**
 
-[Why](#why) · [Quickstart](#quickstart) · [What your agent gets](#what-your-agent-gets) · [Use it as a library](#use-it-as-a-library) · [Backends](#backends)
+[The idea](#the-idea) · [When it pays](#when-it-pays-and-when-it-doesnt) · [Quickstart](#quickstart) · [What you get](#what-you-get) · [Library](#use-it-as-a-library) · [Learn more](#learn-more)
 
 <code>uvx toolplane init</code>
 
@@ -27,90 +27,77 @@
 
 <br>
 
-Define your agent's tool surface **once** and get the same curated, sandboxed
-Python namespace under every agent client you use: Claude Code, Codex,
-opencode, or your own.
+## The idea
 
-## Why
+Ask an agent to total 100 orders and it makes 100 tool calls. Clients send
+them in batches, so the trips are quick. The job still costs twice what it
+needs to. So what did you pay for?
 
-Agents are strongest when they use code as the control plane: looping,
-filtering, retrying, and combining tools in one pass instead of bouncing
-through one tool call at a time. Toolplane is the runtime for that:
+**You paid for glue.** The model wrote out every call, token by token, and
+every answer came back into its context so it could be handed to the next
+step. None of that needed a model.
 
-```text
-discover capabilities -> inspect schemas -> execute Python against a curated namespace
-```
-
-Instead of registering N MCP servers in every agent client (and paying for
-N × dozens of tool schemas in every context window, in every client, with
-every client's different quirks), you register **one** server that exposes
-three meta-tools. Your agent searches for what it needs, reads the exact
-schemas, and writes a snippet:
+So move the glue into a program. The agent writes one short script, the
+script makes the calls in a sandbox, and one answer comes back. Once the glue
+is code, the kind of tool stops mattering: an MCP tool, a command-line program
+and your own Python function are all just functions that one program can loop
+over, branch on and join.
 
 ```python
-# one execute_code call replaces a dozen round-trips
-rows = []
-for repo in ["toolplane", "cli-to-py"]:
-    prs = await github_list_pull_requests(repo=repo, state="merged", limit=25)
-    for pr in prs:
-        rows.append({"repo": repo, "title": pr["title"], "days_open": pr["days_open"]})
-handle = await save_result(rows, label="pr-audit")
-return {"count": len(rows), "handle": handle}
+# Which enterprise customers does this release fix something for?
+import re
+log = await git("log", format="%s", _=["v1.4..HEAD"])
+ids = re.findall(r"TCK-\d+", log["stdout"])
+pending = [tickets_get_ticket(id=i) for i in ids]
+hits = []
+for p in pending:
+    ticket = await p
+    if ticket["reported_by_customer"]:
+        customer = await customers_get_customer(id=ticket["customer_id"])
+        if await policy_sla_breach(ticket=ticket, customer=customer):
+            hits.append({"customer": customer["name"], "ticket": ticket["id"]})
+return {"commits": len(ids), "fixed_for": hits}
 ```
 
-What makes toolplane different from other code-mode runtimes:
+That program makes 181 calls: `git` once, two MCP servers 140 times, and a
+Python function of our own 40 times. It returns one 419-byte answer. The 25 KB
+of tool results behind it stay in the program, out of the model's context. We wrote
+this one ourselves and recorded the run in [`pitch/example`](pitch/example/).
 
-- **CLI binaries are first-class, policy-gated capabilities.** `git`, `gh`,
-  `jq` become async Python functions behind an allowlist you control — not a
-  raw shell. No other code-mode runtime ships this lane.
-- **Policy escalates to a human instead of dead-ending.** If a snippet needs
-  a binary outside the allowlist, your agent client shows *you* a form:
-  allow it for this session, or refuse. Declines stick; nothing is ever
-  written back to config. (MCP elicitation on handshake-era clients, Multi
-  Round-Trip Requests on 2026-07-28 ones such as current Claude Code; degrades
-  to a plain refusal on clients that can't prompt.)
-- **A measured envelope, not a slogan.** We benchmarked code mode against
-  plain MCP tool calls in a real client, pre-registered the confirmation
-  study, and published where it *loses*. On Claude Haiku 5.5 in Claude Code
-  (8 runs per cell): at 100 lookups one program costs half as much per
-  correct answer ($0.0058 vs $0.0116), and the two cross between 5 and 20
-  lookups. Plain calls stay cheaper for a single lookup (+11%), a
-  chain the agent walks one step at a time (+12%), and a tool that already
-  returns everything in one call (+5% to +31%). Round trips are not the
-  mechanism, because clients batch tool calls in parallel: the tokens the
-  model writes and the context it carries are. Harness and raw results in
-  [`bench/`](bench/); the earlier releases, variance and limitations in
-  [The Code-Mode Envelope, Measured](https://oneryalcin.github.io/toolplane/code-mode-benchmark/);
-  the paper: [When Should an Agent Write a Program?](paper/main.pdf)
-- **Safe by default, with zero infrastructure.** The default backend
-  ([Monty](https://github.com/pydantic/monty)) is a sandboxed interpreter
-  with no filesystem or network access — a pure `pip install`, no Docker, no
-  Deno, no daemon.
-- **Credentials handled like they matter.** OAuth servers: log in once in a
-  browser, tokens persist Fernet-encrypted with the key in your OS keyring —
-  every later session connects silently. API keys: reference them as
-  `keyring://<name>` so `toolplane.toml` stays committable with zero secret
-  material. Toolplane contains no token-handling code of its own — the
-  flows, refresh, and encryption are FastMCP's; toolplane only configures
-  where they happen.
-- **Engineered for how agents actually behave.** Every dead end emits a
-  signpost (no-match searches say how to browse; policy errors name what is
-  allowed), errors are catchable by builtin type on every backend, and the
-  live namespace manifest (`toolplane://namespace`) never lies about the
-  server's configuration. This surface is certified by cold-start agent
-  sessions, not just unit tests — the design lessons are published in
-  [Agents Don't Find Resources](https://oneryalcin.github.io/toolplane/agents-dont-find-resources/)
-  and the firsthand
-  [MCP Client Capability Matrix](https://oneryalcin.github.io/toolplane/mcp-client-capability-matrix/).
+**Toolplane is the runtime for this.** You name your MCP servers and the
+commands you allow in one config file. Every agent client you use (Claude
+Code, Codex, opencode, or your own) then gets the same three tools: search
+for a capability, read its schema, run a program.
 
-Toolplane is developed and CI-tested on macOS and Linux (Python 3.11–3.13).
-Windows is currently untested — reports welcome. Found a bug or a rough
-edge? [Open an issue](https://github.com/oneryalcin/toolplane/issues) —
-cold-start friction reports are especially valuable.
+## When it pays, and when it doesn't
+
+A program is not always the cheaper way, so we measured where the line is.
+
+| Task | Cheaper way | By how much |
+| --- | --- | --- |
+| 100 small lookups | one program | half the cost ($0.0058 vs $0.0116) |
+| 20 lookups | about level | $0.0053 vs $0.0057 |
+| 5 lookups | plain tool calls | $0.0047 vs $0.0053 |
+| A single lookup | plain tool calls | the program costs 11% more |
+| A chain the agent walks one step at a time | plain tool calls | 12% more |
+| One call that already returns everything | plain tool calls | 5% to 31% more |
+
+Cost per correct answer on Claude Haiku 5.5 in Claude Code, 8 runs per cell,
+in a pre-registered study. As a rule of thumb: write a program for many small
+calls or large intermediate results, and call directly for one lookup, a
+chain where each step is its own decision, or a tool that returns everything
+at once.
+
+The saving does not come from fewer round trips, since clients already batch
+calls. It comes from the tokens the model no longer writes and the context it
+no longer carries. The full method, variance and limitations are in
+[the benchmark](https://oneryalcin.github.io/toolplane/code-mode-benchmark/), [the paper](paper/main.pdf) and
+[a 9-minute talk](https://github.com/oneryalcin/toolplane/releases/tag/talk-video-2026-10).
 
 ## Quickstart
 
-Set up a config (safe defaults: sandboxed backend, CLI disabled):
+Set up a config. The defaults are safe: a sandboxed backend, and no commands
+allowed until you allow them.
 
 ```bash
 uvx toolplane init
@@ -119,7 +106,7 @@ uvx toolplane mcp add context7 --url https://mcp.context7.com/mcp
 uvx toolplane doctor
 ```
 
-Prove it runs — put this in `first.py`:
+Prove it runs. Put this in `first.py`:
 
 ```python
 v = await git("version")
@@ -130,8 +117,8 @@ return {"ok": v["ok"], "git": v["stdout"].strip()}
 uvx toolplane run first.py
 ```
 
-Then register it with your agent client (use the absolute path to your
-`toolplane.toml`):
+Then register it with your agent client, using the absolute path to your
+`toolplane.toml`:
 
 ```bash
 # Claude Code
@@ -153,95 +140,55 @@ codex mcp add toolplane -- uvx toolplane serve mcp --config /path/to/toolplane.t
 }
 ```
 
-**Tip: name the registration after what it serves.** The name you register
-under becomes the tools' prefix (`mcp__toolplane__execute_code`), and
-clients that defer tool loading show the model only those names before it
-decides what to search for. If your config fronts one domain, a name like
-`orders` tells the model where that data lives: in a benchmark, the same
-facade registered as `orders` instead of `toolplane` let the agent skip a
-discovery call (0/60 vs 7/60 runs, Haiku 5.5). The effect was small, so if
-the config fronts several unrelated domains, `toolplane` is a fine default.
+Your agent now sees three tools: `search_capabilities`,
+`get_capability_schemas` and `execute_code`. Ask it to do something that
+takes many calls.
 
-Every client now sees the same three tools — `search_capabilities`,
-`get_capability_schemas`, `execute_code` — plus the live manifest resource
-`toolplane://namespace` and a bundled usage skill. Ask your agent to read the
-manifest and go.
+Three things you may want next:
 
-### Already using MCP servers?
+- **You already have MCP servers.** `uvx toolplane mcp import --from claude`
+  (or `--from codex`) brings them over and moves any secrets into your OS
+  keyring. Add `--dry-run` to see the plan first.
+  [Importing](https://oneryalcin.github.io/toolplane/configuration/#importing-from-other-clients)
+- **A server needs a login or an API key.** `uvx toolplane mcp login <name>`
+  does the browser consent once; API keys are stored with
+  `uvx toolplane secret set <name>` and referenced as `keyring://<name>`, so
+  the config file holds no secrets. [Secrets](https://oneryalcin.github.io/toolplane/configuration/#secrets)
+- **Your config serves one domain.** Register it under that domain's name
+  instead of `toolplane`: the name becomes the tools' prefix, which is what
+  the model sees first. [Why it helps](https://oneryalcin.github.io/toolplane/toolplane-mcp/)
 
-Bring your existing Claude Code or Codex servers over in one command:
+## What you get
 
-```bash
-uvx toolplane mcp import --from claude --dry-run   # see what would happen
-uvx toolplane mcp import --from claude
-uvx toolplane mcp import --from codex
-```
-
-Import never copies secrets into the TOML: secret-looking values are moved
-into your OS keyring (written as `keyring://...` references), and
-`mcp-remote`-style OAuth wrapper entries are rewritten to direct `url`
-entries that use toolplane's encrypted token storage instead. The report
-tells you exactly what it did and what to run next.
-
-### Private servers and credentials
-
-For an OAuth-protected MCP server (Linear, Notion, ...), log in once —
-tokens persist encrypted (key in your OS keyring), and every later agent
-session connects silently:
-
-```bash
-uvx toolplane mcp add linear --url https://mcp.linear.app/mcp --auth oauth
-uvx toolplane mcp login linear   # one browser consent, ever
-```
-
-For API-key servers, store the key in the OS keyring and reference it —
-your `toolplane.toml` stays committable with no secret material in it:
-
-```bash
-uvx toolplane secret set docs-api-token   # value via prompt or stdin
-```
-
-```toml
-[mcp.servers.internal_docs]
-url = "https://docs.example.com/mcp"
-
-[mcp.servers.internal_docs.headers]
-Authorization = "keyring://docs-api-token"   # or "env://DOCS_TOKEN" for CI
-```
-
-See [configuration](https://oneryalcin.github.io/toolplane/configuration/)
-for the full credential story.
-
-## What your agent gets
-
-- **Three meta-tools instead of a tool catalog.** Search is exact-word (an
-  empty query lists everything); schemas come back only for the capabilities
-  the snippet will actually use.
-- **A flat, async Python namespace.** MCP tools as flat functions —
-  `await context7_get_docs(...)` — or canonically as
-  `await call_tool("mcp:context7/get_docs", {...})`; allowlisted CLI
-  binaries as `await git("log", oneline=True, max_count=3)` returning
-  `{'stdout', 'stderr', 'exit_code', 'ok'}`. (Scoped sugar like
-  `context7.get_docs(...)` exists on the non-default backends; the monty
-  default is flat-only — the manifest always shows the shapes that work.)
-- **State between runs, off the context window.** Variables persist across
-  runs like notebook cells (a timed-out run rolls back cleanly;
-  `await reset_session()` starts fresh). For values that must survive a
-  reset or be read as MCP resources: `save_result`/`load_result` for
-  JSON-shaped data, `save_artifact`/`load_artifact` for bytes (CSVs,
-  images, parquet) — on Claude Code, a saved artifact materializes as a
-  real local file.
-- **Errors written for agents, not log files.** The real exception type and
-  message on every backend, catchable by builtin type (`except ValueError`
-  for store failures, `except PermissionError` for CLI policy,
-  `except LookupError` for unknown capabilities) — identically on all three
-  backends.
+- **Three tools instead of a catalogue.** The agent searches, reads only the
+  schemas it will use, and runs a program. Your context does not fill with
+  hundreds of tool descriptions.
+- **Commands as functions, behind an allowlist.**
+  `await git("log", oneline=True, max_count=3)` returns
+  `{'stdout', 'stderr', 'exit_code', 'ok'}`. There is no shell. If a program
+  needs a command you have not allowed, clients that can prompt ask *you*:
+  allow it for this session, or refuse.
+- **A sandbox with nothing to install.** Programs run in
+  [Monty](https://github.com/pydantic/monty), an interpreter with no
+  filesystem or network access. It is a plain `pip install`: no Docker, no
+  daemon. Commands and tools run outside it, which is why they pass through
+  your allowlist. [Backends](docs/code-mode-backends.md)
+- **Credentials that stay out of the config.** OAuth tokens are stored
+  encrypted with the key in your OS keyring. API keys are references, so
+  `toolplane.toml` is safe to commit.
+- **State between runs.** Variables persist from one program to the next,
+  like notebook cells. `save_result` and `save_artifact` keep data and files
+  out of the context window.
+  [Sessions and stores](https://oneryalcin.github.io/toolplane/configuration/#session)
+- **Errors an agent can act on.** A program can catch real exception types
+  (`PermissionError` for policy, `LookupError` for an unknown capability),
+  and every dead end says what to try next.
+  [Agents Don't Find Resources](https://oneryalcin.github.io/toolplane/agents-dont-find-resources/)
 
 ## Use it as a library
 
-The same runtime embeds directly in Python — register your own functions and
-execute agent-written snippets against them, sandboxed, with no server in
-between:
+The same runtime embeds in Python. Register your own functions and run
+agent-written programs against them, with no server in between:
 
 ```python
 from toolplane import Toolplane
@@ -259,13 +206,9 @@ return value
 """)
 ```
 
-And if you already have an agent framework, `as_tool()` packages the whole
-runtime as one `run_code` tool — a plain async function with a generated
-description (compact enough for OpenAI's tool-description cap) that
-pydantic-ai, the OpenAI Agents SDK, and LangChain/LangGraph all accept
-directly. It is sandboxed monty by default: model-authored code never
-inherits the `local_unsafe` dev backend implicitly — that requires an
-explicit `backend="local_unsafe"` opt-in:
+If you already use an agent framework, `runtime.as_tool()` packages the whole
+runtime as one `run_code` tool that pydantic-ai, the OpenAI Agents SDK and
+LangChain/LangGraph accept directly. It runs in the sandbox by default.
 
 ```python
 from pydantic_ai import Agent
@@ -274,51 +217,37 @@ agent = Agent("anthropic:claude-sonnet-5", tools=[runtime.as_tool()])
 ```
 
 To put your own functions in front of Claude Code or Codex, a short launcher
-registers them and serves the same MCP facade — see
-[`examples/python_functions_mcp.py`](examples/python_functions_mcp.py).
+registers them and serves the same three tools:
+[`examples/python_functions_mcp.py`](examples/python_functions_mcp.py). More
+runnable examples are in [`examples/`](examples/README.md).
 
-MCP servers, explicit CLI wrappers, and scoped Python namespaces register the
-same way — see the [library guide](https://oneryalcin.github.io/toolplane/)
-and [examples](examples/README.md) for the full surface, including
-config-driven setup (`Toolplane.from_config`), the result/artifact stores,
-and runnable `as_tool` examples for all three frameworks.
+## Learn more
 
-## Backends
+- [Documentation](https://oneryalcin.github.io/toolplane/): the full guide.
+- [Configuration](https://oneryalcin.github.io/toolplane/configuration/): the config file, command policy,
+  sessions, stores, audit log, servers and secrets.
+- [Toolplane and MCP](https://oneryalcin.github.io/toolplane/toolplane-mcp/): how it sits between your client
+  and your servers.
+- [Backends](docs/code-mode-backends.md): the sandbox, and the opt-in backend
+  for programs that need packages such as pandas.
+- [Architecture](docs/architecture.md) and [roadmap](ROADMAP.md).
+- [The benchmark](https://oneryalcin.github.io/toolplane/code-mode-benchmark/), [the paper](paper/main.pdf)
+  and [what other code-mode systems do](https://oneryalcin.github.io/toolplane/code-mode-landscape/).
+- [MCP client capability matrix](https://oneryalcin.github.io/toolplane/mcp-client-capability-matrix/): what
+  Claude Code and Codex support, measured firsthand.
 
-| Backend | Use | Status |
-| --- | --- | --- |
-| `monty` | Default. Sandboxed by construction (no filesystem/network), pure pip install. Flat Toolplane callable namespace; no third-party imports. | Active |
-| `pyodide-deno` | Opt-in for package-capable snippets (pandas/NumPy-style) via Pyodide in Deno. | Supported, feature-frozen |
-| `local_unsafe` | In-process execution for development only. | Dev only |
+## Status and contributing
 
-A container backend (real CPython, arbitrary packages) lands when a concrete
-use case needs it. See [Code Mode Backends](docs/code-mode-backends.md) for
-the design record.
-
-## Design goals
-
-- Normalize heterogeneous tools into a Python-first API surface; JSON is the
-  wire format, not the programming model.
-- Keep the exposed runtime curated rather than ambiently powerful; the host
-  decides which capabilities exist and what boundaries apply.
-- Durable policy lives in config; session policy (escalation grants) dies
-  with the process.
-- Canonical capability ids are qualified (`mcp:server/tool`); friendly
-  aliases exist only when unambiguous.
-- Every slice earns its place through behavior, tests, or live certification.
-
-## Development
+Toolplane is developed and tested on macOS and Linux with Python 3.11 to
+3.13. Windows is untested; reports are welcome. If you hit a bug or a rough
+edge, [open an issue](https://github.com/oneryalcin/toolplane/issues).
+Reports from a first-time setup are especially useful.
 
 ```bash
-make test
-make examples
-make ci
-make publish-check
+make test       # unit tests
+make examples   # the deterministic examples, run for real
+make ci         # what CI runs
 ```
 
-Docs: `make docs` / `make docs-serve`. Publishing:
-`PYPI_TOKEN=... make publish` — see the
-[release checklist](docs/development/release-checklist.md).
-
-See [ROADMAP.md](ROADMAP.md) for sequencing and
-[Architecture](docs/architecture.md) for code organization.
+Releases follow the [release checklist](docs/development/release-checklist.md).
+MIT licensed.
