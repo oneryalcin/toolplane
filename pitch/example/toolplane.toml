@@ -1,0 +1,11 @@
+[cli]
+mode = "allowlist"
+allow = ["git"]
+
+[mcp.servers.tickets]
+command = "python"
+args = ["tickets_server.py"]
+
+[mcp.servers.customers]
+command = "python"
+args = ["customers_server.py"]
