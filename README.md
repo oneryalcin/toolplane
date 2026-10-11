@@ -70,29 +70,18 @@ What makes toolplane different from other code-mode runtimes:
   Round-Trip Requests on 2026-07-28 ones such as current Claude Code; degrades
   to a plain refusal on clients that can't prompt.)
 - **A measured envelope, not a slogan.** We benchmarked code mode against
-  raw MCP tool-calling in a real client and published where it *loses*.
-  Two eras, labeled: **0.4.0** measured plain MCP ~20% cheaper at
-  30 tool interactions and code mode ~15% cheaper at 100 (crossover
-  unmeasured). **0.5.0** ships the call-shape facade, which moves the
-  crossover below 30: code mode runs flat per task at every task size
-  (~$0.18 in July), sits at parity with plain MCP around 20, and wins ~45%
-  cheaper at 100 — while single lookups still favor direct calls (~+28%)
-  and a sequentially-adaptive "chain" task cost code mode +38% in July.
-  Re-run on the shipped 0.5.0 (Oct 2026, newer client): every run that
-  reached the backend was correct, and with the discovery turn gone,
-  passing code-mode runs undercut plain MCP at every loop size and beat
-  it on wall time from 10 records up (~5x at 100; still ~45% cheaper
-  there). But on Sonnet 5, 4 of 28 code-mode runs gave up without
-  searching for the tools, which, priced in, keeps small tasks cheaper
-  on plain MCP; Haiku 5.5 and Sonnet 5.5 never did (0/60, 0/40;
-  [#150](https://github.com/oneryalcin/toolplane/issues/150)). Chain's cost
-  gap narrowed to +7%, though it stays slower. The surprise in
-  both eras: round-trips aren't the mechanism (clients batch tool calls
-  in parallel); output-token scaling and context growth are. Harness and
-  raw results in [`bench/`](bench/); numbers, variance, and limitations in
-  [The Code-Mode Envelope, Measured](https://oneryalcin.github.io/toolplane/code-mode-benchmark/).
-  The paper form, with the pre-registered confirmation study:
-  [When Should an Agent Write a Program?](paper/main.pdf)
+  plain MCP tool calls in a real client, pre-registered the confirmation
+  study, and published where it *loses*. On Claude Haiku 5.5 in Claude Code
+  (8 runs per cell): at 100 lookups one program costs half as much per
+  correct answer ($0.0058 vs $0.0116), and the two cross between 5 and 20
+  lookups. Plain calls stay cheaper for a single lookup (+11%), a
+  chain the agent walks one step at a time (+12%), and a tool that already
+  returns everything in one call (+5% to +31%). Round trips are not the
+  mechanism, because clients batch tool calls in parallel: the tokens the
+  model writes and the context it carries are. Harness and raw results in
+  [`bench/`](bench/); the earlier releases, variance and limitations in
+  [The Code-Mode Envelope, Measured](https://oneryalcin.github.io/toolplane/code-mode-benchmark/);
+  the paper: [When Should an Agent Write a Program?](paper/main.pdf)
 - **Safe by default, with zero infrastructure.** The default backend
   ([Monty](https://github.com/pydantic/monty)) is a sandboxed interpreter
   with no filesystem or network access — a pure `pip install`, no Docker, no
