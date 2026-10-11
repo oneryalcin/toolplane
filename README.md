@@ -1,16 +1,35 @@
-# toolplane
+<div align="center">
 
-[![PyPI version](https://img.shields.io/pypi/v/toolplane)](https://pypi.org/project/toolplane/)
-[![Python versions](https://img.shields.io/pypi/pyversions/toolplane)](https://pypi.org/project/toolplane/)
-[![CI](https://github.com/oneryalcin/toolplane/actions/workflows/ci.yml/badge.svg)](https://github.com/oneryalcin/toolplane/actions/workflows/ci.yml)
-[![Docs](https://github.com/oneryalcin/toolplane/actions/workflows/pages.yml/badge.svg)](https://github.com/oneryalcin/toolplane/actions/workflows/pages.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+<h1>
+  <img alt="toolplane. Your agent writes one program. Its tools are the functions." src="https://raw.githubusercontent.com/oneryalcin/toolplane/main/docs/assets/readme/hero.webp">
+</h1>
 
-Define your agent's tool surface **once** — MCP servers, CLI binaries, Python
-functions — and get the same curated, sandboxed Python namespace under every
-agent client you use: Claude Code, Codex, opencode, or your own.
+**One sandboxed Python namespace for your agent's tools: MCP servers, command-line programs and your own functions.<br>The agent writes one short program instead of a hundred tool calls.**
 
-Full documentation: https://oneryalcin.github.io/toolplane/
+[![PyPI version](https://img.shields.io/pypi/v/toolplane?style=flat-square)](https://pypi.org/project/toolplane/)
+[![Python versions](https://img.shields.io/pypi/pyversions/toolplane?style=flat-square)](https://pypi.org/project/toolplane/)
+[![CI](https://img.shields.io/github/actions/workflow/status/oneryalcin/toolplane/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/oneryalcin/toolplane/actions/workflows/ci.yml)
+[![MIT license](https://img.shields.io/badge/license-MIT-555555?style=flat-square)](https://github.com/oneryalcin/toolplane/blob/main/LICENSE)
+
+**[Docs](https://oneryalcin.github.io/toolplane/) · [Paper](https://github.com/oneryalcin/toolplane/blob/main/paper/main.pdf) · [Talk (9 min)](https://github.com/oneryalcin/toolplane/releases/tag/talk-video-2026-10) · [Benchmark](https://oneryalcin.github.io/toolplane/code-mode-benchmark/)**
+
+[Why](#why) · [Quickstart](#quickstart) · [What your agent gets](#what-your-agent-gets) · [Use it as a library](#use-it-as-a-library) · [Backends](#backends)
+
+<code>uvx toolplane init</code>
+
+<br><br>
+
+<a href="https://github.com/oneryalcin/toolplane/releases/tag/talk-video-2026-10"><img src="https://raw.githubusercontent.com/oneryalcin/toolplane/main/docs/assets/readme/demo.gif" alt="100 lookups as tool calls: every call is written by the model and every answer returns to it. The same 100 lookups as one program: the calls run in a sealed room and one answer returns. The model writes 8,178 tokens against 1,127, and the cost per answer is $0.0116 against $0.0058." width="900"></a>
+
+<sub>Measured at 100 lookups: Claude Haiku 5.5 in Claude Code, 8 runs per arm. A single lookup or a step-by-step chain is cheaper as plain tool calls; the <a href="https://oneryalcin.github.io/toolplane/code-mode-benchmark/">benchmark</a> shows where each wins.</sub>
+
+</div>
+
+<br>
+
+Define your agent's tool surface **once** and get the same curated, sandboxed
+Python namespace under every agent client you use: Claude Code, Codex,
+opencode, or your own.
 
 ## Why
 
@@ -51,29 +70,18 @@ What makes toolplane different from other code-mode runtimes:
   Round-Trip Requests on 2026-07-28 ones such as current Claude Code; degrades
   to a plain refusal on clients that can't prompt.)
 - **A measured envelope, not a slogan.** We benchmarked code mode against
-  raw MCP tool-calling in a real client and published where it *loses*.
-  Two eras, labeled: **0.4.0** measured plain MCP ~20% cheaper at
-  30 tool interactions and code mode ~15% cheaper at 100 (crossover
-  unmeasured). **0.5.0** ships the call-shape facade, which moves the
-  crossover below 30: code mode runs flat per task at every task size
-  (~$0.18 in July), sits at parity with plain MCP around 20, and wins ~45%
-  cheaper at 100 — while single lookups still favor direct calls (~+28%)
-  and a sequentially-adaptive "chain" task cost code mode +38% in July.
-  Re-run on the shipped 0.5.0 (Oct 2026, newer client): every run that
-  reached the backend was correct, and with the discovery turn gone,
-  passing code-mode runs undercut plain MCP at every loop size and beat
-  it on wall time from 10 records up (~5x at 100; still ~45% cheaper
-  there). But on Sonnet 5, 4 of 28 code-mode runs gave up without
-  searching for the tools, which, priced in, keeps small tasks cheaper
-  on plain MCP; Haiku 5.5 and Sonnet 5.5 never did (0/60, 0/40;
-  [#150](https://github.com/oneryalcin/toolplane/issues/150)). Chain's cost
-  gap narrowed to +7%, though it stays slower. The surprise in
-  both eras: round-trips aren't the mechanism (clients batch tool calls
-  in parallel); output-token scaling and context growth are. Harness and
-  raw results in [`bench/`](bench/); numbers, variance, and limitations in
-  [The Code-Mode Envelope, Measured](https://oneryalcin.github.io/toolplane/code-mode-benchmark/).
-  The paper form, with the pre-registered confirmation study:
-  [When Should an Agent Write a Program?](paper/main.pdf)
+  plain MCP tool calls in a real client, pre-registered the confirmation
+  study, and published where it *loses*. On Claude Haiku 5.5 in Claude Code
+  (8 runs per cell): at 100 lookups one program costs half as much per
+  correct answer ($0.0058 vs $0.0116), and the two cross between 5 and 20
+  lookups. Plain calls stay cheaper for a single lookup (+11%), a
+  chain the agent walks one step at a time (+12%), and a tool that already
+  returns everything in one call (+5% to +31%). Round trips are not the
+  mechanism, because clients batch tool calls in parallel: the tokens the
+  model writes and the context it carries are. Harness and raw results in
+  [`bench/`](bench/); the earlier releases, variance and limitations in
+  [The Code-Mode Envelope, Measured](https://oneryalcin.github.io/toolplane/code-mode-benchmark/);
+  the paper: [When Should an Agent Write a Program?](paper/main.pdf)
 - **Safe by default, with zero infrastructure.** The default backend
   ([Monty](https://github.com/pydantic/monty)) is a sandboxed interpreter
   with no filesystem or network access — a pure `pip install`, no Docker, no
