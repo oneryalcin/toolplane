@@ -8,6 +8,9 @@ pre-release main; that facade (search hits and tool descriptions carrying
 call shapes) shipped in **toolplane 0.5.0**, and the headline cells were
 re-run on 0.5.0 — see [Re-run on 0.5.0](#re-run-on-050-the-backend-holds-a-new-abstention-failure-2026-10-08).*
 
+*Paper (2026-10): the pre-registered confirmation study and the later
+follow-ups are written up in [When Should an Agent Write a Program?](https://github.com/oneryalcin/toolplane/blob/main/paper/main.pdf)*
+
 The code-mode thesis — one Python snippet looping over tools beats N
 individual tool calls — is repeated in vendor blog posts and was the
 founding premise of this project. We had never measured it ourselves, and
