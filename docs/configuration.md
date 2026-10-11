@@ -123,6 +123,18 @@ two arguments (`--output file.txt`), except git's long flags, which bind
 inline (`await git("log", format="%h %s")` runs `git log --format=%h %s`,
 the only form git's `--format`/`--pretty` accept; cli-to-py ≥ 0.2.1).
 
+### Escalation
+
+In allowlist mode over stdio, a program that needs a binary outside the
+allowlist does not dead-end. The agent client shows *you* a form: allow the
+binary for this session, or refuse. Declines stick for the session, and
+nothing is ever written back to config: durable policy lives in the config
+file, and session grants die with the process. The prompt uses MCP
+elicitation on handshake-era clients and Multi Round-Trip Requests on
+2026-07-28 ones such as current Claude Code; on clients that cannot prompt it
+degrades to a plain refusal. Multi-client transports never escalate, so one
+person's approval cannot reach a client that never saw the prompt.
+
 !!! warning "`ambient` is for trusted local development"
 
     Do not expose ambient CLI mode through a client-facing MCP facade unless the

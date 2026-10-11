@@ -38,7 +38,8 @@ every answer came back into its context so it could be handed to the next
 step. None of that needed a model.
 
 So move the glue into a program. The agent writes one short script, the
-script makes the calls in a sandbox, and one answer comes back. Once the glue
+script makes the calls in a sandbox (the sealed room in the picture above),
+and one answer comes back. Once the glue
 is code, the kind of tool stops mattering: an MCP tool, a command-line program
 and your own Python function are all just functions that one program can loop
 over, branch on and join.
@@ -73,16 +74,16 @@ for a capability, read its schema, run a program.
 
 A program is not always the cheaper way, so we measured where the line is.
 
-| Task | Cheaper way | By how much |
+| Task | Cheaper way | One program vs plain tool calls |
 | --- | --- | --- |
-| 100 small lookups | one program | half the cost ($0.0058 vs $0.0116) |
+| 100 small lookups | one program | $0.0058 vs $0.0116 (half) |
 | 20 lookups | about level | $0.0053 vs $0.0057 |
-| 5 lookups | plain tool calls | $0.0047 vs $0.0053 |
-| A single lookup | plain tool calls | the program costs 11% more |
+| 5 lookups | plain tool calls | $0.0053 vs $0.0047 |
+| A single lookup | plain tool calls | 11% more |
 | A chain the agent walks one step at a time | plain tool calls | 12% more |
 | One call that already returns everything | plain tool calls | 5% to 31% more |
 
-Cost per correct answer on Claude Haiku 5.5 in Claude Code, 8 runs per cell,
+Cost per correct answer on Claude Haiku 5.5 in Claude Code, 8 runs per arm,
 in a pre-registered study. As a rule of thumb: write a program for many small
 calls or large intermediate results, and call directly for one lookup, a
 chain where each step is its own decision, or a tool that returns everything
@@ -167,7 +168,8 @@ Three things you may want next:
   `await git("log", oneline=True, max_count=3)` returns
   `{'stdout', 'stderr', 'exit_code', 'ok'}`. There is no shell. If a program
   needs a command you have not allowed, clients that can prompt ask *you*:
-  allow it for this session, or refuse.
+  allow it for this session, or refuse. Nothing is written back to your
+  config. [Escalation](https://oneryalcin.github.io/toolplane/configuration/#escalation)
 - **A sandbox with nothing to install.** Programs run in
   [Monty](https://github.com/pydantic/monty), an interpreter with no
   filesystem or network access. It is a plain `pip install`: no Docker, no
