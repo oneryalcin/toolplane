@@ -1,16 +1,35 @@
-# toolplane
+<div align="center">
 
-[![PyPI version](https://img.shields.io/pypi/v/toolplane)](https://pypi.org/project/toolplane/)
-[![Python versions](https://img.shields.io/pypi/pyversions/toolplane)](https://pypi.org/project/toolplane/)
-[![CI](https://github.com/oneryalcin/toolplane/actions/workflows/ci.yml/badge.svg)](https://github.com/oneryalcin/toolplane/actions/workflows/ci.yml)
-[![Docs](https://github.com/oneryalcin/toolplane/actions/workflows/pages.yml/badge.svg)](https://github.com/oneryalcin/toolplane/actions/workflows/pages.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+<h1>
+  <img alt="toolplane. Your agent writes one program. Its tools are the functions." src="https://raw.githubusercontent.com/oneryalcin/toolplane/main/docs/assets/readme/hero.webp">
+</h1>
 
-Define your agent's tool surface **once** — MCP servers, CLI binaries, Python
-functions — and get the same curated, sandboxed Python namespace under every
-agent client you use: Claude Code, Codex, opencode, or your own.
+**One sandboxed Python namespace for your agent's tools: MCP servers, command-line programs and your own functions.<br>The agent writes one short program instead of a hundred tool calls.**
 
-Full documentation: https://oneryalcin.github.io/toolplane/
+[![PyPI version](https://img.shields.io/pypi/v/toolplane?style=flat-square)](https://pypi.org/project/toolplane/)
+[![Python versions](https://img.shields.io/pypi/pyversions/toolplane?style=flat-square)](https://pypi.org/project/toolplane/)
+[![CI](https://img.shields.io/github/actions/workflow/status/oneryalcin/toolplane/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/oneryalcin/toolplane/actions/workflows/ci.yml)
+[![MIT license](https://img.shields.io/badge/license-MIT-555555?style=flat-square)](https://github.com/oneryalcin/toolplane/blob/main/LICENSE)
+
+**[Docs](https://oneryalcin.github.io/toolplane/) · [Paper](https://github.com/oneryalcin/toolplane/blob/main/paper/main.pdf) · [Talk (9 min)](https://github.com/oneryalcin/toolplane/releases/tag/talk-video-2026-10) · [Benchmark](https://oneryalcin.github.io/toolplane/code-mode-benchmark/)**
+
+[Why](#why) · [Quickstart](#quickstart) · [What your agent gets](#what-your-agent-gets) · [Use it as a library](#use-it-as-a-library) · [Backends](#backends)
+
+<code>uvx toolplane init</code>
+
+<br><br>
+
+<a href="https://github.com/oneryalcin/toolplane/releases/tag/talk-video-2026-10"><img src="https://raw.githubusercontent.com/oneryalcin/toolplane/main/docs/assets/readme/demo.gif" alt="100 lookups as tool calls: every call is written by the model and every answer returns to it. The same 100 lookups as one program: the calls run in a sealed room and one answer returns. The model writes 8,178 tokens against 1,127, and the cost per answer is $0.0116 against $0.0058." width="900"></a>
+
+<sub>Measured at 100 lookups: Claude Haiku 5.5 in Claude Code, 8 runs per arm. A single lookup or a step-by-step chain is cheaper as plain tool calls; the <a href="https://oneryalcin.github.io/toolplane/code-mode-benchmark/">benchmark</a> shows where each wins.</sub>
+
+</div>
+
+<br>
+
+Define your agent's tool surface **once** and get the same curated, sandboxed
+Python namespace under every agent client you use: Claude Code, Codex,
+opencode, or your own.
 
 ## Why
 
