@@ -263,6 +263,10 @@ from pydantic_ai import Agent
 agent = Agent("anthropic:claude-sonnet-5", tools=[runtime.as_tool()])
 ```
 
+To put your own functions in front of Claude Code or Codex, a short launcher
+registers them and serves the same MCP facade — see
+[`examples/python_functions_mcp.py`](examples/python_functions_mcp.py).
+
 MCP servers, explicit CLI wrappers, and scoped Python namespaces register the
 same way — see the [library guide](https://oneryalcin.github.io/toolplane/)
 and [examples](examples/README.md) for the full surface, including

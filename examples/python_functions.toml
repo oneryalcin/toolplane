@@ -1,0 +1,9 @@
+# Config for python_functions_mcp.py: the sandbox, and the commands it may run.
+# MCP servers go here too ([mcp.servers.<name>]); your own Python functions
+# cannot, they are registered in the launcher script.
+[toolplane]
+default_backend = "monty"
+
+[cli]
+mode = "allowlist"
+allow = ["git"]

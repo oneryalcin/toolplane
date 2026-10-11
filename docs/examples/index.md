@@ -18,6 +18,7 @@ The current examples cover:
 | `mcp_stdio_config.py` | Standard `mcpServers` stdio config can register MCP-backed capabilities. |
 | `multi_server.py` | Tools from two MCP servers compose in one `execute_code` snippet. |
 | `from_config.py` | `Toolplane.from_config(...)` can bootstrap CLI policy and MCP servers from TOML. |
+| `python_functions_mcp.py` | Your own Python functions are served to an MCP client next to the configured CLI binaries. |
 
 !!! tip "Keep examples executable"
 

@@ -19,6 +19,19 @@ uv run --no-project --with-editable . python examples/multi_server.py
 uv run --no-project --with-editable . python examples/from_config.py
 ```
 
+## Serve your own Python functions to an agent
+
+`toolplane serve mcp` serves what a config file can name: MCP servers and
+allowed CLI binaries. Python functions are registered in code, so
+`python_functions_mcp.py` is the launcher for that case: it builds the runtime
+from `python_functions.toml`, registers a function, and serves the same facade
+over stdio. `--self-test` spawns it as a real stdio server and calls it:
+
+```bash
+uv run --no-project --with-editable . python examples/python_functions_mcp.py --self-test
+claude mcp add my-tools -- python /abs/path/to/examples/python_functions_mcp.py
+```
+
 ## Embed toolplane in an agent framework (`as_tool`)
 
 `runtime.as_tool()` packages the runtime as a single `run_code` tool. Each
